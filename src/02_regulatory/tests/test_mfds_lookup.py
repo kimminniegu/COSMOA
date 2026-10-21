@@ -179,8 +179,8 @@ class RouteSourceTest(unittest.TestCase):
 
     def client(self):
         c = self.app.app.test_client()
-        with c.session_transaction() as s:
-            s["user"] = {"id": 0, "email": "t@example.invalid", "name": "t", "team": "B"}
+        from src.common.testing import login_as   # 업무 DB 대신 메모리 사용자 (세션 형식 v2)
+        login_as(c, {"id": 0, "email": "t@example.invalid", "name": "t", "team": "B"}, self.app)
         return c
 
     def test_default_source_is_mfds_and_no_api_call(self):
@@ -194,7 +194,7 @@ class RouteSourceTest(unittest.TestCase):
 
     def test_api_source_keeps_old_behaviour_no_fallback(self):
         svc = self.app.regulatory_service
-        with mock.patch.object(svc, "_get", return_value=json.load(open(REG_DIR / "test_data" / "regulations_5489_EU.json", encoding="utf-8"))["body"]) as get:
+        with mock.patch.object(svc, "_get", return_value=json.load(open(REG_DIR / "test_data" / "regulations_5489_eu.json", encoding="utf-8"))["body"]) as get:
             res = self.client().get("/api/regulatory/regulations?code=5489&country=EU&source=api")
             get.assert_called_once_with("/v1/ingredient/5489/regulations", {"country": "EU"})
         self.assertEqual(res.get_json()["source"], "api")

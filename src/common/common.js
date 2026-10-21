@@ -108,10 +108,55 @@
     else setSidebar(false);
   });
 
+  /* 업무 API JSON 요청 (docs/api_contract.md) ---------------------------------
+     Common.api("GET", "/api/customers").then(function (r) { r.ok, r.status, r.data, r.error });
+     변경 요청(POST 등)은 X-CSRF-Token 헤더를 자동으로 붙이고, 토큰이 만료돼 403 csrf_failed 면 새 토큰으로 한 번 다시 보냅니다.
+     네트워크 오류도 reject 하지 않고 { ok: false, status: 0, error: { code: "network_error" } } 로 돌려줍니다. */
+  var csrfToken = null;
+
+  function fetchJson(method, url, body, headers) {
+    var options = { method: method, credentials: "same-origin", headers: Object.assign({ Accept: "application/json" }, headers) };
+    if (body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    return fetch(url, options).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) {
+        var error = data && data.ok === false ? (typeof data.error === "string" ? { code: "error", message: data.error } : data.error) : null;
+        if (!res.ok && !error) error = { code: "http_" + res.status, message: "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요." };
+        return { ok: res.ok, status: res.status, data: data, error: error };
+      });
+    }, function () {
+      return { ok: false, status: 0, data: null, error: { code: "network_error", message: "서버에 연결하지 못했어요. 네트워크를 확인해 주세요." } };
+    });
+  }
+
+  function getCsrfToken(refresh) {
+    if (csrfToken && !refresh) return Promise.resolve(csrfToken);
+    return fetchJson("GET", "/api/csrf-token").then(function (r) {
+      csrfToken = r.ok ? r.data.csrf_token : null;
+      return csrfToken;
+    });
+  }
+
+  function api(method, url, body) {
+    method = method.toUpperCase();
+    if (method === "GET") return fetchJson(method, url);
+    function send(refresh) {
+      return getCsrfToken(refresh).then(function (token) {
+        return fetchJson(method, url, body === undefined ? {} : body, token ? { "X-CSRF-Token": token } : {});
+      });
+    }
+    return send(false).then(function (r) {
+      return r.status === 403 && r.error && r.error.code === "csrf_failed" ? send(true) : r;
+    });
+  }
+
   /* 페이지 JS에서 사용할 수 있는 공통 API */
   window.Common = {
     openModal: openModal,
     closeModal: function (id) { closeModal(document.getElementById(id)); },
     setSidebarCollapsed: setCollapsed,
+    api: api,
   };
 })();

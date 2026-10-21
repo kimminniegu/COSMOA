@@ -7,7 +7,8 @@
 규칙
 - "페이지 Route"와 "로그인" 영역은 PM 관리 영역입니다. 삭제하거나 URL을 변경하지 마세요.
 - 새 Route는 파일 하단의 담당자별 영역에 추가하고, 기존 URL과 충돌하지 않게 합니다.
-- 페이지 Route에는 @login_required 를 붙입니다. (로그인하지 않으면 /login 으로 이동)
+- 페이지 Route에는 @login_required 를 붙입니다. (로그인하지 않으면 /login 으로 이동, /api/ 는 JSON 401)
+- 로그인 계정은 업무 DB(Neon PostgreSQL) users 입니다. 시작 시 테이블·데모 계정을 만들지 않습니다.
 - API Key는 코드에 직접 쓰지 말고 os.getenv()로 불러옵니다.
 - Python 모듈은 담당자 폴더(src/<폴더>/)에 두고 importlib 로 불러옵니다. (폴더명이 숫자로 시작해 import 문을 쓸 수 없음)
 """
@@ -29,7 +30,6 @@ from markupsafe import Markup, escape
 BASE_DIR = Path(__file__).resolve().parent
 SRC_DIR = BASE_DIR / "src"
 INSTANCE_DIR = BASE_DIR / "instance"          # SQLite 등 로컬 데이터 (Git 제외)
-DB_PATH = INSTANCE_DIR / "cosmoa.db"
 
 # 운영(배포) 환경: Dockerfile 의 COSMOA_ENV=production 또는 Render 가 넣어 주는 RENDER=true. 배포 안내: docs/deploy_render.md
 IS_PRODUCTION = os.getenv("COSMOA_ENV", "").strip().lower() == "production" or os.getenv("RENDER", "").strip().lower() == "true"
@@ -58,10 +58,45 @@ if IS_PRODUCTION:
 
 # 공통 모듈 (PM) / 홈 데이터 모듈 (A)
 auth = importlib.import_module("src.common.auth")
+db_module = importlib.import_module("src.common.db")
 home_data = importlib.import_module("src.01_home.home_data")
-auth.init(DB_PATH, production=IS_PRODUCTION)
-home_data.init(DB_PATH)
 login_required = auth.login_required
+app.jinja_env.globals["login_csrf_token"] = auth.login_csrf_token   # 로그인 폼 CSRF hidden 값 (common/login.html)
+
+# 업무 DB (Neon PostgreSQL) — 로그인 users. 여기서는 연결 풀 객체만 만들고 접속은 첫 로그인·사용자 확인 때 합니다.
+# 테이블 생성·마이그레이션은 하지 않습니다 (python -m src.common.db_admin migrate, docs/development.md 5-2).
+business_db = None
+
+
+def configure_business_db(db=None):
+    """업무 DB 연결을 설정합니다. 테스트는 test DB 의 Database 를 직접 넘깁니다. 이전 풀은 닫습니다."""
+    global business_db
+    if business_db is not None and business_db is not db:
+        business_db.close()
+    business_db = db
+    auth.init(db)
+    app.extensions["business_db"] = db   # 공통 저장 API (src/common/versions_api.py) 가 사용
+    return db
+
+
+try:
+    configure_business_db(db_module.Database.from_env("DATABASE_URL", name="app"))
+except db_module.DatabaseConfigError as e:
+    configure_business_db(None)   # 로그인 시 "일시적으로 연결할 수 없음" 안내. SQLite 로 대체하지 않음
+    logging.getLogger("cosmoa.app").warning("업무 DB 미설정 — 로그인할 수 없습니다: %s", e)
+
+# 홈 캐시 SQLite (업무 DB 와 분리). 상대 경로는 저장소 루트 기준.
+HOME_CACHE_DB_PATH = Path(os.getenv("HOME_CACHE_DB_PATH", "").strip() or INSTANCE_DIR / "cosmoa.db")
+if not HOME_CACHE_DB_PATH.is_absolute():
+    HOME_CACHE_DB_PATH = BASE_DIR / HOME_CACHE_DB_PATH
+home_data.init(HOME_CACHE_DB_PATH)   # 캐시 테이블만 준비. 외부 데이터 갱신은 홈 요청 때 시작
+
+# 공통 저장 API (PM) — /api/csrf-token, /api/projects/<id>/tabs/<tab>/..., /api/versions/<id> (docs/api_contract.md)
+versions_api = importlib.import_module("src.common.versions_api")
+versions_api.init_app(app)
+# 고객사·프로젝트 생성·조회 API (PM) — /api/customers, /api/customers/<id>/projects, /api/projects/<id>
+projects_api = importlib.import_module("src.common.projects_api")
+projects_api.init_app(app)
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -83,7 +118,19 @@ def asset(filename):
 @app.context_processor
 def inject_user():
     """모든 템플릿에서 current_user 사용 가능 (Sidebar 사용자 영역)"""
-    return {"current_user": auth.current_user()}
+    try:
+        return {"current_user": auth.current_user()}
+    except auth.AuthUnavailable:
+        return {"current_user": None}
+
+
+@app.errorhandler(auth.AuthUnavailable)
+def auth_unavailable(error):
+    """업무 DB 장애: 비밀번호 오류와 구분해 503. 접속 정보는 응답에 넣지 않습니다."""
+    if auth.wants_json():
+        return jsonify(ok=False, error=auth.UNAVAILABLE_MESSAGE), 503
+    return render_template("common/login.html", error=auth.UNAVAILABLE_MESSAGE, email="",
+                           next=auth.safe_next(request.full_path.rstrip("?"))), 503
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +146,12 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
-        user = auth.authenticate(email, password) if email and password else None
+        if not auth.login_csrf_valid():     # 다른 사이트에서 보낸 로그인 요청 거부 (비밀번호 확인·DB 조회 전)
+            return render_template("common/login.html", error=auth.LOGIN_CSRF_MESSAGE, email=email, next=next_url), 400
+        try:
+            user = auth.authenticate(email, password) if email and password else None
+        except auth.AuthUnavailable:
+            return render_template("common/login.html", error=auth.UNAVAILABLE_MESSAGE, email=email, next=next_url), 503
         if user:
             auth.login_user(user, remember=request.form.get("remember") == "1")
             return redirect(next_url or url_for("home"))
@@ -111,6 +163,31 @@ def login():
 def logout():
     auth.logout_user()
     return redirect(url_for("login"))
+
+
+@app.route("/account/password", methods=["GET", "POST"])
+@login_required
+def account_password():
+    """본인 비밀번호 변경. 대상은 서버 세션의 로그인 사용자뿐입니다 (폼에 사용자 id 를 받지 않음).
+    변경 후 이 브라우저는 새 세션으로 이어지고, 다른 기기의 기존 세션은 다음 요청에서 로그아웃됩니다."""
+    error, status = None, 200
+    if request.method == "POST":
+        if not auth.csrf_form_valid():
+            error, status = "보안 확인 시간이 지났어요. 화면을 새로 고친 뒤 다시 시도해 주세요.", 400
+        elif request.form.get("new_password", "") != request.form.get("confirm_password", ""):
+            error, status = "새 비밀번호와 확인 값이 달라요.", 400
+        else:
+            try:
+                fingerprint = auth.change_own_password(auth.current_user()["id"], request.form.get("current_password", ""),
+                                                       request.form.get("new_password", ""))
+            except auth.PasswordChangeError as e:
+                error, status = str(e), 400
+            else:
+                auth.renew_session_after_password_change(fingerprint)
+                return redirect(url_for("account_password", changed=1))
+    return render_template("common/account_password.html", error=error, changed=request.args.get("changed") == "1",
+                           csrf_token=auth.csrf_token(), password_min=auth.PASSWORD_MIN,
+                           password_max=auth.PASSWORD_MAX), status
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +237,8 @@ def simulation():
 @app.route("/dev-request")
 @login_required
 def dev_request():
-    return render_template("05_requisition/requisition.html", request_sections=requisition_service.SECTIONS)
+    return render_template("05_requisition/requisition.html", request_sections=requisition_schema.SECTIONS,
+                           request_options=requisition_schema.page_options())
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +512,7 @@ def simulation_brief():
 # import_module을 사용해 개발요청서 자동변환 API를 등록합니다.
 # 공통 스키마로 자동변환·직접작성·수정·최종값 PDF 출력을 연결합니다.
 requisition_service = import_module("src.05_requisition.service")
+requisition_schema = import_module("src.05_requisition.schema")   # 화면·변환·PDF·저장 계약이 함께 쓰는 필드 정의
 
 
 @requisition_service.blueprint.before_request

@@ -23,10 +23,10 @@ import requests
 MARKET_CODES = ("KR", "EU", "CN", "US", "JP", "ASEAN")
 
 # 실제 호출로 확인한 result_status 값만 등록한다. 그 외 값은 hold 처리.
-#   listed                : 규제 항목 반환                                (test_data/regulations_5489_EU.json)
+#   listed                : 규제 항목 반환                                (test_data/regulations_5489_eu.json)
 #   not_listed_in_country : 요청 시장 항목 없음. result_note 에 "다른 시장에 있음" 또는 "요금제 밖 시장에만 있음" 안내
-#                           (test_data/regulations_5489_US.json, regulations_1013_EU_plan_note.json)
-#   not_listed            : 소스 데이터에 제한·금지 항목 자체가 없음 안내       (test_data/regulations_1941_EU_not_listed.json)
+#                           (test_data/regulations_5489_us.json, regulations_1013_eu_plan_note.json)
+#   not_listed            : 소스 데이터에 제한·금지 항목 자체가 없음 안내       (test_data/regulations_1941_eu_not_listed.json)
 # not_listed 와 markets_outside_plan 의 정확한 의미는 공개 문서에 없으므로 '허용'·'요금제 제한'으로 단정하지 않고 상태값·안내문을 그대로 전달한다.
 RESULT_STATUS_FOUND = ("listed",)
 RESULT_STATUS_NO_DATA = ("not_listed_in_country",)

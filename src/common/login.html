@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>로그인 | COSMOA</title>
   <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('asset', filename='common/img/favicon.png') }}">
-  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('asset', filename='common/img/apple-touch-icon.png') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('asset', filename='common/img/apple_touch_icon.png') }}">
   <link rel="preload" as="font" type="font/otf" crossorigin href="{{ url_for('asset', filename='common/fonts/nanum_square_neo_rg.otf') }}">
   <link rel="preload" as="font" type="font/otf" crossorigin href="{{ url_for('asset', filename='common/fonts/nanum_square_neo_eb.otf') }}">
   <link rel="stylesheet" href="{{ url_for('asset', filename='common/style.css') }}">
@@ -50,6 +50,7 @@
     <main class="login-panel">
       <form class="login-form" method="post" action="{{ url_for('login') }}" novalidate>
         <input type="hidden" name="next" value="{{ next or '' }}">
+        <input type="hidden" name="csrf_token" value="{{ login_csrf_token() }}">
         <div class="login-form__head">
           <h2 class="login-form__title">로그인</h2>
           <p class="login-form__desc">COSMOA 계정으로 로그인해 주세요</p>

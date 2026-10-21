@@ -30,8 +30,8 @@ def extracted():
 class RequisitionTest(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
-        with self.client.session_transaction() as session:
-            session["user"] = {"id": 1, "name": "테스트", "email": "test@example.com", "team": "연구소"}
+        from src.common.testing import login_as   # 업무 DB 대신 메모리 사용자 (세션 형식 v2)
+        login_as(self.client, {"id": 1, "name": "테스트", "email": "test@example.com", "team": "연구소"})
 
     def test_authentication_required(self):
         anonymous = app.test_client()
@@ -63,7 +63,12 @@ class RequisitionTest(unittest.TestCase):
         }
         document = service.normalize_result(result, "brief.pdf", "", "auto", "ko", [])
         for key, value in fields.items():
-            self.assertEqual(service.get_value(document, key), value)
+            if key != "ingredients.necessary":
+                self.assertEqual(service.get_value(document, key), value)
+        # 이전 형식(필수 원료 목록) → 컨셉 원료 v1 구조. 함유 필수 여부·효능 태그는 추출하지 않으므로 비움
+        self.assertEqual(document["ingredients"]["concept"],
+                         [{"name": "Silica", "kind": "necessary", "must_contain": None, "efficacy_tags": []}])
+        self.assertNotIn("necessary", document["ingredients"])
         self.assertNotIn("legacy_private", document["quality"])
         self.assertEqual(document["raw_extracted_data"], result["raw_extracted_data"])
         self.assertNotIn("SECRET_QUANTITY", json.dumps({key: document[key] for key in ("product_development", "quality")}))
@@ -104,9 +109,14 @@ class RequisitionTest(unittest.TestCase):
     def test_page_and_assets(self):
         response = self.client.get("/dev-request")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("개발요청서 분석", response.get_data(as_text=True))
-        for extension in ("css", "js"):
-            with self.client.get(f"/assets/05_requisition/requisition.{extension}") as asset:
+        page = response.get_data(as_text=True)
+        self.assertIn("개발요청서 분석", page)
+        for element in ("requisition-project-current", "requisition-customer-select", "requisition-project-select",
+                        "requisition-customer-new", "requisition-project-new", "requisition-document-project",
+                        "requisition-options", "requisition-save-status"):
+            self.assertIn(f'id="{element}"', page)   # 연결 프로젝트 선택 (고객사 → 프로젝트)
+        for asset_name in ("requisition.css", "requisition.js", "requisition_payload.js"):
+            with self.client.get(f"/assets/05_requisition/{asset_name}") as asset:
                 self.assertEqual(asset.status_code, 200)
 
     def test_missing_and_invalid_file(self):
@@ -157,7 +167,8 @@ class RequisitionTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         document = response.json["document"]
         self.assertEqual(document["customer"], "사용자 고객사")
-        self.assertEqual(document["target_price_tier"], "")
+        self.assertEqual((document["target_prices"], document["legacy"]), ([], {}))
+        self.assertNotIn("target_price_tier", document)
         self.assertEqual(document["regulatory_restricted_ingredients"], [])
         self.assertEqual(document["creation_method"], "auto")
         self.assertEqual(document["field_provenance"][0]["source_value"], "Glowtree")
@@ -177,8 +188,57 @@ class RequisitionTest(unittest.TestCase):
         result = extracted()
         result.update(target_price_tier="mid", benchmark_product_name="Invented benchmark")
         normalized = service.normalize_result(result, "brief.pdf", "", "auto", "ko", [])
-        self.assertEqual(normalized["target_price_tier"], "")
+        self.assertEqual((normalized["target_prices"], normalized["legacy"]), ([], {}))   # 근거 없는 이전 가격대도 남기지 않음
         self.assertEqual(normalized["benchmark_product_name"], "")
+
+    def test_fix_fields_from_conversion(self):
+        result = extracted()
+        values = {"product_type": "스킨케어", "product_type_detail": "세럼", "target_price_tier": "mid",
+                  "product_development.spf": "SPF50+", "product_development.pa": "PA++++",
+                  "ingredients.necessary": ["Ascorbic Acid"], "ingredients.ideal": ["Niacinamide", "ascorbic acid"]}
+        for key, value in values.items():
+            service.set_value(result, key, value)
+            result["evidence"].append({"field_key": key, "source_value": str(value), "source_page": "2", "needs_review": False})
+        document = service.normalize_result(result, "brief.pdf", "", "auto", "ko", [])
+        self.assertEqual((document["product_type"], document["product_type_detail"]), ("스킨케어", "세럼"))
+        self.assertEqual((document["product_development"]["spf"], document["product_development"]["pa"]), ("SPF50+", "PA++++"))
+        # low/mid/high 는 금액으로 바꾸지 않음 — 목표 가격대는 비우고 참고로만 남김, 확인 필요 표시
+        self.assertEqual((document["target_prices"], document["legacy"]), ([], {"target_price_tier": "mid"}))
+        prices = next(p for p in document["field_provenance"] if p["field_key"] == "target_prices")
+        self.assertEqual((prices["review_status"], prices["source_value"]), ("needs_review", "mid"))
+        self.assertEqual([(c["name"], c["kind"]) for c in document["ingredients"]["concept"]],
+                         [("Ascorbic Acid", "necessary"), ("Niacinamide", "ideal")])   # 대소문자만 다른 중복은 한 번
+        self.assertTrue(all(c["must_contain"] is None and c["efficacy_tags"] == [] for c in document["ingredients"]["concept"]))
+        # AI 가 채우지 않는 칸은 비어 있음
+        self.assertEqual((document["product_development"]["viscosity_level"], document["product_development"]["container_reference"],
+                          document["rnd_check_requests"]), ("", "", ""))
+        self.assertNotIn("document_id", document)
+        self.assertNotIn("version", document)
+        keys = {p["field_key"] for p in document["field_provenance"]}
+        self.assertTrue({"target_prices", "ingredients.concept"} <= keys)
+        self.assertFalse({"target_price_tier", "ingredients.necessary", "ingredients.ideal"} & keys)
+        # 화면 문서의 입력 칸 구조 = 저장 계약의 빈 구조
+        from importlib import import_module
+        blank = import_module("src.05_requisition.schema").blank_inputs()
+        def shape(tree):
+            return {k: shape(v) if isinstance(v, dict) else type(v).__name__ for k, v in tree.items()}
+        self.assertEqual(shape({k: document[k] for k in blank}), shape(blank))
+
+    def test_skincare_detail_needs_skincare_type(self):
+        result = extracted()   # 베이스 메이크업
+        service.set_value(result, "product_type_detail", "세럼")
+        result["evidence"].append({"field_key": "product_type_detail", "source_value": "serum", "source_page": "1", "needs_review": False})
+        self.assertEqual(service.normalize_result(result, "brief.pdf", "", "auto", "ko", [])["product_type_detail"], "")
+
+    def test_extraction_schema_fix_fields(self):
+        props = service.extraction_schema()["properties"]
+        self.assertEqual(props["product_type_detail"]["enum"], ["", "토너", "스킨", "세럼", "앰플", "크림", "로션"])
+        self.assertIn("spf", props["product_development"]["properties"])
+        for absent in ("target_prices", "rnd_check_requests"):
+            self.assertNotIn(absent, props)                     # 목표 가격대 금액·R&D 확인 요청사항은 추출하지 않음
+        for absent in ("viscosity_level", "container_reference"):
+            self.assertNotIn(absent, props["product_development"]["properties"])
+        self.assertEqual(set(props["ingredients"]["properties"]), {"necessary", "ideal", "other_notes"})
 
     def test_provider_errors_and_payload(self):
         result = {"status": "completed", "output": [{"type": "message", "content": [

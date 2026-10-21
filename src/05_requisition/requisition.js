@@ -3,15 +3,20 @@
   const $ = (id) => document.getElementById("requisition-" + id);
   const root = $("app");
   if (!root) return;
-  const types = ["스킨케어", "베이스 메이크업", "립", "아이", "바디", "헤어", "클렌징", "선케어", "기타"];
-  const tiers = { low: "저가", mid: "중가", high: "고가" };
+  // 선택값·빈 구조는 서버의 schema.py 와 같은 값을 받습니다 (저장 계약 v1 과 화면이 같은 구조를 쓰도록).
+  const options = JSON.parse($("options").textContent);
+  const types = options.product_types;
   const sections = JSON.parse($("schema").textContent);
   const definitions = sections.flatMap(([, fields]) => fields);
   const labels = Object.fromEntries(definitions.map(([key, label]) => [key, label]));
   const kinds = Object.fromEntries(definitions.map(([key, , kind]) => [key, kind]));
   labels.reference_notes = "기타사항";
   kinds.reference_notes = "textarea";
-  const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.other_notes"]);
+  const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.other_notes", "rnd_check_requests"]);
+  const wideFields = new Set(["target_prices", "ingredients.concept", "product_development.container_reference"]);
+  // 입력 칸 하나로 끝나지 않는 항목 (목록 편집·선택값+서술)
+  const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity"]);
+  const inputPaths = RequisitionPayload.inputPaths(options);
   const chipFields = definitions.filter(([, , kind]) => kind === "list").map(([key]) => key);
   const requiredFields = ["customer", "request_source", "product_name", "sample_request_type", "product_type", "export_countries", "quality.tests"];
   const get = (data, key) => key.split(".").reduce((value, part) => value?.[part], data);
@@ -23,6 +28,9 @@
   const countries = ["미국", "캐나다", "중국", "일본", "한국", "프랑스", "독일", "영국", "호주", "베트남", "태국", "인도네시아", "싱가포르", "인도", "아랍에미리트", "사우디아라비아"];
   const methods = { auto: "자동변환", auto_edited: "자동변환 후 수정", manual: "직접 작성", manual_edited: "직접 작성 후 수정" };
   let state = "upload", saved = null, draft = null, originalFile = null, controller = null;
+  // project: 화면에서 선택한 프로젝트. documentProject: 지금 작성 중인 요청서가 연결된 프로젝트 (요청서를 시작할 때 정함).
+  // 둘이 달라지지 않도록, 작성 중 프로젝트를 바꾸면 확인 후 요청서를 초기화합니다. (저장 연결은 3단계 다음 작업)
+  let project = null, documentProject = null;
   let printFrame = null;
   let activeSection = 0;
   const sectionTitles = [...sections.map(([title]) => title), "05 참고자료"];
@@ -31,17 +39,28 @@
   const filled = (value) => Array.isArray(value) ? value.length > 0 : Boolean(String(value ?? "").trim());
   const editing = () => state === "edit" || state === "manual";
   const current = () => editing() ? draft : saved;
-  const blank = () => ({
-    document_id: crypto.randomUUID ? crypto.randomUUID() : "request-" + Date.now(),
-    creation_method: "manual", customer: "", request_source: "", source_language: "", target_language: $("target-language").value,
-    product_name: "", sample_request_type: "", product_type: "", product_type_custom: "", target_price_tier: "",
-    export_countries: [], buyer_prohibited_ingredients: [], regulatory_restricted_ingredients: [],
-    benchmark_product_name: "", review_status: "needs_review",
-    source_file: "", version: 1, field_provenance: [], raw_extracted_data: {}, reference_files: [], reference_notes: "",
-    product_development: Object.fromEntries(definitions.filter(([key]) => key.startsWith("product_development.")).map(([key]) => [key.split(".")[1], ""])),
-    ingredients: { necessary: [], ideal: [], other_notes: "" },
-    quality: { tests: [], additional_notes: "" }
+  const hasDocument = () => Boolean(saved || draft || originalFile) || state === "loading";
+  // 빈 양식 = 저장 계약 v1 의 inputs 빈 구조 + 고객사 표시값 + 화면 정보. 문서 번호·버전은 두지 않습니다 (서버 version_no 기준).
+  const blank = () => Object.assign(clone(options.input_defaults), {
+    customer: documentProject ? documentProject.customer.name : "",
+    creation_method: "manual", source_language: "", target_language: $("target-language").value,
+    review_status: "needs_review", source_file: "", field_provenance: [], raw_extracted_data: {}, reference_files: [], legacy: {}
   });
+  const amountText = (value) => Number(value).toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+  const priceText = (prices) => (prices || []).map((item) => amountText(item.amount) + " " + item.currency).join(", ");
+  function conceptText(items, separator = "\n") {
+    return Object.entries(options.concept_kinds).map(([kind, title]) => {
+      const rows = (items || []).filter((item) => item.kind === kind);
+      return rows.length ? title + ": " + rows.map((item) => item.name +
+        (item.must_contain === true ? " [함유 필수]" : item.must_contain === false ? " [함유 필수 아님]" : "") +
+        (item.efficacy_tags.length ? " (효능: " + item.efficacy_tags.join(", ") + ")" : "")).join(", ") : "";
+    }).filter(Boolean).join(separator);
+  }
+  function legacyNote(data) {
+    const tier = data.legacy && data.legacy.target_price_tier;
+    return tier ? '<p class="form-help requisition-legacy-note">원문 가격대 표기: ' + escape(options.legacy_price_tiers[tier] || tier) +
+      ' — 금액으로 자동 변환하지 않았어요. 목표 가격대(금액·통화)를 직접 입력해 주세요.</p>' : "";
+  }
   function notice(message = "") {
     $("notice").textContent = message;
     $("notice").hidden = !message;
@@ -52,15 +71,22 @@
   }
   function reviews(data) {
     const result = missing(data).map((key) => labels[key]);
-    if (data.creation_method.startsWith("auto") && !data.target_price_tier) result.push("목표 가격대");
+    if (data.creation_method.startsWith("auto") && !data.target_prices.length) result.push("목표 가격대");
     (data.field_provenance || []).filter((item) => item.review_status === "needs_review").forEach((item) => {
       if (labels[item.field_key]) result.push(labels[item.field_key]);
     });
     return [...new Set(result)];
   }
   function fieldValue(data, key) {
-    if (key === "product_type") return data.product_type === "기타" ? data.product_type_custom || "" : data.product_type;
-    if (key === "target_price_tier") return tiers[data[key]] || "";
+    if (key === "product_type") {
+      if (data.product_type === "기타") return data.product_type_custom || "";
+      return data.product_type === "스킨케어" && data.product_type_detail ? "스킨케어 (" + data.product_type_detail + ")" : data.product_type;
+    }
+    if (key === "target_prices") return priceText(data.target_prices);
+    if (key === "ingredients.concept") return conceptText(data.ingredients.concept);
+    if (key === "product_development.viscosity") {
+      return [data.product_development.viscosity_level, data.product_development.viscosity].filter(filled).join(" · ");
+    }
     if (key === "buyer_prohibited_ingredients") return [...data[key], ...data.regulatory_restricted_ingredients].join(", ");
     const value = get(data, key);
     if (kinds[key] === "required") return value === true ? "필요" : value === false ? "불필요" : "";
@@ -90,19 +116,29 @@
           data.regulatory_restricted_ingredients.length ? "규제 검토 대상: " + data.regulatory_restricted_ingredients.join(", ") : ""].filter(Boolean).join("\n");
       }
       control = '<p class="requisition-field-value">' + escape(value || "") + "</p>";
+      if (key === "target_prices") control += legacyNote(data);
+    } else if (key === "customer" && documentProject) {
+      control = '<p class="requisition-field-value" id="requisition-input-customer">' + escape(documentProject.customer.name) + '</p>' +
+        '<p class="form-help">연결 프로젝트의 고객사예요 (고객사 id 로 연결). 바꾸려면 위에서 프로젝트를 변경해 주세요.</p>';
+    } else if (key === "target_prices") {
+      control = pricesEditor(data);
+    } else if (key === "ingredients.concept") {
+      control = conceptEditor(data);
+    } else if (key === "product_development.viscosity") {
+      control = viscosityEditor(data);
     } else if (key === "product_type") {
       control = '<select class="form-control" id="requisition-input-product_type" data-field="product_type" aria-required="true"><option value="">선택하세요</option>' +
         types.map((value) => '<option value="' + value + '"' + (data[key] === value ? " selected" : "") + ">" + (value === "기타" ? "기타 / 직접 입력" : value) + "</option>").join("") +
-        '</select><div id="requisition-custom-wrap" class="mt-4"' + (data.product_type === "기타" ? "" : " hidden") + '><label class="form-label" for="requisition-input-product_type_custom">제품 유형 직접 입력 *</label>' + input("product_type_custom", "제품 유형을 입력하세요") + "</div>";
+        '</select><div id="requisition-detail-wrap" class="mt-4"' + (data.product_type === "스킨케어" ? "" : " hidden") + '><label class="form-label" for="requisition-input-product_type_detail">스킨케어 세부 유형</label>' +
+        '<select class="form-control" id="requisition-input-product_type_detail" data-field="product_type_detail"><option value="">선택 안 함</option>' +
+        options.skincare_types.map((value) => '<option value="' + value + '"' + (data.product_type_detail === value ? " selected" : "") + ">" + value + "</option>").join("") + "</select></div>" +
+        '<div id="requisition-custom-wrap" class="mt-4"' + (data.product_type === "기타" ? "" : " hidden") + '><label class="form-label" for="requisition-input-product_type_custom">제품 유형 직접 입력 *</label>' + input("product_type_custom", "제품 유형을 입력하세요") + "</div>";
     } else if (key === "request_source") {
       control = '<div class="requisition-choice-buttons" role="radiogroup" aria-label="요청 구분">' + ["고객사 요청", "자사기획"].map((value, index) =>
         '<label class="requisition-choice' + (data[key] === value ? ' is-selected' : '') + '"><input type="radio"' + (index === 0 ? ' id="requisition-input-request_source"' : '') + ' name="requisition-request-source" data-field="request_source" value="' + value + '"' + (data[key] === value ? ' checked' : '') + '><span>' + value + '</span></label>').join("") + "</div>";
     } else if (key === "sample_request_type") {
       control = '<div class="requisition-choice-buttons" role="radiogroup" aria-label="샘플 구분">' + ["신규 샘플", "개선 샘플"].map((value, index) =>
         '<label class="requisition-choice' + (data[key] === value ? ' is-selected' : '') + '"><input type="radio"' + (index === 0 ? ' id="requisition-input-sample_request_type"' : '') + ' name="requisition-sample-type" data-field="sample_request_type" value="' + value + '"' + (data[key] === value ? ' checked' : '') + '><span>' + value + '</span></label>').join("") + "</div>";
-    } else if (key === "target_price_tier") {
-      control = '<div class="requisition-options" role="group" aria-label="목표 가격대">' + [["", "미정"], ...Object.entries(tiers)].map(([value, name]) =>
-        '<label class="form-check"><input type="radio" name="requisition-tier" data-field="target_price_tier" value="' + value + '"' + (data[key] === value ? " checked" : "") + ">" + name + "</label>").join("") + "</div>";
     } else if (kinds[key] === "required" || kinds[key] === "application") {
       const options = kinds[key] === "required" ? [["", "선택하세요"], ["true", "필요"], ["false", "불필요"]] : [["", "선택하세요"], ...["Leave-on", "Rinse-off", "기타", "확인 필요"].map((v) => [v, v])];
       control = '<select class="form-control" id="requisition-input-' + key + '" data-field="' + key + '">' + options.map(([value, label]) => '<option value="' + value + '"' + (String(get(data, key) ?? "") === value ? " selected" : "") + '>' + label + '</option>').join("") + '</select>';
@@ -112,7 +148,15 @@
       control = chips(key, key === "export_countries" ? "국가 선택 또는 입력" : labels[key] + " 입력");
       if (key === "buyer_prohibited_ingredients") control += '<p class="form-help">바이어가 사용하지 말라고 지정한 원료를 입력해요.</p>' +
         (data.regulatory_restricted_ingredients.length ? '<p class="form-help">규제 검토 대상: ' + escape(data.regulatory_restricted_ingredients.join(", ")) + " · 규제 확인 필요</p>" : "");
+    } else if (key === "product_development.spf" || key === "product_development.pa") {
+      control = input(key, key.endsWith("spf") ? "예: SPF50+ (원문 표기 그대로)" : "예: PA++++ (원문 표기 그대로)");
     } else control = input(key, labels[key] + " 입력");
+    if (editing() && key === "product_development.container_reference") {
+      control += '<p class="form-help">용기 관련 참고값이에요. AI 제형 모델링의 용기 적합성(대체 권장 용기)은 이후 단계에서 이 칸에 참고값으로 반영돼요.</p>';
+    }
+    if (editing() && key === "rnd_check_requests") {
+      control += '<p class="form-help">연구소에 확인을 요청할 사항이에요. 인허가 규제 확인사항 반영은 이후 단계에서 연결돼요.</p>';
+    }
     const provenance = (data.field_provenance || []).find((item) => item.field_key === key);
     let reviewStatus = provenance ? provenance.review_status : "";
     if (requiredMissing) reviewStatus = "missing";
@@ -121,11 +165,50 @@
       if (reviewStatus === "not_applicable" && !required) control = '<p class="requisition-field-value">해당 없음</p>';
       control += '<small class="text-caption requisition-review-status requisition-review-status--' + escape(reviewStatus) + '">' + ({ confirmed: "✓ 확인 완료", needs_review: "⚠ 확인필요", missing: "미입력", not_applicable: "해당 없음", user_edited: "✓ 사용자 수정" }[reviewStatus] || "") + '</small>';
     }
-    return '<div class="form-group' + (wideNoteFields.has(key) ? ' requisition-field-wide requisition-field-note' : '') + '" id="requisition-field-' + key + '">' +
-      (editing() && key !== "target_price_tier" ? '<label class="form-label" for="requisition-input-' + key + '">' : '<p class="form-label">') +
+    const labelled = editing() && !compositeFields.has(key) && !(key === "customer" && documentProject);
+    return '<div class="form-group' + (wideNoteFields.has(key) ? ' requisition-field-wide requisition-field-note' : wideFields.has(key) ? ' requisition-field-wide' : '') + '" id="requisition-field-' + key + '">' +
+      (labelled ? '<label class="form-label" for="requisition-input-' + key + '">' : '<p class="form-label">') +
       labels[key] + (required ? ' <span class="is-required" aria-label="필수">*</span>' : "") +
-      (editing() && key !== "target_price_tier" ? "</label>" : "</p>") + '<div class="requisition-field-content">' + control +
+      (labelled ? "</label>" : "</p>") + '<div class="requisition-field-content">' + control +
       '<p class="form-error" id="requisition-error-' + key + '" hidden></p></div></div>';
+  }
+  function currencyOptions(selected) {
+    const list = options.currencies.includes(selected) || !selected ? options.currencies : [...options.currencies, selected];
+    return list.map((code) => '<option value="' + escape(code) + '"' + (code === selected ? " selected" : "") + ">" + escape(code) + "</option>").join("");
+  }
+  function pricesEditor(data) {
+    return '<div class="requisition-rows">' + data.target_prices.map((item, index) => '<div class="requisition-row requisition-price-row">' +
+      '<input class="form-control" type="number" inputmode="decimal" min="0" step="any" id="requisition-price-amount-' + index + '" data-price="' + index + '" data-prop="amount" value="' + escape(item.amount ?? "") + '" placeholder="금액" aria-label="목표 가격 ' + (index + 1) + ' 금액">' +
+      '<select class="form-control" data-price="' + index + '" data-prop="currency" aria-label="목표 가격 ' + (index + 1) + ' 통화">' + currencyOptions(item.currency) + "</select>" +
+      '<button type="button" class="btn btn-secondary btn-sm" data-remove-price="' + index + '" aria-label="목표 가격 ' + (index + 1) + ' 삭제">삭제</button></div>').join("") + "</div>" +
+      '<button type="button" class="btn btn-soft btn-sm" id="requisition-add-price" data-add-price>+ 가격대 추가</button>' + legacyNote(data) +
+      '<p class="form-help">가격대마다 금액과 통화를 입력해요. 여러 가격대의 샘플을 함께 요청할 수 있어요.</p>';
+  }
+  function conceptRow(item, index) {
+    const label = escape(item.name || "원료 " + (index + 1));
+    return '<div class="requisition-row requisition-concept-row">' +
+      '<input class="form-control" id="requisition-concept-name-' + index + '" data-concept="' + index + '" data-prop="name" maxlength="300" value="' + escape(item.name) + '" placeholder="원료명 (INCI 등)" aria-label="원료명">' +
+      '<select class="form-control" data-concept="' + index + '" data-prop="must_contain" aria-label="' + label + ' 함유 필수 여부">' +
+      [["", "함유 필수 여부 미확인"], ["true", "함유 필수"], ["false", "함유 필수 아님"]].map(([value, text]) =>
+        '<option value="' + value + '"' + (String(item.must_contain ?? "") === value ? " selected" : "") + ">" + text + "</option>").join("") + "</select>" +
+      '<input class="form-control" data-concept="' + index + '" data-prop="efficacy_tags" maxlength="600" value="' + escape(item.efficacy_tags.join(", ")) + '" placeholder="효능 태그 (쉼표로 구분)" aria-label="' + label + ' 효능 태그">' +
+      '<button type="button" class="btn btn-secondary btn-sm" data-remove-concept="' + index + '" aria-label="' + label + ' 삭제">삭제</button></div>';
+  }
+  function conceptEditor(data) {
+    return Object.entries(options.concept_kinds).map(([kind, title]) => {
+      const rows = data.ingredients.concept.map((item, index) => [item, index]).filter(([item]) => item.kind === kind);
+      return '<div class="requisition-concept-group"><p class="requisition-concept-title">' + escape(title) + "</p>" +
+        (rows.length ? '<div class="requisition-rows">' + rows.map(([item, index]) => conceptRow(item, index)).join("") + "</div>" : '<p class="form-help">아직 없어요.</p>') +
+        '<button type="button" class="btn btn-soft btn-sm" id="requisition-add-concept-' + kind + '" data-add-concept="' + kind + '">+ ' + escape(title) + " 추가</button></div>";
+    }).join("") + '<p class="form-help">함유 필수 여부를 모르면 ‘미확인’으로 두세요. 효능 태그는 쉼표로 구분해 자유롭게 입력해요.</p>';
+  }
+  function viscosityEditor(data) {
+    const levels = options.viscosity_levels, level = data.product_development.viscosity_level;
+    return '<select class="form-control" id="requisition-input-product_development.viscosity_level" data-field="product_development.viscosity_level" aria-label="점도 선택값"' + (levels.length ? "" : " disabled") + ">" +
+      (levels.length ? '<option value="">선택 안 함</option>' + levels.map((value) => '<option value="' + escape(value) + '"' + (level === value ? " selected" : "") + ">" + escape(value) + "</option>").join("")
+        : '<option value="">선택값 확정 전</option>') + "</select>" +
+      '<input class="form-control mt-3" id="requisition-input-product_development.viscosity" data-field="product_development.viscosity" maxlength="10000" value="' + escape(data.product_development.viscosity) + '" placeholder="점도를 서술형으로 입력" aria-label="점도 서술">' +
+      (levels.length ? "" : '<p class="form-help">점도 드롭다운 값 목록은 아직 확정 전이에요. 지금은 서술형으로 입력해 주세요.</p>');
   }
   $("section-tabs").innerHTML = sectionTitles.map((title, index) =>
     '<button type="button" class="tab" id="requisition-section-tab-' + index + '" role="tab" aria-controls="requisition-section-' + index + '" aria-selected="false" tabindex="-1" data-section="' + index + '">' + escape(title) + '</button>').join("");
@@ -154,6 +237,7 @@
     selectSection(next, true);
   });
   function render() {
+    if (!hasDocument()) documentProject = null;
     const choosingMode = state === "upload" || state === "manual";
     $("modes").hidden = !choosingMode;
     ["auto", "manual"].forEach((mode) => {
@@ -197,6 +281,7 @@
     const data = current();
     if (!data) return;
     const required = missing(data), checks = reviews(data);
+    $("document-project").textContent = documentProject ? projectLabel(documentProject) : "미연결 (프로젝트 선택 전 작성)";
     $("method").textContent = methods[data.creation_method];
     $("count-label").textContent = editing() ? "채운 항목" : "입력 완료";
     $("count").textContent = Object.keys(labels).filter((key) => filled(get(data, key)) && !(key === "product_type" && required.includes(key))).length + " / " + definitions.length;
@@ -267,7 +352,7 @@
           reader.readAsDataURL(file);
         });
         if (draft !== activeDraft || !editing()) return;
-        activeDraft.reference_files.push({ name: file.name, size: file.size, data_url: dataUrl });
+        activeDraft.reference_files.push({ name: file.name, size: file.size, type: file.type || "", data_url: dataUrl });
       }
       markEdited("reference_files");
     } catch (error) { notice(error.message); }
@@ -329,13 +414,31 @@
   });
   $("document").addEventListener("input", (event) => {
     const el = event.target, key = el.dataset.field;
+    if (editing() && el.dataset.price !== undefined) {
+      const item = draft.target_prices[Number(el.dataset.price)];
+      item[el.dataset.prop] = el.dataset.prop === "amount" ? (el.value === "" ? null : Number(el.value)) : el.value;
+      markEdited("target_prices");
+      updateSummary();
+      return;
+    }
+    if (editing() && el.dataset.concept !== undefined) {
+      const item = draft.ingredients.concept[Number(el.dataset.concept)], prop = el.dataset.prop;
+      item[prop] = prop === "must_contain" ? (el.value === "" ? null : el.value === "true")
+        : prop === "efficacy_tags" ? [...new Set(el.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))] : el.value;
+      markEdited("ingredients.concept");
+      updateSummary();
+      return;
+    }
     if (!editing() || !key) return;
     set(draft, key, kinds[key] === "required" ? (el.value === "" ? null : el.value === "true") : el.value);
     markEdited(key);
     if (key === "product_type") {
       $("custom-wrap").hidden = el.value !== "기타";
       if (el.value !== "기타") { draft.product_type_custom = ""; $("input-product_type_custom").value = ""; }
+      $("detail-wrap").hidden = el.value !== "스킨케어";
+      if (el.value !== "스킨케어") { draft.product_type_detail = ""; $("input-product_type_detail").value = ""; }
     }
+    if (key === "product_type_detail") markEdited("product_type");
     if (key === "product_type_custom") markEdited("product_type");
     el.removeAttribute("aria-invalid");
     el.classList.remove("is-error");
@@ -351,6 +454,27 @@
     if (country) {
       $("input-export_countries").value = country.dataset.country;
       addChip("export_countries");
+      return;
+    }
+    const addPrice = event.target.closest("[data-add-price]"), removePrice = event.target.closest("[data-remove-price]");
+    const addConcept = event.target.closest("[data-add-concept]"), removeConcept = event.target.closest("[data-remove-concept]");
+    if (addPrice || removePrice || addConcept || removeConcept) {
+      const key = addPrice || removePrice ? "target_prices" : "ingredients.concept";
+      let focusId;
+      if (addPrice) {
+        if (draft.target_prices.length >= 10) return notice("목표 가격대는 10개까지 넣을 수 있어요.");
+        draft.target_prices.push({ amount: null, currency: (draft.target_prices.at(-1) || {}).currency || options.currencies[0] });
+        focusId = "requisition-price-amount-" + (draft.target_prices.length - 1);
+      } else if (removePrice) draft.target_prices.splice(Number(removePrice.dataset.removePrice), 1);
+      else if (addConcept) {
+        if (draft.ingredients.concept.length >= 50) return notice("컨셉 원료는 50개까지 넣을 수 있어요.");
+        draft.ingredients.concept.push({ name: "", kind: addConcept.dataset.addConcept, must_contain: null, efficacy_tags: [] });
+        focusId = "requisition-concept-name-" + (draft.ingredients.concept.length - 1);
+      } else draft.ingredients.concept.splice(Number(removeConcept.dataset.removeConcept), 1);
+      markEdited(key);
+      $("field-" + key).outerHTML = field(key);
+      updateSummary();
+      (document.getElementById(focusId) || $(addPrice || removePrice ? "add-price" : "add-concept-" + (addConcept ? addConcept.dataset.addConcept : "necessary"))).focus();
       return;
     }
     const add = event.target.closest("[data-add]"), remove = event.target.closest("[data-remove]");
@@ -413,6 +537,7 @@
   function selectMode(mode) {
     if (!["upload", "manual"].includes(state)) return;
     if (mode === "manual" && state !== "manual") {
+      if (!hasDocument()) documentProject = project;
       draft = draft || blank();
       if (!draft.customer) draft.customer = $("setting-customer").value.trim();
       transition("manual");
@@ -460,6 +585,14 @@
       addChip(key);
     }
     for (const key of ["customer", "product_name", "product_type_custom", "benchmark_product_name"]) draft[key] = draft[key].trim();
+    const invalid = cleanLists(draft);
+    if (invalid) {
+      activeSection = sections.findIndex(([, fields]) => fields.some(([key]) => key === invalid[0]));
+      render();
+      $("field-" + invalid[0]).scrollIntoView({ block: "center" });
+      (document.querySelector("#requisition-field-" + CSS.escape(invalid[0]) + " input, #requisition-field-" + CSS.escape(invalid[0]) + " button") || $("title")).focus();
+      return notice(invalid[1]);
+    }
     const absent = missing(draft);
     if (absent.length) {
       activeSection = sections.findIndex(([, fields]) => fields.some(([key]) => key === absent[0]));
@@ -476,16 +609,27 @@
       return notice("필수 항목을 확인해 주세요: " + absent.map((key) => labels[key]).join(", "));
     }
     if (state === "edit") {
-      const keys = [...Object.keys(labels), "product_type_custom", "benchmark_product_name", "reference_files"];
+      const keys = [...inputPaths, "customer", "reference_files"];
       if (keys.some((key) => JSON.stringify(get(draft, key)) !== JSON.stringify(get(saved, key)))) {
         draft.creation_method = saved.creation_method.startsWith("auto") ? "auto_edited" : "manual_edited";
-        draft.version = saved.version + 1;
       }
     }
     saved = clone(draft);
     draft = null;
     transition("result");
   });
+  // 목표 가격대·컨셉 원료 정리: 빈 줄은 빼고, 잘못된 금액·중복은 알려 줍니다. [필드 키, 안내] 또는 null.
+  function cleanLists(doc) {
+    doc.target_prices = doc.target_prices.filter((item) => item.amount !== null && item.amount !== "");
+    if (doc.target_prices.some((item) => !Number.isFinite(item.amount) || item.amount <= 0)) return ["target_prices", "목표 가격대 금액은 0보다 큰 숫자로 입력해 주세요."];
+    const prices = doc.target_prices.map((item) => item.amount + " " + item.currency);
+    if (new Set(prices).size !== prices.length) return ["target_prices", "같은 목표 가격대(금액·통화)가 두 번 들어 있어요."];
+    doc.ingredients.concept = doc.ingredients.concept.map((item) => ({ ...item, name: item.name.trim() })).filter((item) => item.name);
+    const names = doc.ingredients.concept.map((item) => item.name.toLocaleLowerCase());
+    const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+    if (duplicate) return ["ingredients.concept", "같은 컨셉 원료가 두 번 들어 있어요 (필수·선호 중 하나로만): " + doc.ingredients.concept[names.indexOf(duplicate)].name];
+    return null;
+  }
   async function convert(files) {
     if (state !== "upload") return;
     notice();
@@ -504,6 +648,7 @@
     body.append("customer", $("setting-customer").value.trim());
     body.append("source_language", sourceLanguage);
     body.append("target_language", $("target-language").value);
+    if (!hasDocument()) documentProject = project;
     const requestController = new AbortController();
     controller = requestController;
     const timer = setTimeout(() => requestController.abort("timeout"), 150000);
@@ -515,6 +660,7 @@
       if (!response.ok) throw new Error(payload.error || "변환하지 못했어요. 잠시 후 다시 시도해 주세요.");
       if (controller !== requestController) return;
       saved = payload.document;
+      if (documentProject) saved.customer = documentProject.customer.name;   // 고객사는 연결 프로젝트 기준 (원문 표기는 출처에 남음)
       originalFile = file; // 원본은 페이지 메모리에서만 보존합니다.
       transition("result");
     } catch (error) {
@@ -595,10 +741,10 @@
         '</td><td class="title">DEVELOPMENT<br>REQUEST</td></tr></table>' +
         '<table class="info"><tr><td style="width: 55%;"><span class="label">Request to</span><br><span class="bold" style="font-size: 11pt;">연구소 (R&amp;D Center)</span><br>제품 개발 요청서 · 연구소 전달용' +
           (filled(data.customer) ? '<br><span class="muted">고객사: ' + escape(data.customer) + '</span>' : '') + '</td>' +
-          '<td><table class="meta">' + printMeta("Document No.", data.document_id || "미지정") + printMeta("Date", issuedDate) +
+          '<td><table class="meta">' + printMeta("Version", "저장 전 (서버 버전 없음)") + printMeta("Date", issuedDate) +
           printMeta("Product", data.product_name || "") + printMeta("Prepared by", preparedBy || "-") + printMeta("Method", methods[data.creation_method] || "미지정") + '</table></td></tr></table>' +
         '<table class="terms"><tr>' + termCell("샘플 구분", pdfValue("sample_request_type")) + termCell("제품 유형", pdfValue("product_type")) +
-          termCell("목표 가격대", pdfValue("target_price_tier")) + termCell("수출 대상국", listText(fieldValue(data, "export_countries"))) + '</tr></table>' +
+          termCell("목표 가격대", pdfValue("target_prices")) + termCell("수출 대상국", listText(fieldValue(data, "export_countries"))) + '</tr></table>' +
         sections.map(printableSection).join('') + referenceSection +
         '<table class="notes"><tr><td><p class="sub">Notes</p><ol>' +
           '<li>본 요청서의 항목은 바이어 요청 원본을 연구소 검토용으로 정리한 것이며, 원문과 다른 해석이 있을 수 있습니다.</li>' +
@@ -606,7 +752,7 @@
           '<li>수출 대상국별 규제 적합성(금지·제한 원료, 표시사항)은 별도 확인이 필요합니다.</li></ol></td></tr></table>' +
         '<table class="sign"><tr><td class="line" style="width: 42%;">Prepared by<br><span class="bold">' + escape(preparedBy || company.name) + '</span><br><span class="muted">' + escape(company.name) + ' · Overseas Sales</span></td>' +
           '<td style="width: 16%;">&nbsp;</td><td class="line">Reviewed by<br><span class="bold">&nbsp;</span><br><span class="muted">R&amp;D Center · Signature / Date</span></td></tr></table>' +
-        '<div class="doc-footer">' + escape(company.name) + ' &middot; Development Request ' + escape(data.document_id || "") + ' &middot; ' + issuedDate + '</div>';
+        '<div class="doc-footer">' + escape(company.name) + ' &middot; Development Request &middot; 저장 전 문서 &middot; ' + issuedDate + '</div>';
       const printStyles = `
         @page { size: A4; margin: 16mm 15mm 20mm 15mm; }
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -674,5 +820,222 @@
   window.addEventListener("beforeunload", (event) => {
     if (saved || editing() || state === "loading" || originalFile) { event.preventDefault(); event.returnValue = ""; }
   });
+  /* 프로젝트 선택 (고객사 → 프로젝트) — API: docs/api_contract.md 5장 */
+  const PROJECT_KEY = "cosmoa.requisition.project";
+  const stageNames = { proposal: "제안", development: "개발", order: "발주", production: "생산", shipping: "선적", completed: "완료" };
+  const stateNames = { active: "진행", hold: "홀드", drop: "드롭" };
+  let customers = [], customerNext = null, projects = [], projectNext = null, selectedCustomerId = null;
+  let customerQuery = "", customerRequest = 0, projectRequest = 0, searchTimer = null;
+  const idOf = (item) => item ? item.id : null;
+  function projectLabel(item) { return item.customer.name + " › " + item.name; }
+  function projectMeta(item) {
+    return "단계 " + (stageNames[item.stage] || item.stage) + " · 상태 " + (stateNames[item.state] || item.state) + " · " + (item.due_date ? "납기 " + item.due_date : "납기 미정");
+  }
+  function projectError(message = "", focus = null) {
+    $("project-error").textContent = message;
+    $("project-error").hidden = !message;
+    if (focus) focus.focus();
+  }
+  function apiMessage(result) {
+    if (result.status === 401) return "로그인이 만료됐어요. 페이지를 새로 고친 뒤 다시 로그인해 주세요.";
+    return (result.error && result.error.message) || "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
+  }
+  function showPicker(open) {
+    $("project-picker").hidden = !open;
+    $("project-toggle").setAttribute("aria-expanded", String(open));
+    $("project-toggle").textContent = open && project ? "닫기" : project ? "프로젝트 변경" : "프로젝트 선택";
+    $("project-toggle").hidden = open && !project;
+  }
+  function renderProject() {
+    $("project-current").textContent = project ? projectLabel(project) : "프로젝트를 선택하지 않았어요";
+    $("project-meta").textContent = project ? projectMeta(project) : "고객사와 프로젝트를 선택하면 이 요청서가 그 프로젝트에 연결돼요.";
+    $("project").classList.toggle("has-project", Boolean(project));
+    showPicker(!$("project-picker").hidden || !project);
+  }
+  // 작성 중인 요청서가 다른 프로젝트로 넘어가지 않도록 바꾸기 전에 확인합니다. (상태는 바꾸지 않음)
+  function projectChangeAllowed(next) {
+    if (!hasDocument()) return true;
+    if (documentProject) {
+      return idOf(next) === documentProject.id || confirm("작성 중인 요청서는 ‘" + projectLabel(documentProject) + "’ 프로젝트에 연결돼 있어요.\n" +
+        "프로젝트를 바꾸면 작성 중인 요청서와 원본 파일이 초기화돼요. 계속할까요?\n(내용이 필요하면 취소한 뒤 먼저 PDF로 저장해 주세요.)");
+    }
+    return !next || confirm("작성 중인 요청서를 ‘" + projectLabel(next) + "’ 프로젝트에 연결할까요?\n" +
+      "고객사 칸은 연결 프로젝트의 고객사(‘" + next.customer.name + "’)로 바뀌어요.");
+  }
+  function commitProject(next) {
+    if (hasDocument()) {
+      if (documentProject && idOf(next) !== documentProject.id) {
+        if (controller) controller.abort();
+        controller = null;
+        saved = draft = originalFile = null;
+        activeSection = 0;
+        $("file").value = "";
+        transition("upload");   // render() 가 documentProject 를 비웁니다.
+      } else if (!documentProject && next) {
+        documentProject = next;
+        for (const doc of [saved, draft]) if (doc) doc.customer = next.customer.name;   // 고객사는 연결 프로젝트 기준
+        if (editing() || state === "result") render();
+      }
+    }
+    project = next;
+    try { next ? sessionStorage.setItem(PROJECT_KEY, String(next.id)) : sessionStorage.removeItem(PROJECT_KEY); } catch { /* 저장 불가 환경 무시 */ }
+    syncSettingCustomer();
+    renderProject();
+    updateSummary();
+  }
+  // 변환 설정의 고객사: 프로젝트를 고르면 그 고객사(id 로 연결)로 고정하고, 이름을 따로 입력받지 않습니다.
+  function syncSettingCustomer() {
+    const el = $("setting-customer");
+    if (project) {
+      el.value = project.customer.name;
+      el.readOnly = true;
+      $("setting-customer-help").textContent = "선택한 프로젝트의 고객사로 변환해요. 바꾸려면 위에서 프로젝트를 변경해 주세요.";
+    } else {
+      if (el.readOnly) el.value = "";
+      el.readOnly = false;
+      $("setting-customer-help").textContent = "입력한 고객사를 우선 적용해요. 프로젝트를 고르면 그 고객사로 바뀌어요.";
+    }
+  }
+  function fillSelect(el, items, placeholder, label, selected) {
+    el.innerHTML = '<option value="">' + escape(placeholder) + "</option>" + items.map((item) =>
+      '<option value="' + item.id + '"' + (item.id === selected ? " selected" : "") + ">" + escape(label(item)) + "</option>").join("");
+  }
+  function renderCustomers() {
+    fillSelect($("customer-select"), customers, customers.length ? "고객사를 선택하세요" : "등록된 고객사가 없어요 · 새 고객사를 만들어 주세요", (item) => item.name, selectedCustomerId);
+    $("customer-more").hidden = !customerNext;
+  }
+  function renderProjects() {
+    const el = $("project-select");
+    el.disabled = !selectedCustomerId;
+    $("project-new").disabled = !selectedCustomerId;
+    fillSelect(el, projects, !selectedCustomerId ? "먼저 고객사를 선택하세요" : projects.length ? "프로젝트를 선택하세요" : "프로젝트가 없어요 · 새 프로젝트를 만들어 주세요",
+      (item) => item.name + " · " + (stageNames[item.stage] || item.stage) + "/" + (stateNames[item.state] || item.state) + (item.due_date ? " · 납기 " + item.due_date : ""), idOf(project));
+    $("project-more").hidden = !projectNext;
+  }
+  async function loadCustomers(append = false) {
+    const request = ++customerRequest;
+    const keep = customers.find((item) => item.id === selectedCustomerId) || (project && project.customer);
+    const result = await Common.api("GET", "/api/customers?limit=100" + (customerQuery ? "&q=" + encodeURIComponent(customerQuery) : "") +
+      (append && customerNext ? "&after=" + customerNext : ""));
+    if (request !== customerRequest) return;   // 그 사이 검색어가 바뀜
+    if (!result.ok) return projectError(apiMessage(result));
+    customers = append ? [...customers, ...result.data.items] : result.data.items;
+    customerNext = result.data.next_after;
+    if (keep && keep.id === selectedCustomerId && !customers.some((item) => item.id === keep.id)) customers.unshift(keep);   // 선택한 고객사는 검색과 상관없이 유지
+    renderCustomers();
+  }
+  async function loadProjects(append = false) {
+    const request = ++projectRequest, customerId = selectedCustomerId;
+    if (!append) { projects = []; projectNext = null; }
+    renderProjects();
+    if (!customerId) return;
+    const result = await Common.api("GET", "/api/customers/" + customerId + "/projects?limit=100" + (append && projectNext ? "&before=" + projectNext : ""));
+    if (request !== projectRequest) return;   // 그 사이 다른 고객사를 고름
+    if (!result.ok) return projectError(apiMessage(result));
+    projects = append ? [...projects, ...result.data.items] : result.data.items;
+    projectNext = result.data.next_before;
+    if (project && project.customer.id === customerId && !projects.some((item) => item.id === project.id)) projects.unshift(project);
+    renderProjects();
+  }
+  async function selectCustomer(customerId) {
+    projectError();
+    if (customerId === selectedCustomerId) return true;
+    if (project && !projectChangeAllowed(null)) { renderCustomers(); return false; }
+    selectedCustomerId = customerId;
+    if (project) commitProject(null);
+    toggleCreate("project", false);
+    renderCustomers();
+    await loadProjects();
+    return true;
+  }
+  $("project-toggle").addEventListener("click", () => {
+    showPicker($("project-picker").hidden);
+    if (!$("project-picker").hidden) $("customer-select").focus();
+  });
+  $("customer-select").addEventListener("change", (event) => selectCustomer(Number(event.target.value) || null));
+  $("project-select").addEventListener("change", (event) => {
+    projectError();
+    const next = projects.find((item) => item.id === Number(event.target.value)) || null;
+    if (!projectChangeAllowed(next)) { renderProjects(); return; }
+    commitProject(next);
+    if (next) { showPicker(false); $("project-toggle").focus(); }
+  });
+  $("customer-search").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { customerQuery = $("customer-search").value.trim(); loadCustomers(); }, 250);
+  });
+  $("customer-more").addEventListener("click", () => loadCustomers(true));
+  $("project-more").addEventListener("click", () => loadProjects(true));
+  function toggleCreate(kind, open) {
+    $(kind + "-create").hidden = !open;
+    $(kind + "-new").setAttribute("aria-expanded", String(open));
+    if (open) $(kind + "-name").focus();
+    else { $(kind + "-name").value = ""; if (kind === "project") $("project-due").value = ""; }
+  }
+  $("customer-new").addEventListener("click", () => toggleCreate("customer", $("customer-create").hidden));
+  $("project-new").addEventListener("click", () => toggleCreate("project", $("project-create").hidden));
+  $("customer-cancel").addEventListener("click", () => toggleCreate("customer", false));
+  $("project-cancel").addEventListener("click", () => toggleCreate("project", false));
+  async function busy(button, task) {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await task(); } finally { button.disabled = false; }
+  }
+  $("customer-save").addEventListener("click", () => busy($("customer-save"), async () => {
+    projectError();
+    const name = $("customer-name").value.trim();
+    if (!name) return projectError("고객사명을 입력해 주세요.", $("customer-name"));
+    const found = await Common.api("GET", "/api/customers?limit=100&q=" + encodeURIComponent(name));
+    const same = found.ok && found.data.items.find((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+    if (same && !confirm("같은 이름의 고객사 ‘" + same.name + "’가 이미 있어요. 그래도 새로 만들까요?")) return;
+    if (project && !projectChangeAllowed(null)) return;
+    const result = await Common.api("POST", "/api/customers", { name });
+    if (!result.ok) return projectError(apiMessage(result), $("customer-name"));
+    toggleCreate("customer", false);
+    await loadCustomers();
+    if (!customers.some((item) => item.id === result.data.customer.id)) customers.push(result.data.customer);
+    await selectCustomer(result.data.customer.id);
+    toggleCreate("project", true);   // 새 고객사에는 프로젝트가 없으므로 바로 만들 수 있게
+  }));
+  $("project-save").addEventListener("click", () => busy($("project-save"), async () => {
+    projectError();
+    const name = $("project-name").value.trim(), due = $("project-due").value;
+    if (!selectedCustomerId) return projectError("먼저 고객사를 선택해 주세요.", $("customer-select"));
+    if (!name) return projectError("프로젝트(제품)명을 입력해 주세요.", $("project-name"));
+    const customer = customers.find((item) => item.id === selectedCustomerId) || { name: "" };
+    if (!projectChangeAllowed({ id: -1, name, customer })) return;
+    const result = await Common.api("POST", "/api/customers/" + selectedCustomerId + "/projects", { name, due_date: due || null });
+    if (!result.ok) return projectError(apiMessage(result), $("project-name"));
+    toggleCreate("project", false);
+    commitProject(result.data.project);
+    await loadProjects();
+    showPicker(false);
+    $("project-toggle").focus();
+  }));
+  ["customer", "project"].forEach((kind) => {
+    $(kind + "-create").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing && event.target.tagName === "INPUT") { event.preventDefault(); $(kind + "-save").click(); }
+      if (event.key === "Escape") { event.stopPropagation(); toggleCreate(kind, false); $(kind + "-new").focus(); }
+    });
+  });
+  async function initProject() {
+    let stored = null;
+    try { stored = Number(sessionStorage.getItem(PROJECT_KEY)) || null; } catch { /* 저장 불가 환경 무시 */ }
+    if (stored) {   // 새로 고침 후 같은 탭에서 고른 프로젝트를 다시 확인 (없어졌거나 보관됐으면 선택 해제)
+      const result = await Common.api("GET", "/api/projects/" + stored);
+      if (result.ok && !result.data.project.archived) {
+        selectedCustomerId = result.data.project.customer.id;
+        commitProject(result.data.project);
+      } else if (result.ok || result.status === 404) commitProject(null);
+      else projectError(apiMessage(result));
+    }
+    renderProject();
+    await loadCustomers();
+    await loadProjects();
+  }
+  // 저장용 payload (계약 v1) — 저장 버튼 연결(다음 작업)과 테스트에서 씁니다.
+  // 화면에서 지금 고른 프로젝트가 아니라 요청서의 연결 프로젝트(documentProject)로 만듭니다.
+  root.buildRequisitionPayload = () => RequisitionPayload.build(current(), documentProject, options);
   render();
+  initProject();
 })();

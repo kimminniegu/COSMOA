@@ -6,6 +6,7 @@
 {% block content %}
 <div id="requisition-app" data-convert-url="{{ url_for('requisition.requisition_convert') }}">
   <script type="application/json" id="requisition-schema">{{ request_sections | tojson }}</script>
+  <script type="application/json" id="requisition-options">{{ request_options | tojson }}</script>
   <div class="page-header">
     <div>
       <h1 class="page-title" id="requisition-title" tabindex="-1">개발요청서 분석</h1>
@@ -16,6 +17,52 @@
       <a class="btn btn-surface" href="{{ url_for('home') }}">홈으로</a>
     </div>
   </div>
+  <section class="card requisition-project" id="requisition-project" aria-labelledby="requisition-project-label">
+    <div class="card-body">
+      <div class="requisition-project-bar">
+        <div class="requisition-project-current">
+          <p class="text-caption" id="requisition-project-label">연결 프로젝트</p>
+          <p class="requisition-project-name" id="requisition-project-current" aria-live="polite">프로젝트를 선택하지 않았어요</p>
+          <p class="text-caption" id="requisition-project-meta"></p>
+        </div>
+        <button type="button" class="btn btn-secondary" id="requisition-project-toggle" aria-expanded="false" aria-controls="requisition-project-picker">프로젝트 선택</button>
+      </div>
+      <div class="requisition-project-picker" id="requisition-project-picker" hidden>
+        <div class="form-group">
+          <label class="form-label" for="requisition-customer-select">고객사</label>
+          <input class="form-control requisition-customer-search" type="search" id="requisition-customer-search" maxlength="100" placeholder="고객사 이름으로 찾기" aria-label="고객사 검색" autocomplete="off">
+          <div class="requisition-project-row">
+            <select class="form-control" id="requisition-customer-select"><option value="">고객사를 선택하세요</option></select>
+            <button type="button" class="btn btn-soft" id="requisition-customer-new">새 고객사</button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="requisition-customer-more" hidden>고객사 더 보기</button>
+          <div class="requisition-project-create" id="requisition-customer-create" hidden>
+            <label class="form-label" for="requisition-customer-name">새 고객사명 <span class="is-required" aria-label="필수">*</span></label>
+            <input class="form-control" id="requisition-customer-name" maxlength="200" autocomplete="off">
+            <div class="requisition-project-actions"><button type="button" class="btn btn-secondary btn-sm" id="requisition-customer-cancel">취소</button><button type="button" class="btn btn-primary btn-sm" id="requisition-customer-save">고객사 만들기</button></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="requisition-project-select">프로젝트(제품)</label>
+          <div class="requisition-project-row">
+            <select class="form-control" id="requisition-project-select" disabled><option value="">먼저 고객사를 선택하세요</option></select>
+            <button type="button" class="btn btn-soft" id="requisition-project-new" disabled>새 프로젝트</button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="requisition-project-more" hidden>프로젝트 더 보기</button>
+          <div class="requisition-project-create" id="requisition-project-create" hidden>
+            <label class="form-label" for="requisition-project-name">새 프로젝트(제품)명 <span class="is-required" aria-label="필수">*</span></label>
+            <input class="form-control" id="requisition-project-name" maxlength="200" autocomplete="off">
+            <label class="form-label" for="requisition-project-due">납기일 (선택)</label>
+            <input class="form-control" type="date" id="requisition-project-due">
+            <p class="form-help">새 프로젝트는 ‘제안 · 진행’ 상태로 만들어져요.</p>
+            <div class="requisition-project-actions"><button type="button" class="btn btn-secondary btn-sm" id="requisition-project-cancel">취소</button><button type="button" class="btn btn-primary btn-sm" id="requisition-project-save">프로젝트 만들기</button></div>
+          </div>
+        </div>
+        <p class="form-error" id="requisition-project-error" role="alert" hidden></p>
+        <p class="form-help">작성 중에 프로젝트를 바꾸면 확인 후 작성 중인 요청서를 초기화해요. 요청서 저장 기능은 다음 단계에서 연결돼요.</p>
+      </div>
+    </div>
+  </section>
   <div class="card requisition-mode-card" id="requisition-modes">
     <div class="card-body">
       <div class="tabs" role="tablist" aria-label="개발요청서 작성 방식">
@@ -42,7 +89,7 @@
     <aside class="card">
       <div class="card-header"><h2 class="card-title">변환 설정</h2></div>
       <div class="card-body stack">
-        <div class="form-group"><label class="form-label" for="requisition-setting-customer">고객사</label><input class="form-control" id="requisition-setting-customer" placeholder="고객사 입력 또는 파일에서 추출" maxlength="200"><p class="form-help">입력한 고객사를 우선 적용해요.</p></div>
+        <div class="form-group"><label class="form-label" for="requisition-setting-customer">고객사</label><input class="form-control" id="requisition-setting-customer" placeholder="고객사 입력 또는 파일에서 추출" maxlength="200" aria-describedby="requisition-setting-customer-help"><p class="form-help" id="requisition-setting-customer-help">입력한 고객사를 우선 적용해요. 프로젝트를 고르면 그 고객사로 바뀌어요.</p></div>
         <div class="form-group">
           <label class="form-label" for="requisition-source-language">원문 언어</label>
           <select class="form-control" id="requisition-source-language">
@@ -71,9 +118,9 @@
     <aside class="card requisition-panel">
       <div class="card-header"><h2 class="card-title" id="requisition-panel-title">문서 정보</h2></div>
       <div class="card-body stack">
-        <dl class="requisition-summary"><div><dt>작성 방식</dt><dd id="requisition-method"></dd></div><div><dt id="requisition-count-label">입력 완료</dt><dd id="requisition-count"></dd></div></dl>
+        <dl class="requisition-summary"><div><dt>연결 프로젝트</dt><dd id="requisition-document-project"></dd></div><div><dt>문서 버전</dt><dd id="requisition-save-status">저장 전</dd></div><div><dt>작성 방식</dt><dd id="requisition-method"></dd></div><div><dt id="requisition-count-label">입력 완료</dt><dd id="requisition-count"></dd></div></dl>
         <div id="requisition-missing-wrap" hidden><p class="form-label">입력이 필요한 필수 항목</p><p id="requisition-missing" class="text-caption"></p></div>
-        <div><p class="form-label">확인 필요</p><p id="requisition-review" class="text-caption"></p></div>
+        <p class="text-caption" id="requisition-save-help">아직 서버에 저장하지 않은 문서예요. 저장하면 서버가 버전 번호를 정하고, 연구소 개발 차수와는 따로 관리돼요.</p><div><p class="form-label">확인 필요</p><p id="requisition-review" class="text-caption"></p></div>
         <div><p class="form-label">수출 검토</p><div id="requisition-export-review"></div></div>
         <div class="requisition-panel-actions"><button type="button" class="btn btn-secondary btn-block" id="requisition-secondary"></button><button type="button" class="btn btn-soft btn-block" id="requisition-erp" hidden>ERP 연동</button><button type="submit" class="btn btn-primary btn-block" id="requisition-primary"></button><p class="text-caption" id="requisition-pdf-help" hidden>버튼을 누르면 인쇄 창이 열립니다. 실제 프린터를 선택하거나 ‘PDF로 저장’을 선택해 전자 PDF로 보관할 수 있어요.</p></div>
       </div>
@@ -83,4 +130,5 @@
   <noscript><div class="alert alert-warning">개발요청서 작성에는 JavaScript가 필요해요. 브라우저 설정에서 활성화해 주세요.</div></noscript>
 </div>
 {% endblock %}
-{% block page_js %}<script src="{{ url_for('asset', filename='05_requisition/requisition.js') }}"></script>{% endblock %}
+{% block page_js %}<script src="{{ url_for('asset', filename='05_requisition/requisition_payload.js') }}"></script>
+<script src="{{ url_for('asset', filename='05_requisition/requisition.js') }}"></script>{% endblock %}

@@ -1,5 +1,8 @@
 # Render 배포 안내 (PM) — 무료 서비스 2개, 발표·시연용
 
+> ⚠ **갱신 전 문서.** 로그인이 업무 DB(Neon PostgreSQL) `users` 로 바뀌었습니다. 아래의 `COSMOA_DEMO_*`·`instance/cosmoa.db` 계정 안내는 **예전 방식**입니다.
+> production 브랜치에는 아직 마이그레이션·계정이 없고 배포 환경변수(`DATABASE_URL` 등)도 정해지지 않아 **지금 상태로는 배포 준비가 끝나지 않았습니다.** 절차는 [개발 안내](development.md) 의 다음 단계에서 정합니다.
+
 메인 대시보드와 AI 챗봇을 **같은 저장소·같은 커밋**에서 Render **Free** 웹 서비스 2개로 배포한다.
 영구 디스크·SSH·Shell 은 쓰지 않는다. 추가 호스팅 비용이 없다.
 
@@ -95,7 +98,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | | `MFDS_DB_PATH` | `/opt/render/project/src/data/regulatory/mfds_use_restriction.sqlite` |
 | | `CHATBOT_OPENAI_MODEL` | 선택, 기본 gpt-4.1 |
 | **양쪽** | `OPENAI_API_KEY` | 메인은 개발요청서 자동변환, 챗봇은 답변 생성. **메인에서 빼지 않는다** |
-| | `CHATBOT_SECRET` | 두 서비스에 **같은 값** |
+| | `CHATBOT_SECRET` | 두 서비스에 **같은 값**. 운영 전용으로 새로 만든 긴 임의 문자열 (로컬 값·주소·예시 값 재사용 금지) |
 | | `EXIM_API_KEY`, `DATA_GO_KR_KEY` | 홈 데이터 (두 서비스가 각자 수집) |
 | | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | 성분 검색·규제 API |
 | | `COSMETIC_HS_CODES`, `KOTRA_NEWS_URL` | 선택 |
@@ -135,6 +138,10 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
    - 챗봇에 성분 규제 질문 → 식약처 DB 기준 답변
    - 개발요청서 파일 변환 (메인 `OPENAI_API_KEY`) — OpenAI 사용료 발생
    - 규제 화면 스캔 이미지 OCR (한글·영문), 마진 견적서 PDF 의 한글
+7. **이름 변경 호환성 확인** (파일 이름 snake_case 통일, [개발 안내](development.md) 9-3)
+   - 로그인·각 페이지의 아이콘(`/assets/common/img/apple_touch_icon.png`)이 200 인지.
+   - 이전 주소 `/assets/common/img/apple-touch-icon.png` 는 **404** 다 (저장소 안 참조는 모두 새 주소). 이전 주소를 쓰는 외부 링크·저장된 홈 화면 아이콘이 있어 유지가 필요하면, 배포 전에 별도 우회 경로를 둘지 결정한다 (현재 없음).
+   - `/assets/02_regulatory/samples/…` 의 시연 파일 이름도 바뀌었다. 시연 자료에 파일 주소를 적어 두었다면 새 이름으로 고친다.
 
 오류 문구와 원인
 | 챗봇 창 문구 | 원인 |
