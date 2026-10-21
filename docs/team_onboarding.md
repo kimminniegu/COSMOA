@@ -7,17 +7,17 @@
 
 ## 0. 시작 전에 확인 — 준비 필요 항목
 
-아래가 준비되기 전에는 일부 단계를 진행할 수 없습니다. PM(공통 DB 담당)이 준비 여부를 공지합니다.
+아래가 준비되기 전에는 일부 단계를 진행할 수 없습니다. 공통 DB 담당 유정현이 준비 여부를 공지합니다. (PR 검토·병합 담당은 김민 PM·유정현 — README 「팀원별 담당 폴더」)
 
 | 항목 | 현재 상태 | 영향 |
 |---|---|---|
-| 공통 기반이 `develop` 에 병합 | **아직 아님** (작업은 `feature/common_foundation`) | 병합 전에 `develop` 에서 만든 브랜치에는 로그인 DB 연결·고객사·프로젝트·저장 API 가 없음 |
+| 공통 기반이 `develop` 에 병합 | **아직 아님** — PR #1(`feature/common_foundation` → `develop`) 검토 중. 검토·병합: 김민 PM·유정현 | 병합 전에 `develop` 에서 만든 브랜치에는 로그인 DB 연결·고객사·프로젝트·저장 API 가 없음 |
 | 팀원 계정 | **명령 구현됨** (`create-user`, 공통 DB 담당이 실행 — 6장). 실제 팀원 계정은 아직 만들지 않음 | 계정을 받기 전에는 로그인 확인(4장)을 할 수 없음. **`create-first-user` 는 팀원용이 아닙니다** (최초 1회, 계정이 있으면 거부) |
 | 본인 비밀번호 변경 | **구현됨** — 로그인 후 "내 계정" → [비밀번호 변경] (`/account/password`) | 첫 비밀번호를 받으면 바로 바꿉니다 (4장) |
 | 앱용 DB 접속 역할 분리 | **test·dev 적용 완료** — [DB 규칙](db_rules.md) 8장. 공통 DB 담당이 dev 앱 역할로 로그인·홈·개발요청서 화면 확인. **팀원용 역할은 아직 미생성** | 팀원마다 **본인 전용 앱 역할**(`cosmoa_app_<이니셜>`) 주소만 받음. 받은 뒤 `python -m src.common.db_admin app-role whoami --target dev` 로 확인 |
 | 테스트 DB 초기화 명령 | **없음** | 테스트 데이터가 계속 쌓임 (6장) |
 | 탭 저장 화면 연결 | **후속** — 공통 저장 API(저장·불러오기·최종본)는 구현됨, 각 탭의 저장 UI 연결은 아직 | 화면에서 만든 탭 내용은 아직 업무 DB 에 저장되지 않음. 공통 UI 배치 합의(7장) 후 탭별로 연결 |
-| production(배포) | **미적용** — 업무 DB·앱 역할 모두 | 배포 준비 전. production 접속·적용은 PM 만 |
+| production(배포) | **미적용** — 업무 DB·앱 역할 모두 | 배포 준비 전. production DB 접속·적용은 공통 DB 담당 유정현만 (배포 일정은 김민 PM 과 협의) |
 
 ---
 
@@ -74,7 +74,7 @@ if not exist .env copy .env.example .env
 | 변수 | 값 | 비고 |
 |---|---|---|
 | `FLASK_SECRET_KEY` | 본인이 만든 임의 문자열 | 로컬 세션 서명용. 비워 두면 개발용 기본값 사용 |
-| `DATABASE_URL` | PM 에게 **개별 전달** 받은 dev **앱 역할**(본인 전용 `cosmoa_app_<이니셜>`) 풀링 주소 | 로그인에 필수. 공유 dev DB(개발 전용 비밀번호·테스트용 데이터만). 팀원 역할 생성(0장) 전에는 배포하지 않음. 이 주소도 비밀값 — 다른 사람과 같이 쓰지 않음 |
+| `DATABASE_URL` | 공통 DB 담당 유정현에게 **개별 전달** 받은 dev **앱 역할**(본인 전용 `cosmoa_app_<이니셜>`) 풀링 주소 | 로그인에 필수. 공유 dev DB(개발 전용 비밀번호·테스트용 데이터만). 팀원 역할 생성(0장) 전에는 배포하지 않음. 이 주소도 비밀값 — 다른 사람과 같이 쓰지 않음 |
 | `HOME_CACHE_DB_PATH` | 그대로 (`instance/cosmoa.db`) | 홈 캐시 SQLite |
 | `MFDS_DB_PATH` | `data/regulatory/mfds_use_restriction.sqlite` | 식약처 규제 DB (README 4) |
 | 기능별 외부 API 키 | 자기 기능에 필요한 것만 | README 「3. .env 설정」 표. 없으면 5장 범위만 확인 가능 |
@@ -83,12 +83,12 @@ if not exist .env copy .env.example .env
 - **대시보드 계정**: COSMOA 화면 로그인용 이메일·비밀번호 (`users` 표, 4장). 본인이 화면에서 비밀번호를 바꿉니다.
 - **DB 앱 역할 주소**: 로컬 앱이 DB 에 접속할 때 쓰는 `DATABASE_URL` 안의 DB 계정. 고객사·프로젝트·저장본 추가와 조회만 할 수 있고, 표 삭제·수정·트리거 끄기·계정 추가는 DB 가 거부합니다. 바꾸거나 잊으면 공통 DB 담당에게 재발급을 요청합니다.
 
-일반 팀원은 **받지 않아도 되는 항목** (공통 DB 담당 전용, 필수 아님): `DATABASE_URL_DIRECT`(관리 역할 직접 주소), `DEV_DATABASE_ENDPOINT_ID`, `TEST_DATABASE_URL`, `TEST_DATABASE_ENDPOINT_ID`, `TEST_APP_DATABASE_URL`(test 앱 역할 검증용). 비워 두어도 앱 실행·로그인·기능별 테스트에는 지장이 없습니다. 업무 DB 통합 테스트를 직접 돌려야 하면 PM 과 먼저 조율합니다 (6장).
+일반 팀원은 **받지 않아도 되는 항목** (공통 DB 담당 전용, 필수 아님): `DATABASE_URL_DIRECT`(관리 역할 직접 주소), `DEV_DATABASE_ENDPOINT_ID`, `TEST_DATABASE_URL`, `TEST_DATABASE_ENDPOINT_ID`, `TEST_APP_DATABASE_URL`(test 앱 역할 검증용). 비워 두어도 앱 실행·로그인·기능별 테스트에는 지장이 없습니다. 업무 DB 통합 테스트를 직접 돌려야 하면 공통 DB 담당 유정현과 먼저 조율합니다 (6장).
 
 **비밀값 규칙**
 - 실제 값은 본인 `.env` 에만 둡니다. 코드·문서·`.env.example`·커밋·PR·이슈·채팅 캡처에 쓰지 않습니다.
 - `.env.example` 에는 변수 **이름과 설명만** 추가합니다.
-- 실수로 올렸다면 바로 PM 에게 알리고 해당 키·비밀번호를 재발급합니다. (Git 기록에서 지워도 이미 노출된 것으로 봅니다)
+- 실수로 올렸다면 바로 김민 PM 에게 알리고(업무 DB 접속정보라면 공통 DB 담당 유정현에게도) 해당 키·비밀번호를 재발급합니다. (Git 기록에서 지워도 이미 노출된 것으로 봅니다)
 - 챗봇 연결용 `CHATBOT_SECRET` 은 본인이 만든 긴 임의 문자열을 메인·챗봇 서버에 같게 넣습니다 (주소·예시 값 재사용 금지, README 3).
 
 ## 4. 앱 실행과 로그인 확인
@@ -130,7 +130,7 @@ python -m unittest discover -s src/06_chatbot/tests -p "test_*.py"
 
 ## 6. DB 관련 명령 — 누가 실행하나
 
-명령 형식은 `python -m src.common.db_admin <명령> ...` 입니다 (전체 설명: [개발 안내](development.md) 5-2). 모든 명령은 운영 환경에서 거부되고, 접속 주소·비밀번호를 출력하지 않습니다.
+아래의 **공통 DB 담당**은 공통 DB 담당 유정현입니다. 명령 형식은 `python -m src.common.db_admin <명령> ...` 입니다 (전체 설명: [개발 안내](development.md) 5-2). 모든 명령은 운영 환경에서 거부되고, 접속 주소·비밀번호를 출력하지 않습니다.
 
 | 명령 | 실행하는 사람 | 비고 |
 |---|---|---|
@@ -163,5 +163,5 @@ python -m unittest discover -s src/06_chatbot/tests -p "test_*.py"
 
 - 프로젝트 선택·저장·불러오기·최종본의 **공통 위치·표시 방식은 탭 연결 전에 담당자끼리 합의**합니다. 현재 개발요청서 상단의 프로젝트 선택 영역은 기능 검증용 초기 배치입니다 ([개발 안내](development.md) 9-1).
 - 저장 API·고객사·프로젝트 API 를 쓸 때는 `Common.api()` 를 사용합니다 (CSRF 토큰 자동, CSRF 거부 때만 1회 재전송 — [API 계약](api_contract.md) 1-2).
-- 공통 파일(`src/common/`, `docs/`, `db/`, `app.py` 의 PM 영역, `README.md`, `requirements.txt` 등) 변경은 PM·관련 담당자와 조율합니다 (README 「충돌 가능성이 높은 파일」).
+- 공통 파일(`src/common/`, `docs/`, `db/`, `app.py` 의 PM 영역, `README.md`, `requirements.txt` 등) 변경은 김민 PM·유정현 및 영향받는 담당자와 조율합니다 (README 「충돌 가능성이 높은 파일」).
 - 탭 저장 형식은 [데이터 계약](data_contract.md) 3장의 기록 항목을 바탕으로 담당자가 제안하고, 확정되면 서버 검증(`src/common/payloads.py` 의 `SCHEMAS`)에 올립니다. 개발요청서 v1(`src/05_requisition/contract.py`)이 예시입니다.

@@ -1,4 +1,4 @@
-# COSMOA 업무 DB 규칙 (PM)
+# COSMOA 업무 DB 규칙 (공통 DB 문서)
 
 > **상태: 1·2단계 구현됨** — 1단계 테이블(0001·0002, 2-4)과 2단계 `tab_versions`·`final_history`·`version_links`(0003, 2-5)를 test·dev 에 적용했다. 공통 저장 API 는 [API 계약](api_contract.md).
 > 4단계 이후 테이블·화면 저장 연결은 **아직 구현되지 않았다. (구현 예정)** 로그인은 업무 DB `users` 를 쓴다 (`development.md` 2-1). production 은 미적용.
@@ -267,7 +267,7 @@
 
 ### 7-2. 검토
 
-- 업무 DB 변경 PR 은 **PM(DB 담당) 승인 필수**. 그 외 PR 은 조원 1명 리뷰. (기본설계)
+- 업무 DB 변경 PR 은 **공통 DB 담당 유정현 승인 필수** (PR 검토·병합은 김민 PM·유정현). 그 외 PR 은 조원 1명 리뷰. (기본설계)
 - PR 에 적을 것: 목적, 영향 테이블, 되돌리기 방법, 테스트 DB 적용 결과, 데이터 삭제 여부.
 
 ### 7-3. 적용
@@ -275,7 +275,7 @@
 - 마이그레이션은 **별도 명령으로 직접 실행**한다: `python -m src.common.db_admin migrate --target test|dev` (`development.md` 5-2). Flask·Gunicorn 시작 시 자동 실행하지 않는다.
 - 적용 전 DB 상태가 저장소 마이그레이션과 다르면(모르는 테이블, 미적용인데 있는 테이블 등) 삭제·덮어쓰기 없이 거부하고 보고한다.
 - `test` 대상은 테스트 DB 식별, `dev` 대상은 `DEV_DATABASE_ENDPOINT_ID` 고정 확인을 통과해야 한다 (`development.md` 4-2). 운영 환경에서는 관리 명령을 거부한다.
-- 적용 순서: **테스트 DB → 개발 DB → 운영 DB**. 운영 적용은 PM 이 한다. 절차는 `development.md` 5-3.
+- 적용 순서: **테스트 DB → 개발 DB → 운영 DB**. 운영 적용은 공통 DB 담당 유정현이 한다 (배포 일정은 김민 PM 과 협의). 절차는 `development.md` 5-3.
 - 마이그레이션은 해당 환경의 `DATABASE_URL_DIRECT` 를 쓴다. 테스트 DB 준비는 `TEST_DATABASE_URL` 만 쓴다. 다른 주소로 자동 대체하지 않는다.
 
 ### 7-4. 접속정보
@@ -318,12 +318,12 @@
 
 | 역할 | 종류 | 쓰는 곳 | 상태 |
 |---|---|---|---|
-| 관리 역할 (`neondb_owner`) | LOGIN, 테이블 소유 | `DATABASE_URL_DIRECT`·`TEST_DATABASE_URL` — 관리 명령·마이그레이션·통합 테스트 준비. 공통 DB 담당만 | 기존 |
+| 관리 역할 (`neondb_owner`) | LOGIN, 테이블 소유 | `DATABASE_URL_DIRECT`·`TEST_DATABASE_URL` — 관리 명령·마이그레이션·통합 테스트 준비. 공통 DB 담당 유정현만 | 기존 |
 | `cosmoa_app` | **NOLOGIN NOINHERIT 그룹**, 표식 `cosmoa-app-group v1` | 권한 묶음 (8-4) | test·dev 적용 |
 | `cosmoa_app_test` | LOGIN INHERIT, 표식 `cosmoa-app-login v1`, `cosmoa_app` 멤버(INHERIT TRUE, **SET FALSE**) | `TEST_APP_DATABASE_URL` — 앱 역할 검증 전용 (test 풀링 주소). test 에만 있음 | test 적용 |
 | `cosmoa_app_yjh` | 위와 같은 형태 | 현재 개발자(공통 DB 담당)의 dev `DATABASE_URL`. dev 에만 있음 | **dev 적용** |
 | `cosmoa_app_<개발자>` | 위와 같은 형태, 개발자마다 하나 | 각 팀원의 dev `DATABASE_URL` | **미생성** (8-8) |
-| production 앱 역할 | 위와 같은 형태 | production 앱 | 배포 준비 단계 (PM) |
+| production 앱 역할 | 위와 같은 형태 | production 앱 | 배포 준비 단계 (공통 DB 담당 유정현) |
 
 - 이름 규칙: `cosmoa_app_<영문 소문자·숫자·_>` (`db_admin` 이 확인, 예: `cosmoa_app_test`, `cosmoa_app_jh`).
 - **판단 기준은 이름이 아니라 실제 속성·멤버십·소유권이다.** `app-role check` 가 SUPERUSER·CREATEROLE·CREATEDB·REPLICATION·BYPASSRLS 없음, 소유 객체 0, 멤버십(`cosmoa_app` 하나, SET 불가), 다른 역할(관리 역할·`neon_superuser`·`pg_*` 기본 역할) 상속·전환 불가를 확인한다.
@@ -431,7 +431,7 @@ python -m src.common.db_admin app-role whoami --target test
 
 | 순서 | 명령 | 결과 |
 |---|---|---|
-| 0 | 적용 전 확인 (읽기만) | 0001~0003 적용·0004 대기, `cosmoa_app`·`cosmoa_app_yjh` 없음 (test 의 `cosmoa_app_test` 도 dev 에 없음 → 브랜치별 역할 확인), PM 최초 계정 1개, 업무 표 0행 |
+| 0 | 적용 전 확인 (읽기만) | 0001~0003 적용·0004 대기, `cosmoa_app`·`cosmoa_app_yjh` 없음 (test 의 `cosmoa_app_test` 도 dev 에 없음 → 브랜치별 역할 확인), 기존 최초 계정 1개, 업무 표 0행 |
 | 1 | `app-role init-group --target dev` | `cosmoa_app` 생성. 재실행 시 변경 없음 |
 | 2 | `migrate --target dev --dry-run` → `migrate --target dev` | `0004_app_role_grants` 적용. 재실행 시 적용할 파일 없음 |
 | 3 | `app-role check --target dev` | 통과 (문제 0건) |
@@ -439,8 +439,8 @@ python -m src.common.db_admin app-role whoami --target test
 | 5 | 풀링 인증 확인 (`.env` 변경 전) | 새 역할 풀링 주소로 접속 → `current_user`·`session_user` = `cosmoa_app_yjh`, endpoint 고정값 일치, 테스트 표식 없음. dev 관리 명령 대상 확인도 통과 |
 | 6 | 로컬 `.env` | **`DATABASE_URL` 한 줄만** 이 역할의 풀링 주소로 교체 (같은 파일에 직접 기록, 백업 파일 없음). 나머지 28개 변수·줄 수·줄바꿈 동일 확인 |
 | 7 | `app-role check --target dev --role cosmoa_app_yjh`, `app-role whoami --target dev` | 통과 — 관리 속성 없음, 소유 객체 0, 멤버십 `cosmoa_app` 하나(SET 불가), 표·열·시퀀스 권한 기준 일치, 앱 주소의 접속 역할 `cosmoa_app_yjh` |
-| 8 | 보존 확인 (읽기만) | PM 최초 계정 id·생성 시각·비밀번호 해시 지문 동일, 업무 표 8개 행 수·최대 id 동일 |
-| 9 | 앱 실행 (`python app.py`) | `/login` 200·CSRF 필드 있음, 정적 자원 4개 200, 로그인 전 보호 화면 302, 없는 이메일 로그인 시도 401("이메일 또는 비밀번호…" — 앱 역할로 `users` 조회 성공, 503 아님). PM 계정 로그인은 사용자 본인이 확인 (비밀번호를 모르므로 재설정·우회하지 않음) → **사용자가 dev 앱 역할로 기존 계정 로그인·홈·개발요청서 화면 정상 동작을 직접 확인** |
+| 8 | 보존 확인 (읽기만) | 기존 최초 계정 id·생성 시각·비밀번호 해시 지문 동일, 업무 표 8개 행 수·최대 id 동일 |
+| 9 | 앱 실행 (`python app.py`) | `/login` 200·CSRF 필드 있음, 정적 자원 4개 200, 로그인 전 보호 화면 302, 없는 이메일 로그인 시도 401("이메일 또는 비밀번호…" — 앱 역할로 `users` 조회 성공, 503 아님). 기존 계정 로그인은 사용자 본인이 확인 (비밀번호를 모르므로 재설정·우회하지 않음) → **사용자가 dev 앱 역할로 기존 계정 로그인·홈·개발요청서 화면 정상 동작을 직접 확인** |
 
 - dev 에서는 파괴적 권한 시험·통합 테스트를 실행하지 않았다 (금지 동작 검증은 test 8-6).
 - PUBLIC `TEMP`·접속 수 제한은 바꾸지 않았다.
@@ -457,7 +457,7 @@ python -m src.common.db_admin app-role whoami --target test
 4. 대시보드 계정은 따로 만든다: `create-user --target dev …` (8-1).
 5. 관리 역할 비밀번호를 이미 다른 사람에게 준 적이 있으면 Neon 에서 재설정한다.
 
-- production: 배포 준비 단계에서 같은 순서 (PM). `0004` 는 production 에도 `cosmoa_app` 이 먼저 있어야 적용된다.
+- production: 배포 준비 단계에서 같은 순서 (공통 DB 담당 유정현). `0004` 는 production 에도 `cosmoa_app` 이 먼저 있어야 적용된다.
 - 미정: PUBLIC `TEMP` 회수 여부, 역할별 접속 수 제한(`CONNECTION LIMIT`), dev 앱 역할 화면 확인 범위 (자동 테스트는 dev 에 연결하지 않음).
 
 ### 8-9. 새 마이그레이션 이후 권한 부여

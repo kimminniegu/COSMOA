@@ -1,4 +1,4 @@
-# COSMOA 재개발 개발 안내 (PM)
+# COSMOA 재개발 개발 안내 (공통 개발 문서)
 
 > **상태: 재개발 진행 중 — 1단계(공통 DB 기반)·로그인 전환·2단계(공통 저장 엔진·API)·3-1단계(고객사·프로젝트 생성·조회, 개발요청서 프로젝트 선택)·3-2단계(개발요청서 FIX 필드·저장 계약 v1) 완료. 저장·불러오기·최종본 화면 연결은 아직 없음.**
 > **팀 개발 시작**: 공통 규칙 9장, 구현 현황·인계 10장, 시작 순서 [팀원 시작 안내](team_onboarding.md).
@@ -23,11 +23,11 @@
 | 순위 | 근거 | 다루는 것 |
 |---|---|---|
 | 1 | **10.19 회의 수정안 (최신 FIX)** | 최신 업무 요구사항 |
-| 2 | PM 공통 개발 기준 (이 문서·`db_rules.md`·`data_contract.md` 의 "확정(개발기준)") | 구현 방식과 보완 규칙 |
+| 2 | 공통 개발 기준 (이 문서·`db_rules.md`·`data_contract.md` 의 "확정(개발기준)") | 구현 방식과 보완 규칙 |
 | 3 | DB 최종안 팀개발용 (기본 설계, 18개 테이블안) | 기본 DB 설계 |
 | 4 | 기존 문서·코드 | 현재 구현 |
 
-- 원본 회의록·DB 최종안은 PM 이 보관하며 **저장소에 포함하지 않는다.** 팀원이 개발에 필요한 확정 내용은 모두 이 `docs/` 문서들에 옮겨 적었다.
+- 원본 회의록·DB 최종안은 **저장소에 포함하지 않는다.** 로컬 참고자료 폴더 `local_reference/` 는 Git·Docker 이미지에서 제외된다 (`.gitignore`·`.dockerignore`). 팀원이 개발에 필요한 확정 내용은 모두 이 `docs/` 문서들에 옮겨 적었으므로, 개발은 `docs/` 문서를 기준으로 한다.
 - FIX 와 충돌하지 않는 기존 설계는 유지한다.
 
 ### 0-2. 표기
@@ -35,9 +35,9 @@
 | 표기 | 뜻 |
 |---|---|
 | **확정(FIX)** | 10.19 수정안에 명시된 요구사항 |
-| **확정(개발기준)** | PM 이 정한 구현 방식·규칙 |
+| **확정(개발기준)** | 공통 개발기준으로 정한 구현 방식·규칙 |
 | **기본설계** | DB 최종안의 설계. FIX·개발기준과 충돌하지 않아 유지 |
-| **제안** | 구현을 위한 제안. 구현 전 PM 확인 후 확정 |
+| **제안** | 구현을 위한 제안. 구현 전 공통 개발·설계 사항은 김민 PM·유정현 및 관련 담당자 협의 후 확정, DB 적용·마이그레이션 사항은 공통 DB 담당 유정현 확인 후 확정 |
 | **미정** | 아직 정해지지 않음. 구현 중 임의로 확정하지 않는다 |
 
 ---
@@ -158,7 +158,7 @@
 
 **아직 하지 않은 것 (다음 단계)**
 
-- **production 적용·배포 준비**: production 브랜치 마이그레이션 절차(PM), 배포 환경변수, 운영 첫 계정, `docs/deploy_render.md` 갱신 (현재 "갱신 전" 표시)
+- **production 적용·배포 준비**: production 브랜치 마이그레이션 절차(공통 DB 담당 유정현), 배포 환경변수, 운영 첫 계정, `docs/deploy_render.md` 갱신 (현재 "갱신 전" 표시)
 - ~~팀원 계정 추가 방법~~ → 구현됨: `create-user` 관리 명령(5-2), 본인 비밀번호 변경 화면 `/account/password`
 - ~~고객사·프로젝트 생성·조회 API·선택 화면~~ → **3-1 구현 완료** (아래 2-2)
 - 3단계 나머지: 개발요청서 화면에 저장·불러오기·최종본 연결 (`Common.api` 사용, 요청서의 연결 프로젝트로 저장), 개발요청서 v1 세부 필드 확정
@@ -267,13 +267,13 @@
     3. 접속 후 DB 가 보고하는 `neon.endpoint_id` 가 고정값과 같다.
     4. 테스트 endpoint(`TEST_DATABASE_ENDPOINT_ID`)가 아니고, 테스트 표식이 없다.
   - **운영 환경(`COSMOA_ENV=production` 또는 Render)에서는 모든 관리 명령(개발·테스트용)을 거부**한다. 운영 적용 명령은 아직 없다.
-  - 테스트 브랜치를 다시 만들면 endpoint 가 바뀌므로 `TEST_DATABASE_ENDPOINT_ID` 와 표식을 PM 이 다시 설정한다.
+  - 테스트 브랜치를 다시 만들면 endpoint 가 바뀌므로 `TEST_DATABASE_ENDPOINT_ID` 와 표식을 공통 DB 담당 유정현이 다시 설정한다.
 - Neon 은 SSL 연결(`sslmode=require`, `channel_binding=require`)을 사용한다.
 - **Neon 브랜치 구성 — 확정** (프로젝트 COSMOA, AWS Oregon)
 
 | Neon 브랜치 | 용도 | 부모 | 접속 |
 |---|---|---|---|
-| `production` | 운영·시연 | – | PM 만. 배포 환경변수로만 사용. 로컬 `.env` 에 넣지 않는다 |
+| `production` | 운영·시연 | – | 공통 DB 담당 유정현만 (배포 일정은 김민 PM 과 협의). 배포 환경변수로만 사용. 로컬 `.env` 에 넣지 않는다 |
 | `dev` | 개발 통합 | production | `.env` 의 `DATABASE_URL`(풀링)·`DATABASE_URL_DIRECT`(직접) + `DEV_DATABASE_ENDPOINT_ID` |
 | `test` | 자동 테스트 | production | `.env` 의 `TEST_DATABASE_URL`(직접) + `TEST_DATABASE_ENDPOINT_ID`. 테스트 표식 있음 |
 
@@ -302,14 +302,16 @@ README 의 「설치 및 실행」·「검증 방법」을 따른다.
 
 ### 5-2. 업무 DB 관리 명령 — 구현됨
 
+실행 담당: **공통 DB 담당 유정현** (DB 계정·접속 역할·마이그레이션). PR 검토·병합(김민 PM·유정현)과는 별개다.
+
 저장소 루트에서 `conda activate tdenv` 후 실행한다. 모든 명령은 서버 실행과 분리되어 있고, 접속 주소·비밀번호·endpoint id 를 출력하지 않는다.
 
 1. 설치·설정
    ```powershell
    pip install -r requirements.txt
-   # .env 에 4-2 의 변수 설정 (값은 PM 에게 별도 전달받음, .env.example 참고)
+   # .env 에 4-2 의 변수 설정 (값은 공통 DB 담당 유정현에게 별도 전달받음, .env.example 참고)
    ```
-2. 테스트 DB 표식 — PM 이 test 브랜치를 만든 뒤 **한 번만** 설정. 확인은 언제든 가능
+2. 테스트 DB 표식 — 공통 DB 담당 유정현이 test 브랜치를 만든 뒤 **한 번만** 설정. 확인은 언제든 가능
    ```powershell
    python -m src.common.db_admin test-marker init    # TEST_DATABASE_URL 대상에만 표식 설정 (이미 있으면 변경 없음)
    python -m src.common.db_admin test-marker check   # 허용 endpoint + 표식 일치 확인 (읽기만)
@@ -324,7 +326,7 @@ README 의 「설치 및 실행」·「검증 방법」을 따른다.
    ```
    - 적용 전에 DB 의 `public` 테이블·적용 기록을 저장소 마이그레이션과 비교한다. 마이그레이션에 없는 테이블, 미적용인데 이미 있는 테이블, 적용 기록과 다른 상태가 있으면 **삭제·덮어쓰기 없이 거부하고 상황을 출력**한다.
    - 이미 적용한 파일은 다시 실행되지 않는다 (yoyo `_yoyo_migration` 기록).
-   - 운영(production) 적용 명령은 아직 두지 않는다. 운영 적용 절차는 PM 이 배포 단계에서 정한다.
+   - 운영(production) 적용 명령은 아직 두지 않는다. 운영 적용 절차는 공통 DB 담당 유정현이 배포 단계에서 김민 PM 과 정한다.
 4. 최초 계정 — 계정이 하나도 없을 때만 만든다 (시스템 작업, `users.created_by` NULL)
    ```powershell
    python -m src.common.db_admin create-first-user --target dev --email <이메일> --name <이름> [--team <팀>]
@@ -368,7 +370,7 @@ README 의 「설치 및 실행」·「검증 방법」을 따른다.
 |---|---|---|---|---|
 | 1 | 테스트 DB | `TEST_DATABASE_URL` | 마이그레이션 적용 → 업무 DB 테스트 실행 | 테스트 통과, 되돌리기 파일이 있다면 되돌리기·재적용 확인 |
 | 2 | 개발 DB | 개발 환경의 `DATABASE_URL_DIRECT` | 마이그레이션 적용 → 서버 실행 후 수동 확인 | 저장·불러오기·최종본 흐름 |
-| 3 | 운영 DB | 운영 환경의 `DATABASE_URL_DIRECT` | **PM 이** 마이그레이션 적용 → 배포 | 배포 후 점검 |
+| 3 | 운영 DB | 운영 환경의 `DATABASE_URL_DIRECT` | **공통 DB 담당 유정현이** 마이그레이션 적용 → 배포 (김민 PM 과 협의) | 배포 후 점검 |
 
 - 각 단계는 앞 단계 확인 후 진행한다. 마이그레이션 PR 은 1단계 결과를 첨부한다.
 - 테스트 DB 정리(초기화)는 테스트 DB 에서만 하며, 실행 전 4-2 의 식별 정보 확인을 통과해야 한다. 변경 금지 트리거가 있으므로 행 삭제가 아니라 스키마를 다시 만드는 방식을 쓴다. (방식은 구현 시 확정 — **초기화 명령은 아직 없다**. 현재 테스트 데이터는 test 브랜치에 남는다)
@@ -380,9 +382,9 @@ README 의 「설치 및 실행」·「검증 방법」을 따른다.
 | `0001_core` | 표식 설정 → 적용 → 되돌리기 → 재적용 → 통합 테스트 통과 | 테스트 통과 후 적용 | 미적용 (접속 안 함) |
 | `0002_project_rules` | 적용 → 통합 테스트 통과 (기존 이력 12행은 `xact_id` NULL 그대로). 되돌리기는 실행하지 않음 (`xact_id` 열 삭제가 데이터 삭제라서) | 테스트 통과 후 적용 | 미적용 |
 | `0003_versioning` | 적용 → (빈 테이블 상태에서) 되돌리기 → 재적용 → 저장 엔진·API·회귀 테스트 통과 | 테스트 통과 후 적용. 기존 계정 1개 유지, 데모 데이터 없음 | 미적용 |
-| `0004_app_role_grants` | (2026-10-21) `app-role init-group` → 적용 → 되돌리기(권한만 회수) → 재적용 → `cosmoa_app_test` 생성 → `app-role check`·앱 역할 검증·회귀 테스트 통과 ([DB 규칙](db_rules.md) 8-6) | (2026-10-21) `app-role init-group` → dry-run → 적용 → `app-role check` 통과 → `cosmoa_app_yjh` 생성·풀링 인증 확인. 파괴적 시험·통합 테스트 없음, PM 계정·업무 데이터 보존 ([DB 규칙](db_rules.md) 8-8) | 미적용 |
+| `0004_app_role_grants` | (2026-10-21) `app-role init-group` → 적용 → 되돌리기(권한만 회수) → 재적용 → `cosmoa_app_test` 생성 → `app-role check`·앱 역할 검증·회귀 테스트 통과 ([DB 규칙](db_rules.md) 8-6) | (2026-10-21) `app-role init-group` → dry-run → 적용 → `app-role check` 통과 → `cosmoa_app_yjh` 생성·풀링 인증 확인. 파괴적 시험·통합 테스트 없음, 기존 계정·업무 데이터 보존 ([DB 규칙](db_rules.md) 8-8) | 미적용 |
 
-- 두 DB 모두 재실행 시 적용할 파일 없음 확인. 0003 적용 시점에 dev 에는 PM 이 만든 첫 계정 외 데이터 없음 (이후 화면 확인으로 만든 고객사·프로젝트는 조회하지 않음).
+- 두 DB 모두 재실행 시 적용할 파일 없음 확인. 0003 적용 시점에 dev 에는 공통 DB 담당이 만든 첫 계정 외 데이터 없음 (이후 화면 확인으로 만든 고객사·프로젝트는 조회하지 않음).
 
 ### 5-3-1. 화면 확인 — 개발요청서 프로젝트 선택 (3-1)
 
@@ -569,7 +571,7 @@ python -m unittest discover -s src/05_requisition/tests -p "test_contract.py"   
    - **입력 보호**: 작성 중 프로젝트를 바꾸면 확인을 묻고, 확인할 때만 작성 내용을 초기화한다.
    - **CSRF**: 변경 요청은 `Common.api()` 로 보낸다 (토큰 자동, CSRF 거부 때만 1회 재전송).
    - **저장 동작**: 저장은 항상 새 버전 추가, 번호·작성자는 서버가 정함, 파일 본문 제외 ([DB 규칙](db_rules.md) 3·6장).
-4. 공통 파일(`src/common/*`, `src/common/style.css`·`common.js`·`base.html`, `app.py` 의 PM 영역, `db/`, `docs/`) 변경은 PM 과 **영향을 받는 탭 담당자**와 조율한다. 공통 기반 작업이 탭 폴더를 고친 경우(이번에는 `src/05_requisition/`)도 그 탭 담당자가 검토한다 (10-3).
+4. 공통 파일(`src/common/*`, `src/common/style.css`·`common.js`·`base.html`, `app.py` 의 PM 영역, `db/`, `docs/`) 변경은 김민 PM·유정현 및 **영향을 받는 탭 담당자**와 조율한다. 공통 기반 작업이 탭 폴더를 고친 경우(이번에는 `src/05_requisition/`)도 그 탭 담당자가 검토한다 (10-3).
 5. 현재 개발요청서의 프로젝트 선택 화면은 **최소 선택·생성 기능**이며, 이후 만들 **프로젝트 관리 탭(7단계)을 대체하지 않는다.** 프로젝트 수정·보관·단계/상태 변경·이력 화면은 그 탭의 범위다.
 
 ### 9-2. 업무 DB 공동 사용
@@ -623,7 +625,7 @@ python -m unittest discover -s src/05_requisition/tests -p "test_contract.py"   
 | 파일 | `src/02_regulatory/samples/EU-SER-041_development_brief_regulatory.pdf` | `…/samples/eu_ser_041_development_brief_regulatory.pdf` |
 | 파일 | `src/02_regulatory/samples/KR_EU_CN_ASEAN_Hair_Color_Cream_Development_Brief.pdf` | `…/samples/kr_eu_cn_asean_hair_color_cream_development_brief.pdf` |
 | 파일 | `src/02_regulatory/samples/KR_EU_CN_JP_ASEAN_Sun_Essence_Key_Ingredients.png` | `…/samples/kr_eu_cn_jp_asean_sun_essence_key_ingredients.png` |
-| 파일 | `src/02_regulatory/samples/한국_EU_중국_아세안_두피샴푸_주요검토성분표.xlsx` (한글 이름) | `…/samples/kr_eu_cn_asean_scalp_shampoo_key_ingredients.xlsx` (내용 그대로, PM 결정에 따라 영문 이름으로) |
+| 파일 | `src/02_regulatory/samples/한국_EU_중국_아세안_두피샴푸_주요검토성분표.xlsx` (한글 이름) | `…/samples/kr_eu_cn_asean_scalp_shampoo_key_ingredients.xlsx` (내용 그대로, 파일명 통일 작업에서 영문 이름으로 변경) |
 | 파일 | `src/02_regulatory/tests/fixtures/EU-SER-041_development_brief.pdf` | `…/fixtures/eu_ser_041_development_brief.pdf` |
 | 파일 | `src/02_regulatory/test_data/regulations_1013_EU_plan_note.json`, `regulations_1941_EU_not_listed.json`, `regulations_5489_EU.json`, `regulations_5489_US.json` | `regulations_1013_eu_plan_note.json`, `regulations_1941_eu_not_listed.json`, `regulations_5489_eu.json`, `regulations_5489_us.json` |
 
@@ -667,7 +669,7 @@ python -m unittest discover -s src/05_requisition/tests -p "test_contract.py"   
 | 공통 (수정·신규) | `src/common/auth.py`, `login.html`, `common.js`, `base.html`(내 계정 → 비밀번호 변경 링크), `account_password.html`(신규) | PG 로그인, CSRF, `Common.api`, 본인 비밀번호 변경·세션 지문 |
 | DB·문서 | `db/migrations/0001~0004`(0004 는 test·dev 적용), `db/schemas/requisition.v1.example.json`, `docs/development.md`·`db_rules.md`·`data_contract.md`·`api_contract.md`·`team_onboarding.md`(신규), `docs/deploy_render.md`, `README.md` | |
 | 설정 | `app.py`(PM 영역: DB 설정·API 등록·로그인 CSRF·개발요청서 페이지에 필드 정의 전달, [E] 영역: 필드 정의 모듈 import 1줄), `requirements.txt`, `.env.example`, `.gitignore`(`.venv/`), `Dockerfile`(주석) | |
-| 개발요청서 (E 폴더 — **담당자 검토 필요**) | `schema.py`, `service.py`, `contract.py`(신규), `requisition.js`, `requisition_payload.js`(신규), `requisition.html`, `requisition.css`, `tests/test_requisition.py`, `tests/test_contract.py`(신규), `implementation.md`, `requisition.md`(13장 안내) | 프로젝트 선택, FIX 필드, 저장 계약 v1 |
+| 개발요청서 (E 폴더 — 담당자 **미정**. PR #1 은 김민 PM·유정현이 검토, 담당자가 정해지면 이 범위 재확인) | `schema.py`, `service.py`, `contract.py`(신규), `requisition.js`, `requisition_payload.js`(신규), `requisition.html`, `requisition.css`, `tests/test_requisition.py`, `tests/test_contract.py`(신규), `implementation.md`, `requisition.md`(13장 안내) | 프로젝트 선택, FIX 필드, 저장 계약 v1 |
 | 다른 탭 테스트 | `src/02_regulatory/tests/test_mfds_lookup.py`, `test_regulatory_service.py`, `src/06_chatbot/tests/test_chatbot.py` | 각 1곳 — 예전 세션 주입을 `login_as` 로 교체. 기능 코드 변경 없음 |
 
 ### 10-4. 후속 작업 (담당자는 팀에서 정함)

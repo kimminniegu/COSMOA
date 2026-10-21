@@ -1,4 +1,4 @@
-# Render 배포 안내 (PM) — 무료 서비스 2개, 발표·시연용
+# Render 배포 안내 (공통 개발 문서) — 무료 서비스 2개, 발표·시연용
 
 > ⚠ **갱신 전 문서.** 로그인이 업무 DB(Neon PostgreSQL) `users` 로 바뀌었습니다. 아래의 `COSMOA_DEMO_*`·`instance/cosmoa.db` 계정 안내는 **예전 방식**입니다.
 > production 브랜치에는 아직 마이그레이션·계정이 없고 배포 환경변수(`DATABASE_URL` 등)도 정해지지 않아 **지금 상태로는 배포 준비가 끝나지 않았습니다.** 절차는 [개발 안내](development.md) 의 다음 단계에서 정합니다.
