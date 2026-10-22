@@ -1,5 +1,25 @@
 # COSMOA — OEM·ODM 해외영업 대시보드
 
+> **재개발 진행 중** — 업무 DB(Neon PostgreSQL) **1단계 공통 DB 기반**과 **로그인 전환**을 마쳤습니다. **로그인은 이제 업무 DB `users`(PostgreSQL)를 사용합니다.** SQLite 계정·데모 계정 자동 생성은 쓰지 않습니다.
+> **2단계 공통 저장 엔진·API**(`tab_versions`·`final_history`·`version_links`, [API 계약](docs/api_contract.md)), **3-1단계 고객사·프로젝트 생성·조회 API·개발요청서 프로젝트 선택**, **3-2단계 개발요청서 FIX 필드·저장 계약 v1**도 구현했습니다. 화면 저장 기능(각 탭의 저장·불러오기·최종본 버튼 연결)은 다음 작업입니다. **앱용 DB 역할 분리**(`cosmoa_app`, 마이그레이션 0004)는 test·dev 에 적용했고 dev 앱 역할로 로그인·홈·개발요청서 화면을 확인했습니다. 팀원용 DB 역할·대시보드 계정은 아직 만들지 않았습니다 ([DB 규칙 8장](docs/db_rules.md)). **production(배포) 환경은 아직 업무 DB 미적용 — 배포 준비가 끝난 상태가 아닙니다.**
+> 이 README 의 실행 안내는 **현재 동작하는 구현** 기준입니다. 재개발 계획과 규칙은 아래 문서를 확인합니다.
+>
+> - [팀원 시작 안내](docs/team_onboarding.md) — Windows CMD 기준 환경·브랜치·`.env`·실행, DB 명령 구분, 공유 dev·테스트 DB 규칙
+> - [개발 안내](docs/development.md) — 재개발 목표, 구현 단계, Neon 구성, 업무 DB 설치·마이그레이션·테스트 명령, **팀 공통 규칙(9장)·구현 현황과 인계(10장)**
+> - [DB 규칙](docs/db_rules.md) — 테이블·구현 단계, 저장·버전·최종본·반영 출처·파일 정책, DB 변경(yoyo 마이그레이션) 규칙
+> - [데이터 계약](docs/data_contract.md) — 고객사·프로젝트 필드, 탭 저장본·payload 구조, 개발요청서 저장 JSON 예시
+> - [API 계약](docs/api_contract.md) — 공통 저장 API·고객사·프로젝트 API 경로·요청·응답, 오류 코드, CSRF, 크기 제한
+> - 팀 공통 규칙: 프로젝트 선택·저장·불러오기·최종본 **공통 UI 배치는 탭 연결 전 합의**([개발 안내 9-1](docs/development.md)), 파일·폴더·브랜치 이름 **snake_case**([개발 안내 9-3](docs/development.md))
+>
+> | 구분 | 현재 구현 | 재개발 계획 (구현 예정) |
+> |---|---|---|
+> | 업무 DB 기반 | **구현됨** — `users`·`customers`·`customer_contacts`·`projects`·`project_history` 테이블과 저장본 테이블(마이그레이션 0001~0003), 앱 역할 권한(0004) — test·dev 적용, `src/common/db.py`, 관리 명령 | production 적용 |
+> | 계정 (로그인) | **업무 DB `users` (PostgreSQL)** — 로컬·dev 기준. 첫 계정은 관리 명령으로 생성 | production 적용·배포 준비 |
+> | 고객사·프로젝트·탭 저장본 | 고객사·프로젝트: **업무 DB 생성·조회 API + 개발요청서 프로젝트 선택**. 탭 저장본: 저장 API 만 (화면은 아직 메모리) | 저장 시 새 버전·최종본 이력 관리 (개발요청서부터 연결), 고객사·프로젝트 수정·보관 |
+> | 탭 간 반영 (마진·규제·모델링 ↔ 개발요청서) | 없음 | 반영 출처·당시 값 기록 |
+> | 홈 캐시 | SQLite `HOME_CACHE_DB_PATH` (기본 `instance/cosmoa.db`) | 변경 없음 (업무 DB와 분리) |
+> | 식약처 규제 DB | 읽기 전용 SQLite | 변경 없음 (업무 DB와 분리) |
+
 ## 프로젝트 목적
 
 화장품 OEM·ODM 해외영업 업무를 지원하는 Flask 기반 웹 대시보드 **COSMOA** (by COSTD) 입니다.
@@ -22,7 +42,7 @@
 
 | 영역 | 주요 기능 | 지원 범위·이용 안내 |
 |---|---|---|
-| 로그인 | SQLite 계정, 로그인·로그아웃, 세션 유지 | 계정이 없는 첫 실행 시 데모 계정 생성 |
+| 로그인 | 업무 DB(Neon PostgreSQL) `users` 계정, 로그인·로그아웃, 세션 유지, 본인 비밀번호 변경 | 계정은 공통 DB 담당(유정현)이 관리 명령으로 생성. 서버가 계정·데모 계정을 자동 생성하지 않음 |
 | 홈 | 환율·수출입 통계, 바이어 현지 시각, 뉴스·규제 소식 및 더보기 | 외부 데이터 수집·캐시 사용, 알림 버튼 미구현 |
 | 국가별 인허가 규제 | 성분 검색, 식약처 DB/외부 API 조회, PDF·Excel·이미지 성분 추출과 OCR | 함량 기준 비교·시장 자동 선택 등은 미구현. 조회 결과와 최종 규제 판단을 구분 |
 | 원가·마진 | 견적·역제안·수량별 단가·환율 영향 계산, 견적서 PDF·영문 메일 본문 | ERP는 예시 품목 1개의 시연 데이터. 견적 입력값은 영구 저장하지 않음 |
@@ -33,7 +53,7 @@
 ## 프로젝트 구조
 
 ```
-COSTD/
+COSMOA/
 ├── app.py                  # 메인 Flask 서버: 로그인·페이지·API 연결
 ├── README.md
 ├── .env                    # 로컬 환경변수 (Git 제외)
@@ -47,15 +67,20 @@ COSTD/
 │   ├── README.md           # 배포용 DB 출처·수집 정보·갱신 절차
 │   └── mfds_use_restriction.sqlite  # Git에 포함된 식약처 DB
 ├── instance/               # 로컬 데이터 (Git·Docker 이미지 제외)
-│   ├── cosmoa.db           # 실행 시 생성되는 계정·홈 캐시 DB
+│   ├── cosmoa.db           # 홈 캐시 SQLite (HOME_CACHE_DB_PATH 기본값). 로그인 계정은 업무 DB
 │   └── regulatory/         # 로컬 식약처 수집 DB의 기본 위치
+├── db/migrations/          # 업무 DB(Neon) yoyo 마이그레이션 (NNNN_설명.sql)
 ├── docs/
+│   ├── development.md      # 재개발 개발 안내 (업무 DB 구성·명령, 구현 예정 포함)
+│   ├── db_rules.md         # 업무 DB 저장·버전·최종본·마이그레이션 규칙
+│   ├── data_contract.md    # 고객사·프로젝트·탭 저장본 데이터 구조
+│   ├── api_contract.md     # 공통 저장 API 계약
 │   ├── design_system.md    # 디자인 기준 문서
 │   ├── ui_components.md    # 공통 UI 컴포넌트 규격
 │   ├── deploy_render.md    # 메인·챗봇 배포 및 시연 준비
 │   └── reference/          # 로그인·홈 디자인 참고 자료
 └── src/
-    ├── common/             # [PM] 공통 UI·인증
+    ├── common/             # [공통] 공통 UI·인증·업무 DB (김민 PM·유정현)
     │   ├── base.html / style.css / common.js
     │   ├── auth.py / login.html / login.css
     │   ├── fonts/          # 나눔스퀘어 네오 OTF (Rg / Bd / Eb)
@@ -80,7 +105,7 @@ COSTD/
     │   └── service.py
     ├── 05_requisition/     # [E] 개발요청서
     │   ├── requisition.html / requisition.css / requisition.js / requisition.md
-    │   ├── service.py / schema.py / IMPLEMENTATION.md
+    │   ├── service.py / schema.py / implementation.md
     │   └── tests/          # 단위 테스트·브라우저 검증 스크립트
     └── 06_chatbot/         # [F] 공통 챗봇 위젯·별도 서버
         ├── server.py / tools.py
@@ -93,7 +118,7 @@ COSTD/
 
 ## 설치 및 실행
 
-프로젝트 루트 `COSTD/`에서 실행합니다.
+저장소 루트(이 README 가 있는 폴더)에서 실행합니다. Windows CMD 기준 시작 순서는 [팀원 시작 안내](docs/team_onboarding.md)를 따릅니다.
 
 ### 1. 가상환경 생성·활성화
 
@@ -125,7 +150,7 @@ Bash에서는 `cp .env.example .env`를 사용합니다. 전체 항목은 [`.env
 | 구분 | 환경변수 | 용도·필요 조건 |
 |---|---|---|
 | 메인 서버 | `FLASK_SECRET_KEY`, `FLASK_DEBUG`, `FLASK_PORT` | 세션 서명, 로컬 디버그·포트(기본 5000). 운영에서는 고정된 비밀키 필수 |
-| 로그인 | `COSMOA_DEMO_EMAIL`, `COSMOA_DEMO_PASSWORD`, `COSMOA_DEMO_NAME`, `COSMOA_DEMO_TEAM` | 계정이 없을 때 생성할 데모 계정 |
+| 로그인 | `DATABASE_URL` (+ 아래 업무 DB 변수) | 로그인 계정은 업무 DB `users`. `COSMOA_DEMO_*` 는 더 이상 쓰지 않음 (데모 계정 자동 생성 없음) |
 | 홈·환율 | `EXIM_API_KEY`, `DATA_GO_KR_KEY` | 수출입은행 환율, 관세청 수출입·KOTRA 데이터 |
 | 홈 선택 설정 | `KOTRA_NEWS_URL`, `COSMETIC_HS_CODES` | KOTRA 요청 주소, 화장품 HS 코드(기본 3304) |
 | 성분 검색·규제 API | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | 성분 후보 검색 및 외부 규제 API. 식약처 DB 조회를 선택해도 API를 통한 성분 검색에는 필요 |
@@ -134,8 +159,10 @@ Bash에서는 `cp .env.example .env`를 사용합니다. 전체 항목은 [`.env
 | 규제 OCR | `TESSERACT_CMD`, `TESSDATA_PREFIX` | Tesseract 실행 파일·언어 데이터 경로. 자동 탐색으로 찾을 수 있으면 생략 |
 | AI 공통 | `OPENAI_API_KEY` | **메인의 제형 문서 분석·개발요청서 자동변환과 챗봇 서버 모두 사용** |
 | AI 모델 선택 | `SIMULATION_OPENAI_MODEL`, `REQUISITION_OPENAI_MODEL`, `CHATBOT_OPENAI_MODEL` | 각 기능의 모델. 기본 gpt-4.1 |
-| 챗봇 연결 | `CHATBOT_URL`, `CHATBOT_SECRET` | 메인에서 호출할 챗봇 서버 주소, 양쪽 서버에 동일하게 설정할 공유 비밀값 |
+| 챗봇 연결 | `CHATBOT_URL`, `CHATBOT_SECRET` | 메인에서 호출할 챗봇 서버 주소, 양쪽 서버에 동일하게 설정할 공유 비밀값 (임의의 긴 문자열, 주소와 다른 값. 예: `python -c "import secrets; print(secrets.token_urlsafe(32))"`) |
 | 챗봇 로컬 설정 | `CHATBOT_PORT`, `CHATBOT_DB_PATH` | 기본 포트 5100, 기본 캐시 DB는 `instance/cosmoa.db`. 경로를 바꾸지 않으면 DB 변수 생략 |
+| 업무 DB (Neon) | `DATABASE_URL`, `DATABASE_URL_DIRECT`, `DEV_DATABASE_ENDPOINT_ID`, `TEST_DATABASE_URL`, `TEST_DATABASE_ENDPOINT_ID`, `TEST_APP_DATABASE_URL` | **로그인에 `DATABASE_URL`(dev 풀링 주소) 필수.** 팀원은 본인 앱 역할 주소를 받음 (dev 적용 완료, 팀원 역할은 생성 예정 — [DB 규칙 8장](docs/db_rules.md)). 마이그레이션·관리 명령은 `DATABASE_URL_DIRECT`·`DEV_DATABASE_ENDPOINT_ID`, 업무 DB 테스트는 `TEST_*`. 값은 공통 DB 담당 유정현에게 받음. [개발 안내 4-2](docs/development.md) |
+| 홈 캐시 | `HOME_CACHE_DB_PATH` | 홈 캐시 SQLite 경로. 기본 `instance/cosmoa.db` (상대 경로는 저장소 루트 기준) |
 
 `OTHER_API_KEY`는 예비 항목입니다. 필요한 기능의 키를 위 표에 따라 설정합니다.
 
@@ -168,15 +195,23 @@ python app.py
 
 → http://127.0.0.1:5000
 
-로그인 전에는 `/login`으로 이동합니다. 첫 실행 시 로그인 가능한 계정이 없으면 `COSMOA_DEMO_*` 값으로 계정을 만듭니다. **로컬 개발에서 해당 값이 비어 있으면** 기본 계정 `demo@costd.kr` / `cosmoa1234`가 생성됩니다. 운영에서는 이메일과 공개 기본값이 아닌 비밀번호를 설정해야 계정이 생성됩니다.
+로그인 전에는 `/login`으로 이동합니다. **로그인 계정은 업무 DB(Neon PostgreSQL) `users`** 에 있습니다. 서버 시작 시 계정·테이블을 자동으로 만들지 않으며, SQLite 로 대체하지 않습니다. 업무 DB 에 연결할 수 없으면 로그인 화면에 "일시적으로 연결할 수 없습니다"가 표시됩니다(비밀번호 오류와 구분).
 
-이미 계정이 있으면 `.env`의 데모 비밀번호를 바꿔도 기존 비밀번호는 바뀌지 않습니다. 로컬 기존 계정의 비밀번호는 아래 명령의 이메일을 실제 계정 이메일로 바꾸어 변경합니다. 새 비밀번호는 숨김 입력으로 받습니다.
+로컬 실행에 필요한 것: `.env` 의 `DATABASE_URL`(dev 풀링 주소), 그리고 dev DB 에 계정. 계정은 공통 DB 담당(유정현)이 관리 명령으로 만듭니다. 계정이 하나도 없을 때만 **최초 계정**을 한 번 만듭니다. 비밀번호는 화면에 표시되지 않는 입력으로 두 번 받습니다 (PowerShell 등 대화형 터미널에서 실행).
 
 ```powershell
-python -m src.common.auth set-password demo@costd.kr
+python -m src.common.db_admin create-first-user --target dev --email <이메일> --name <이름> --team <팀>
 ```
 
-계정·홈 캐시는 `instance/cosmoa.db`에 저장됩니다. `FLASK_PORT`를 바꿨다면 접속 주소도 해당 포트로 바꿉니다.
+이미 있는 계정의 비밀번호 변경 (예전 `python -m src.common.auth set-password` 도 같은 명령으로 연결됩니다):
+
+```powershell
+python -m src.common.db_admin set-password --target dev --email <이메일>
+```
+
+두 명령 모두 `DEV_DATABASE_ENDPOINT_ID` 확인을 통과해야 하고, 운영 환경(`COSMOA_ENV=production`·Render)에서는 거부됩니다. 팀원 계정은 공통 DB 담당(유정현)이 `create-user` 로 만들고([개발 안내 5-2](docs/development.md)), 팀원은 로그인 후 "내 계정" → [비밀번호 변경] 화면(`/account/password`)에서 본인 비밀번호를 바꿉니다. 예전 SQLite 로그인 세션은 다시 로그인해야 합니다. 홈 캐시는 SQLite `HOME_CACHE_DB_PATH`(기본 `instance/cosmoa.db`)에 그대로 저장됩니다. `FLASK_PORT`를 바꿨다면 접속 주소도 해당 포트로 바꿉니다.
+
+업무 DB 마이그레이션·테스트 DB 표식·최초 계정 명령은 서버 실행과 분리된 관리 명령입니다. 사용법은 [개발 안내 5장](docs/development.md)을 따르며, 서버 시작 시 자동으로 실행되지 않습니다.
 
 ### 6. AI 챗봇 함께 실행
 
@@ -202,8 +237,9 @@ python src/06_chatbot/server.py
 
 | URL | endpoint (`url_for`) | 템플릿 | 담당 |
 |---|---|---|---|
-| `/login` | `login` | `src/common/login.html` | PM |
-| `/logout` | `logout` | 로그아웃 후 로그인 화면으로 이동 | PM |
+| `/login` | `login` | `src/common/login.html` | 공통 |
+| `/logout` | `logout` | 로그아웃 후 로그인 화면으로 이동 | 공통 |
+| `/account/password` | `account_password` | `src/common/account_password.html` — 본인 비밀번호 변경 | 공통 |
 | `/` | `home` | `src/01_home/home.html` | A |
 | `/news` | `home_news` | `src/01_home/news.html` | A |
 | `/regulations` | `home_regulations` | `src/01_home/regulations.html` | A |
@@ -211,7 +247,7 @@ python src/06_chatbot/server.py
 | `/margin-calculator` | `margin` | `src/03_margin/margin.html` | C |
 | `/ai-formulation` | `simulation` | `src/04_simulation/simulation.html` | D |
 | `/dev-request` | `dev_request` | `src/05_requisition/requisition.html` | E |
-| `/assets/<path>` | `asset` | `src/` 내부 CSS·JS·이미지 제공 | PM |
+| `/assets/<path>` | `asset` | `src/` 내부 CSS·JS·이미지 제공 | 공통 |
 
 대시보드 페이지와 뉴스·규제 더보기는 로그인이 필요합니다. `/regulatory`는 성분 규제 조회, `/regulations`는 홈의 규제 소식 더보기입니다.
 
@@ -230,6 +266,8 @@ python src/06_chatbot/server.py
 | `/api/ai-formulation/brief` (POST) | 개발요청서 AI 분석 | D |
 | `/api/dev-request/convert` (POST) | 개발요청서 자동변환 (`requisition.requisition_convert`) | E |
 | `/api/chatbot/message` (POST) | 챗봇 서버 중계 (`chatbot_message`) | F |
+| `/api/customers`, `/api/customers/<id>/projects`, `/api/projects/<id>` | 고객사·프로젝트 생성·조회 ([API 계약](docs/api_contract.md) 5장) | 공통 |
+| `/api/csrf-token`, `/api/projects/<id>/tabs/<tab>/...`, `/api/versions/<id>` | 공통 저장·최종본 ([API 계약](docs/api_contract.md) 2장) | 공통 |
 
 **별도 챗봇 서버**에는 `GET /health`(상태 확인), `POST /chat`(공유 비밀값 검증 후 답변)이 있습니다. 메인 서버의 페이지 URL과 구분합니다.
 
@@ -267,25 +305,43 @@ render_template("02_regulatory/regulatory.html")
 
 ## 팀원별 담당 폴더
 
-| 담당 | 영역 | 수정 가능 |
-|---|---|---|
-| **PM** | 공통 영역·배포 | `docs/`, `src/common/`, `app.py`의 로그인·페이지 Route, Navigation, `README.md`, Git·Docker 설정, 배포용 `data/regulatory/` |
-| **A** | Home | `src/01_home/` |
-| **B** | 국가별 인허가 규제 | `src/02_regulatory/` |
-| **C** | 원가 경쟁력 및 마진 시뮬레이션 | `src/03_margin/` |
-| **D** | AI 제형/샘플 시뮬레이션 | `src/04_simulation/` |
-| **E** | 개발요청서 | `src/05_requisition/` |
-| **F** | AI 챗봇 위젯·별도 서버 | `src/06_chatbot/`, `app.py`의 `[F]` 영역 |
+> 아래는 **기존 기능 담당**입니다. **재개발 역할 배분은 회의에서 최종 확인할 예정**입니다. 기존 A~F 폴더 구분은 그대로 씁니다.
+
+| 구분 | 담당 | 영역 | 수정 가능 |
+|---|---|---|---|
+| **공통** | 김민 PM·유정현 | 공통 영역·배포 | `docs/`, `src/common/`, `db/`, `app.py`의 로그인·페이지 Route(PM 영역), Navigation, `README.md`, Git·Docker 설정, 배포용 `data/regulatory/` |
+| **A** | 홍은주 | Home (홈 화면) | `src/01_home/` |
+| **B** | 유정현 | 국가별 인허가 규제 | `src/02_regulatory/` |
+| **C** | 김민 | 원가 경쟁력 및 마진 시뮬레이션 | `src/03_margin/` |
+| **D** | 맹민지 | AI 제형/샘플 시뮬레이션 (모델링) | `src/04_simulation/` |
+| **E** | **미정** | 개발요청서 | `src/05_requisition/` |
+| **F** | 홍은주 | AI 챗봇 위젯·별도 서버 | `src/06_chatbot/`, `app.py`의 `[F]` 영역 |
+| – | **미정** | 프로젝트 관리 탭 (재개발 예정) | 폴더 미정 |
+
+**공통 관리 담당 (확정)**
+
+| 업무 | 담당 |
+|---|---|
+| DB 계정·접속 역할·마이그레이션 (공통 DB 담당) | 유정현 |
+| PR 검토·병합 | 김민 PM·유정현 |
+
+- 공통 DB 담당(유정현)은 업무 DB 계정·앱 접속 역할 발급과 마이그레이션 적용을 맡습니다. PR 검토·병합(김민 PM·유정현)과는 별개의 역할입니다.
+- **개발요청서(E) 담당은 현재 미정**입니다. 공통 기반 PR(#1)에 포함된 개발요청서 변경도 김민 PM·유정현이 검토하고, 담당자가 정해지면 그 범위([개발 안내 10-3](docs/development.md))를 다시 확인합니다.
 
 - 각 담당자는 `app.py` 하단의 **자신의 영역**(`# [B] …` 주석 아래)에 Backend Route와 필요한 모듈 연결 코드를 추가합니다. 개발요청서는 기존 Blueprint 구조를 유지합니다.
 - Python 처리 로직은 자신의 폴더 모듈(예: `src/02_regulatory/regulatory_service.py`)에 둡니다.
-- 홈 콘텐츠·데이터는 A, 공통 사이드바·Navigation·로그인은 PM이 관리합니다.
-- 공통 파일·배포 설정 변경은 PM과 조율하고, 기능 담당자는 기존 인터페이스와 다른 기능의 동작을 유지합니다.
+- 홈 콘텐츠·데이터는 A, 공통 사이드바·Navigation·로그인은 공통 담당(김민 PM·유정현)이 관리합니다.
+- 공통 파일·배포 설정 변경은 김민 PM·유정현 및 영향받는 담당자와 조율하고, 기능 담당자는 기존 인터페이스와 다른 기능의 동작을 유지합니다.
 
 ## 공통 문서
 
 | 문서 | 내용 |
 |---|---|
+| [팀원 시작 안내](docs/team_onboarding.md) | 팀원 시작 순서(Windows CMD), DB 명령 구분, 공유 dev·테스트 DB 사용 규칙, 준비 필요 항목 |
+| [개발 안내](docs/development.md) | 재개발 목표·구현 단계·환경 구성·실행 절차, 팀 공통 규칙(9장), 구현 현황과 인계(10장). **구현 예정 항목 포함** |
+| [DB 규칙](docs/db_rules.md) | 업무 DB 저장·버전·최종본·반영 출처·파일 정책, yoyo 마이그레이션 작성·검토·적용 규칙 |
+| [데이터 계약](docs/data_contract.md) | 고객사·프로젝트 필드, `tab_versions`·payload 구조, 저장 제외 필드, 문서 버전과 개발 차수 |
+| [API 계약](docs/api_contract.md) | 공통 저장 API(`/api/projects/<id>/tabs/<tab>/…`, `/api/versions/<id>`)·고객사·프로젝트 API 경로·예시, 상태 코드, CSRF, 크기 제한 |
 | [디자인 시스템](docs/design_system.md) | Typography, Colors(CSS Variable), Layout, Shape, Responsive. **모든 화면 구현의 기준** |
 | [디자인 참고 자료](docs/reference/) | 로그인·홈 디자인 참고 자료 |
 | [공통 UI 규격](docs/ui_components.md) | Header, Button, Card, Form, Table, Modal 등의 HTML 구조·Class·상태 |
@@ -295,15 +351,15 @@ render_template("02_regulatory/regulatory.html")
 | [규제 API 계약](src/02_regulatory/api_reference.md) | 규제 조회·추출 API 요청·응답 |
 | [규제 시연 검증 기록](src/02_regulatory/demo_verification.md) | 시연 자료별 검증 결과와 미검증 항목 |
 | [마진 사용자 가이드](src/03_margin/margin_user_guide.md) | 계산·역제안·견적서 PDF 사용 방법 |
-| [개발요청서 실행·검증](src/05_requisition/IMPLEMENTATION.md) | 구현 범위, API 설정, 저장·번역 제한, 검증 방법 |
+| [개발요청서 실행·검증](src/05_requisition/implementation.md) | 구현 범위, API 설정, 저장·번역 제한, 검증 방법 |
 | [챗봇 명세](src/06_chatbot/chatbot.md) | 위젯·서버·조회 도구와 인터페이스 |
 
 서버별 환경변수는 이 README와 배포 안내를 따릅니다. 메인은 제형 분석·개발요청서 변환에, 챗봇 서버는 답변 생성에 `OPENAI_API_KEY`를 사용합니다.
 
 ### 공통 디자인을 변경하려면
 
-1. PM에게 공유 (무엇을 / 왜)
-2. PM이 `docs/design_system.md` 수정 → `src/common/style.css`의 `:root` Variable을 동일하게 수정
+1. 공통 담당(김민 PM·유정현)에게 공유 (무엇을 / 왜)
+2. 공통 담당이 `docs/design_system.md` 수정 → `src/common/style.css`의 `:root` Variable을 동일하게 수정
 3. 컴포넌트 규격이 바뀌면 `docs/ui_components.md`도 수정
 4. 공지 후 각자 `git pull`
 
@@ -317,7 +373,7 @@ render_template("02_regulatory/regulatory.html")
 4. 공통 UI는 `docs/ui_components.md`를 따른다.
 5. 공통 CSS는 `src/common/style.css`를 따른다.
 6. 페이지별 CSS는 해당 페이지에서만 필요한 내용만 작성한다. (공통 Button, Card 등을 다시 정의하지 않는다)
-7. 홈 콘텐츠·데이터는 A, 공통 Navigation·로그인은 PM이 관리한다.
+7. 홈 콘텐츠·데이터는 A, 공통 Navigation·로그인은 공통 담당(김민 PM·유정현)이 관리한다.
 8. `app.py`의 기존 Route를 삭제하거나 임의로 변경하지 않는다.
 9. 새로운 Route를 추가할 때 기존 Route와 충돌하지 않는다. (`/api/<자신의 페이지 경로>/...` 접두사 사용)
 10. API Key를 코드에 직접 작성하지 않는다.
@@ -374,26 +430,50 @@ python -m unittest discover -s src/05_requisition/tests -p "test_*.py"
 python -m unittest discover -s src/06_chatbot/tests -p "test_*.py"
 ```
 
-위 테스트는 외부 API를 모의 처리합니다. 테스트 통과는 실제 키·서비스 연결 성공을 의미하지 않습니다. 규제 테스트의 실제 식약처 DB 검증은 로컬 DB 준비 여부에 따라 생략될 수 있습니다.
+아래는 업무 DB 공통 모듈 테스트입니다. 단위 테스트는 DB 에 접속하지 않습니다. 통합 테스트는 `TEST_DATABASE_URL`(테스트 브랜치)만 사용하고, 값이 없으면 건너뛰며, 테스트 DB 식별에 실패하면 멈춥니다. ([개발 안내 5-4](docs/development.md))
+
+```powershell
+python -m unittest discover -s src/common/tests -p "test_db_unit.py"
+python -m unittest discover -s src/common/tests -p "test_db_integration.py"
+python -m unittest discover -s src/common/tests -p "test_auth_integration.py"   # 로그인 (test DB + Flask test_client)
+python -m unittest discover -s src/common/tests -p "test_versions_unit.py"       # 저장 payload 검증 (DB 접속 없음)
+python -m unittest discover -s src/common/tests -p "test_versions_integration.py"  # 저장 엔진·API (test DB)
+python -m unittest discover -s src/common/tests -p "test_projects_unit.py"        # 고객사·프로젝트 입력 검증 (DB 접속 없음)
+python -m unittest discover -s src/common/tests -p "test_projects_integration.py"  # 고객사·프로젝트 API (test DB)
+python -m unittest discover -s src/common/tests -p "test_common_js.py"            # Common.api 재전송 규칙 (Node.js)
+python -m unittest discover -s src/05_requisition/tests -p "test_contract.py"     # 개발요청서 저장 계약 v1 (Node.js)
+```
+
+개발요청서의 프로젝트 선택 화면 확인 순서는 [개발 안내 5-3-1](docs/development.md) 에 있습니다.
+
+기능 테스트에서 로그인 세션이 필요하면 `src/common/testing.py` 의 `login_as(client, user)` 를 씁니다. 업무 DB 대신 메모리 사용자를 써서 dev DB 에 접속하지 않습니다.
+
+기능별 테스트(규제·개발요청서·챗봇)는 외부 API를 모의 처리합니다. 테스트 통과는 실제 키·서비스 연결 성공을 의미하지 않습니다. 규제 테스트의 실제 식약처 DB 검증은 로컬 DB 준비 여부에 따라 생략될 수 있습니다.
 
 개발요청서의 추가 브라우저 검증은 Windows Edge가 있는 환경에서 실행합니다. JS 문법 검사는 Node.js가 필요합니다.
 
 ```powershell
 node --check src/05_requisition/requisition.js
+node --check src/05_requisition/requisition_payload.js
 python src/05_requisition/tests/check_browser.py
 ```
 
-테스트 범위·생성 파일은 [개발요청서 검증 안내](src/05_requisition/IMPLEMENTATION.md)를 확인합니다. 수동으로는 로그인, 홈 데이터, 규제 검색·OCR, 견적서 한글 PDF, 제형 문서 분석, 개발요청서 변환·인쇄, 챗봇 질문을 변경 범위에 맞게 확인합니다. 실제 AI 분석·질문은 외부 API 사용료가 발생할 수 있습니다. 기존 [시연 검증 기록](src/02_regulatory/demo_verification.md)과 [배포 점검 절차](docs/deploy_render.md)는 해당 문서에 기록된 범위의 근거입니다.
+⚠ `check_browser.py` 는 **현재 동작하지 않습니다** (공통 기반 작업 이전부터 화면에 없는 요소(STEP 표시)를 확인하고, 로그인 전환 이후에는 예전 세션 형식(session["user"])이라 로그인도 통과하지 못함 — 수정 필요). `browser_smoke.py` 는 `websockets` 패키지가 추가로 필요하며 `requirements.txt` 에는 없습니다.
+
+테스트 범위·생성 파일은 [개발요청서 검증 안내](src/05_requisition/implementation.md)를 확인합니다. 수동으로는 로그인, 홈 데이터, 규제 검색·OCR, 견적서 한글 PDF, 제형 문서 분석, 개발요청서 변환·인쇄, 챗봇 질문을 변경 범위에 맞게 확인합니다. 실제 AI 분석·질문은 외부 API 사용료가 발생할 수 있습니다. 기존 [시연 검증 기록](src/02_regulatory/demo_verification.md)과 [배포 점검 절차](docs/deploy_render.md)는 해당 문서에 기록된 범위의 근거입니다.
 
 ## Git 작업 시 주의사항
 
-- `main`에 직접 커밋하지 않습니다. 기능별 Branch에서 작업 후 PR로 병합합니다.
-  - 예: `feature/home`, `feature/regulatory`, `feature/margin`, `feature/sample`, `feature/requisition`, `feature/chatbot`
-- 작업 시작 전 `git pull origin main`, PR 전에 `main`을 자신의 Branch에 병합해 충돌을 먼저 해결합니다.
+- 작업 흐름은 **`feature/*` → `develop` → `main`** 입니다.
+  - 기능 Branch는 `develop`에서 만듭니다. 이름은 `feature/` 뒤를 snake_case 로 합니다 (파일·폴더도 snake_case — [개발 안내 9-3](docs/development.md)). 예: `feature/home`, `feature/regulatory`, `feature/margin`, `feature/sample`, `feature/requisition`, `feature/chatbot`, `feature/common_foundation`
+  - 기능 Branch는 PR로 `develop`에 병합합니다. PR 검토·병합은 김민 PM·유정현이 합니다. `develop` → `main` 병합(시연·배포 반영)은 김민 PM이 합니다.
+  - `develop`·`main`에 직접 커밋하지 않습니다.
+- 작업 시작 전 `git pull origin develop`, PR 전에 `develop`을 자신의 Branch에 병합해 충돌을 먼저 해결합니다.
+- Git 브랜치와 Neon DB 브랜치(production / dev / test)는 별개입니다. 업무 DB 변경 PR은 공통 DB 담당 유정현의 승인이 필요합니다. ([DB 규칙 7장](docs/db_rules.md))
 - `git add .` 대신 자신의 폴더만 추가합니다: `git add src/02_regulatory/ app.py`
 - 커밋 전 `git status`로 **자신의 폴더 밖 파일이 바뀌지 않았는지** 확인합니다. (AI 도구가 공통 파일을 건드리는 경우가 있습니다)
 - **커밋·푸시·머지는 담당자가 직접 합니다.** AI 도구는 `git add / commit / push / merge`를 실행하지 않고 변경 내용·검증 결과·커밋 제목 제안만 제공합니다.
-- `.env`, `instance/`, `tdenv/`, `__pycache__/`는 커밋하지 않습니다. DB는 기본적으로 제외하며 배포용 `data/regulatory/mfds_use_restriction.sqlite`만 예외입니다. Key를 실수로 커밋했다면 즉시 PM에게 알리고 Key를 재발급합니다.
+- `.env`, `instance/`, `tdenv/`, `__pycache__/`는 커밋하지 않습니다. DB는 기본적으로 제외하며 배포용 `data/regulatory/mfds_use_restriction.sqlite`만 예외입니다. Key를 실수로 커밋했다면 즉시 김민 PM에게 알리고(업무 DB 접속정보라면 공통 DB 담당 유정현에게도) Key를 재발급합니다.
 
 **충돌 가능성이 높은 파일**
 
@@ -402,7 +482,7 @@ python src/05_requisition/tests/check_browser.py
 | `app.py` | 기능별 Route·모듈 연결 | 자신의 주석 영역에만 추가, 로직은 자기 폴더 모듈로 분리, 기존 Blueprint 연결 유지 |
 | `requirements.txt` | 각자 패키지 추가 | 한 줄씩 추가, 기존 줄 수정 금지, PR에 명시 |
 | `.env.example` | 환경변수 이름·설명 추가 | 실제 비밀값 없이 추가, README·배포 안내와 일치 여부 확인 |
-| `src/common/style.css`, `common.js`, `base.html` | 공통 영역 | PM만 수정 |
-| `docs/*.md`, `README.md` | 공통 문서 | PM만 수정 |
-| `Dockerfile`, `.dockerignore`, `data/regulatory/` | 배포 환경·DB 사본 | PM 관리, 두 서버의 환경변수·DB 경로 확인 |
-| `src/01_home/home.html` | 홈 콘텐츠와 공통 디자인 연결 | 콘텐츠는 A, 공통 레이아웃 변경은 PM과 조율 |
+| `src/common/style.css`, `common.js`, `base.html` | 공통 영역 | 김민 PM·유정현만 수정 (영향받는 담당자와 조율) |
+| `docs/*.md`, `README.md` | 공통 문서 | 김민 PM·유정현만 수정 (영향받는 담당자와 조율) |
+| `Dockerfile`, `.dockerignore`, `data/regulatory/` | 배포 환경·DB 사본 | 김민 PM·유정현 관리, 두 서버의 환경변수·DB 경로 확인 |
+| `src/01_home/home.html` | 홈 콘텐츠와 공통 디자인 연결 | 콘텐츠는 A, 공통 레이아웃 변경은 김민 PM·유정현과 조율 |

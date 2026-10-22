@@ -144,3 +144,37 @@
 #requisition-app .text-caption { font-size: 0.75rem; }
 #requisition-app .form-control { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
 #requisition-app .requisition-section-tabs .tab { min-height: 38px; }
+
+/* 연결 프로젝트 선택 (고객사 → 프로젝트) */
+.requisition-project { margin-bottom: var(--space-4); border-radius: var(--radius-xl); }
+.requisition-project.has-project { border-color: var(--color-primary-light); }
+.requisition-project-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.requisition-project-current { min-width: 0; }
+.requisition-project-current p { margin: 0; }
+#requisition-app .requisition-project-name { color: var(--color-text-primary); font-size: var(--font-size-card-title); font-weight: var(--font-weight-bold); overflow-wrap: anywhere; }
+.requisition-project-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); margin-top: var(--space-5); padding-top: var(--space-5); border-top: var(--border-default); }
+.requisition-project-picker > .form-group { margin: 0; min-width: 0; }
+.requisition-project-picker > p { grid-column: 1 / -1; margin: 0; }
+.requisition-project-row { display: flex; gap: var(--space-2); }
+.requisition-project-row > select { flex: 1; min-width: 0; }
+.requisition-project-row > .btn { flex: none; }
+.requisition-project-create { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-4); border: var(--border-default); border-radius: var(--radius-lg); background: var(--color-surface-muted); }
+.requisition-project-create .form-label { margin: 0; }
+.requisition-project-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+@container page (max-width: 680px) {
+  .requisition-project-picker { grid-template-columns: minmax(0, 1fr); }
+  .requisition-project-bar { flex-wrap: wrap; }
+}
+.requisition-customer-search { margin-bottom: var(--space-2); }
+
+/* 목표 가격대·컨셉 원료 목록 편집 (FIX v1) */
+.requisition-rows { display: grid; gap: var(--space-2); margin-bottom: var(--space-2); }
+.requisition-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.requisition-row > .form-control { flex: 1 1 140px; min-width: 0; }
+.requisition-price-row > select.form-control { flex: 0 0 110px; }
+.requisition-concept-row > .form-control:first-child { flex: 2 1 180px; }
+.requisition-row > .btn { flex: none; }
+.requisition-concept-group + .requisition-concept-group { margin-top: var(--space-4); }
+#requisition-app .requisition-concept-title { margin: 0 0 var(--space-2); color: var(--color-text-body); font-weight: var(--font-weight-bold); }
+.requisition-legacy-note { margin-top: var(--space-2); }
+.requisition-panel #requisition-save-help { margin: 0; }

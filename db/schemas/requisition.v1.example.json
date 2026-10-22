@@ -1,0 +1,136 @@
+{
+  "context": {
+    "customer_id": 7,
+    "customer_name": "A사",
+    "project_id": 12,
+    "project_name": "비타민 세럼",
+    "creation_method": "auto_edited",
+    "source_language": "en",
+    "target_language": "ko",
+    "source_file_name": "buyer_brief.pdf"
+  },
+  "inputs": {
+    "request_source": "고객사 요청",
+    "product_name": "Vitamin C Serum",
+    "sample_request_type": "신규 샘플",
+    "product_type": "스킨케어",
+    "target_prices": [
+      {
+        "amount": 1300,
+        "currency": "KRW"
+      },
+      {
+        "amount": 1500,
+        "currency": "KRW"
+      },
+      {
+        "amount": 1800,
+        "currency": "KRW"
+      }
+    ],
+    "export_countries": [
+      "미국",
+      "프랑스"
+    ],
+    "company_description": "",
+    "basic_notes": "",
+    "benchmark_product_name": "",
+    "product_development": {
+      "application_type": "Leave-on",
+      "product_description": "",
+      "formula_guidelines": "",
+      "texture": "가벼운 젤 텍스처",
+      "appearance_sensory": "",
+      "viscosity": "흐르지 않는 젤 정도",
+      "spf": "SPF50+",
+      "pa": "PA++++",
+      "container_reference": "에어리스 펌프 30mL (참고)",
+      "fragrance_flavor": "",
+      "finish": "",
+      "coverage": "",
+      "color_shade_reference": "",
+      "other_requirements": "",
+      "viscosity_level": ""
+    },
+    "buyer_prohibited_ingredients": [
+      "Parabens"
+    ],
+    "ingredients": {
+      "concept": [
+        {
+          "name": "Ascorbic Acid",
+          "kind": "necessary",
+          "must_contain": true,
+          "efficacy_tags": [
+            "미백"
+          ]
+        },
+        {
+          "name": "Niacinamide",
+          "kind": "ideal",
+          "must_contain": null,
+          "efficacy_tags": [
+            "미백",
+            "보습"
+          ]
+        }
+      ],
+      "other_notes": ""
+    },
+    "rnd_check_requests": "할랄 인증 필요 여부 확인",
+    "quality": {
+      "tests": [
+        "안정도 시험"
+      ],
+      "additional_notes": ""
+    },
+    "product_type_custom": "",
+    "product_type_detail": "세럼",
+    "regulatory_restricted_ingredients": [],
+    "reference_notes": ""
+  },
+  "outputs": {},
+  "meta": {
+    "field_provenance": [
+      {
+        "field_key": "product_development.texture",
+        "source_value": "light gel texture",
+        "source_page": "2",
+        "input_source": "auto",
+        "review_status": "confirmed",
+        "user_value": null
+      },
+      {
+        "field_key": "target_prices",
+        "source_value": "mid-tier",
+        "source_page": "1",
+        "input_source": "user_edited",
+        "review_status": "user_edited",
+        "user_value": [
+          {
+            "amount": 1300,
+            "currency": "KRW"
+          },
+          {
+            "amount": 1500,
+            "currency": "KRW"
+          },
+          {
+            "amount": 1800,
+            "currency": "KRW"
+          }
+        ]
+      }
+    ],
+    "reference_files": [
+      {
+        "name": "benchmark.png",
+        "size": 183204,
+        "type": "image/png"
+      }
+    ],
+    "legacy_fields": {
+      "target_price_tier": "mid"
+    }
+  }
+}

@@ -12,6 +12,10 @@ instance/
 # 배포용 식약처 규제 DB 한 개만 포함 (읽기 전용 조회, MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite)
 !data/regulatory/mfds_use_restriction.sqlite
 
+# 로컬 참고자료 — 이미지에 넣지 않음 (local-reference/ 는 이전 이름)
+local_reference/
+local-reference/
+
 # Git · 개발 환경 · 캐시
 .git/
 .gitignore
