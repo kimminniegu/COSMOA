@@ -398,11 +398,16 @@ render_template("02_regulatory/regulatory.html")
 ```
 다음 문서를 순서대로 먼저 읽어 주세요.
 1. README.md
-2. docs/design_system.md
-3. docs/ui_components.md
-4. src/02_regulatory/regulatory.md
-5. src/02_regulatory/api_reference.md
-6. src/02_regulatory/demo_verification.md
+2. docs/team_onboarding.md
+3. docs/development.md
+4. docs/db_rules.md
+5. docs/data_contract.md
+6. docs/api_contract.md
+7. docs/design_system.md
+8. docs/ui_components.md
+9. src/02_regulatory/regulatory.md
+10. src/02_regulatory/api_reference.md
+11. src/02_regulatory/demo_verification.md
 
 기존 src/02_regulatory/ 구현과 tests/를 확인하고, 아래 변경 요구사항을 해당 폴더 안에 반영해 주세요.
 변경 요구사항: [구체적인 변경 내용 작성]
