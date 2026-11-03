@@ -393,9 +393,14 @@ render_template("02_regulatory/regulatory.html")
 
 1. 해당 기능의 명세, 구현 코드, API 계약·사용 안내·검증 기록을 먼저 확인합니다.
 2. 변경할 요구사항·대상 파일·검증 범위를 정하고 기존 기능과 연결 방식을 유지합니다.
-3. AI 코딩 도구에 아래와 같이 요청합니다. (국가별 인허가 규제 담당자 예시)
+3. 아래 프롬프트의 [작업자], [담당 기능], [담당 폴더], [변경 요구사항]을 채워 AI 코딩 도구에 요청합니다.
 
 ```
+작업자: [작업자]
+담당 기능: [담당 기능]
+담당 폴더: [담당 폴더]
+변경 요구사항: [변경 요구사항]
+
 다음 문서를 순서대로 먼저 읽어 주세요.
 1. README.md
 2. docs/team_onboarding.md
@@ -405,22 +410,22 @@ render_template("02_regulatory/regulatory.html")
 6. docs/api_contract.md
 7. docs/design_system.md
 8. docs/ui_components.md
-9. src/02_regulatory/regulatory.md
-10. src/02_regulatory/api_reference.md
-11. src/02_regulatory/demo_verification.md
 
-기존 src/02_regulatory/ 구현과 tests/를 확인하고, 아래 변경 요구사항을 해당 폴더 안에 반영해 주세요.
-변경 요구사항: [구체적인 변경 내용 작성]
+이어서 [담당 폴더]에 실제로 존재하는 기능 명세·API 안내·사용 안내·검증 기록을 찾아 읽어 주세요.
+폴더마다 문서 이름과 구성이 다르므로 동일한 파일명이 있다고 가정하지 마세요.
+기존 구현과 실제로 존재하는 테스트를 확인하고, 변경 요구사항을 담당 범위 안에 반영해 주세요.
 
 규칙:
-- src/02_regulatory/ 밖의 파일은 수정하지 마세요. (docs/, src/common/, 다른 담당자 폴더 수정 금지)
-- app.py는 "[B] 국가별 인허가 규제" 주석 아래에 필요한 Route·모듈 연결 코드를 추가하는 것만 허용합니다.
-  기존 Route는 삭제·변경하지 말고, URL은 /api/regulatory/ 로 시작하게 해 주세요.
+- README의 「팀원별 담당 폴더」와 「개발 규칙」을 따라 작업하세요. 담당자나 작업 범위가 불명확하면 수정 전에 확인하세요.
+- [담당 폴더] 밖의 파일과 다른 담당자의 기능은 임의로 수정하지 마세요.
+  docs/, src/common/ 등 공통 파일은 README의 담당 권한과 사전에 합의된 작업 범위 안에서만 수정하세요.
+- app.py 연결이 필요한 경우 README의 담당 범위와 개발 규칙에 따라 자신의 주석 영역에 필요한 Route·모듈 연결 코드만 추가하세요.
+  기존 Route는 삭제하거나 임의로 변경하지 말고, 새 Route의 URL·함수명은 담당 기능의 기존 접두사 규칙을 따라 충돌을 피하세요.
 - 공통 Button, Card, Form, Table, Modal 등은 ui_components.md의 HTML 구조와 Class를 그대로 사용하세요.
 - 색상·간격·글자 굵기는 design_system.md의 CSS Variable만 사용하세요. (굵기는 --font-weight-regular / -bold / -extrabold 3종뿐)
-- regulatory.css에는 이 페이지에서만 필요한 스타일만, "regulatory-" 접두사로 작성하세요.
+- 페이지별 CSS에는 해당 페이지에만 필요한 스타일을 작성하고, CSS Class·HTML id는 README의 이름 충돌 방지 규칙과 담당 기능의 기존 접두사를 따르세요.
 - API Key는 os.getenv()로 불러오세요.
-- 공통 영역 수정이 필요해 보이면 수정하지 말고 알려 주세요.
+- 합의된 작업 범위 밖의 공통 영역 수정이 필요해 보이면 수정하지 말고 알려 주세요.
 - 변경 범위에 맞는 기존 테스트를 실행하고, 결과와 미검증 항목을 알려 주세요.
 - git add / commit / push / merge는 실행하지 마세요. 작업이 끝나면 변경 내용과 커밋 제목 제안만 알려 주세요. Git 반영은 제가 직접 합니다.
 ```
