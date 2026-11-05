@@ -1,16 +1,16 @@
 # 발표 시연 자료 검증 기록 (담당자 B · 국가별 인허가 규제)
 
 - 작성일: 2026-09-25 (검증 실행일 2026-09-24~25) · 발표용 폴더: `src/02_regulatory/samples/` — **최종 파일 3개만** 둔다 (2026-09-25 정리: `samples/demo/` 하위 폴더를 없애고 `samples/` 바로 아래로 이동, 파일 내용은 해시 동일).
-- 회귀 테스트 자료(텍스트 PDF `EU-SER-041_development_brief.pdf`, 스캔 PDF·혼합 PDF, OCR 이미지 3종, 다중 시트 `sample_multisheet_en.xlsx`)는 최종 3개로 대체할 수 없어 `tests/fixtures/` 로 옮겼고 `tests/test_regulatory_service.py` 가 그 경로를 연다. 옛 한국어 샘플 `sample_ingredients_kr.xlsx` 는 테스트에서 추출 성공 여부만 확인하던 자료라 한국어 두피샴푸 XLSX 로 참조를 바꾸고 삭제했다. 옛 발표용 `samples/demo_*` 3개는 테스트·문서 참조가 없어 정리했다.
+- 회귀 테스트 자료(텍스트 PDF `eu_ser_041_development_brief.pdf`, 스캔 PDF·혼합 PDF, OCR 이미지 3종, 다중 시트 `sample_multisheet_en.xlsx`)는 최종 3개로 대체할 수 없어 `tests/fixtures/` 로 옮겼고 `tests/test_regulatory_service.py` 가 그 경로를 연다. 옛 한국어 샘플 `sample_ingredients_kr.xlsx` 는 테스트에서 추출 성공 여부만 확인하던 자료라 한국어 두피샴푸 XLSX 로 참조를 바꾸고 삭제했다. 옛 발표용 `samples/demo_*` 3개는 테스트·문서 참조가 없어 정리했다.
 - 세 파일은 모두 **가상 자료**이며 전성분 처방이 아닌 ‘주요 검토 성분표 / Key Ingredients for Review’ 다. 함량은 근거가 없어 한국어 ‘미정’, 영어 ‘TBD’. 파일명·제목의 시장은 **규제 조회 시연 추천 시장**이며 수출 적합성 인증이 아니다. 규제 레코드가 있다는 것은 사용 가능·적합을 뜻하지 않는다.
 
 ## 1. 최종 파일
 
 | 파일 | 언어 | 제품 콘셉트 | 성분 수 | 추천 시장 (파일명·제목에 표기) |
 |---|---|---|---|---|
-| `KR_EU_CN_ASEAN_Hair_Color_Cream_Development_Brief.pdf` | 영어 | PPD-free·암모니아-free 산화형 염모제 크림(염료 성분부) 개발요청서. 제품명·개발 목적·콘셉트·대상 시장·요청사항·Key Ingredients for Review. 1쪽, Segoe UI TTF 포함(텍스트 선택·추출 가능) | 10 | KR · EU · CN · ASEAN |
-| `한국_EU_중국_아세안_두피샴푸_주요검토성분표.xlsx` | 한국어 | 두피 케어(비듬·가려움 완화) 샴푸 주요 검토 성분표. 시트 1개(`주요검토성분표`), 헤더 `번호 / 성분명 / 함량 / 기능(검토 목적)`, 데이터 영역 병합·숨김·수식 없음, 인쇄 영역·열 폭·헤더 색 설정 | 10 | 한국 · EU · 중국 · 아세안 |
-| `KR_EU_CN_JP_ASEAN_Sun_Essence_Key_Ingredients.png` | 영어 | 데일리 선 에센스(얼굴, 씻어내지 않음) 주요 검토 성분표 이미지. 2400×2322px, 흰 배경·진한 글씨·가로 괘선만, 헤더 `No. / INCI Name / Concentration (%)`, 프로젝트 글꼴(NanumSquare Neo) 52px | 10 | KR · EU · CN · JP · ASEAN |
+| `kr_eu_cn_asean_hair_color_cream_development_brief.pdf` | 영어 | PPD-free·암모니아-free 산화형 염모제 크림(염료 성분부) 개발요청서. 제품명·개발 목적·콘셉트·대상 시장·요청사항·Key Ingredients for Review. 1쪽, Segoe UI TTF 포함(텍스트 선택·추출 가능) | 10 | KR · EU · CN · ASEAN |
+| `kr_eu_cn_asean_scalp_shampoo_key_ingredients.xlsx` | 한국어 | 두피 케어(비듬·가려움 완화) 샴푸 주요 검토 성분표. 시트 1개(`주요검토성분표`), 헤더 `번호 / 성분명 / 함량 / 기능(검토 목적)`, 데이터 영역 병합·숨김·수식 없음, 인쇄 영역·열 폭·헤더 색 설정 | 10 | 한국 · EU · 중국 · 아세안 |
+| `kr_eu_cn_jp_asean_sun_essence_key_ingredients.png` | 영어 | 데일리 선 에센스(얼굴, 씻어내지 않음) 주요 검토 성분표 이미지. 2400×2322px, 흰 배경·진한 글씨·가로 괘선만, 헤더 `No. / INCI Name / Concentration (%)`, 프로젝트 글꼴(NanumSquare Neo) 52px | 10 | KR · EU · CN · JP · ASEAN |
 
 성분 구성 (모두 실제 검색·매칭으로 확인한 표준명. 세 제품 간 중복 없음)
 
@@ -59,7 +59,7 @@
 
 ## 6. EU-SER-041 개발요청서 간소화 (2026-09-28)
 
-- 대상: `samples/EU-SER-041_development_brief_regulatory.pdf` (영어, 가상 바이어 Atelier Mira, EU 페이스 세럼). 현직자 피드백에 따라 초기 영업 단계에서 아직 확정되지 않은 연구·시험·생산 정보를 요구하지 않도록 3쪽 → 2쪽으로 간소화했다. ReportLab·Helvetica·A4 텍스트 PDF 그대로.
+- 대상: `samples/eu_ser_041_development_brief_regulatory.pdf` (영어, 가상 바이어 Atelier Mira, EU 페이스 세럼). 현직자 피드백에 따라 초기 영업 단계에서 아직 확정되지 않은 연구·시험·생산 정보를 요구하지 않도록 3쪽 → 2쪽으로 간소화했다. ReportLab·Helvetica·A4 텍스트 PDF 그대로.
 - 구성: `01 / Project & commercial`(거래처·개발 방식·일정·수량·목표 단가·FOB Busan 기준·용량·샘플/견적) → `02 / Formula direction`(대상 국가·콘셉트·요청 효능·사용감/외관·참고 제품·향·제외 원료·Application·사용법 + 요청 성분표) → `03 / Packaging`(기존 08에서 번호 변경). 점도·pH 수치, 안전성·효능 시험표, 안정성·미생물·용기 시험 계획, 전성분·정량 처방·원료 규격서 제출 요구는 삭제하고 “내부 담당 부서가 개발 진행에 따라 정한다”는 한 줄로 갈음했다. 제품명·거래처·시장·일정·수량·가격(USD 2.35/unit, FOB Busan)은 유지.
 - 성분표: 제목 `INCI name / Requested level / Role / status` 와 7개 성분(Hydrolyzed Wheat Protein · Glycerin · Zinc PCA · Retinol · Phenoxyethanol · Chlorphenesin · Aqua)의 표기·순서 유지. 함량은 확정 수치 대신 모두 `TBD`(다른 시연 자료와 같은 표기) — 추출 시 `amount_raw="TBD"` 로 원문 보존되고 ‘함량 형식 확인’ 안내가 붙는다(0·임의 숫자로 바뀌지 않음). 표는 2쪽 안에 한 덩어리로 배치(KeepTogether).
 - 검증 (모두 로컬, 외부 API 호출 0회): `regulatory_extract.extract_upload()` 직접 호출, Flask test client `POST /api/regulatory/extract`, 실행 중인 개발 서버(127.0.0.1:5000) 로그인 후 HTTP 업로드 — 세 경로 모두 7/7 추출, 누락·중복·설명문 유입 0, `document_market`=“European Union: France and Germany”, `document_use`=“Leave-on; adult facial skin. …” 로 수정 전과 동일. 식약처 수집 DB `regulatory_mfds_lookup.lookup(inci_name=…)` EU·KR 14건은 수정 전후 결과가 완전히 같다(EU: Hydrolyzed Wheat Protein·Zinc PCA·Retinol·Phenoxyethanol·Chlorphenesin `found`, Glycerin·Aqua `not_listed`). `python -m unittest discover -s src/02_regulatory/tests` 111건 통과.

@@ -34,8 +34,8 @@ def load_body(name):
 
 def _login(client):
     """PM 로그인 기능(src/common/auth.py) 추가 후 페이지 Route 가 @login_required 라서 테스트 세션에 사용자를 넣는다. (DB·비밀번호 불필요)"""
-    with client.session_transaction() as sess:
-        sess["user"] = {"id": 0, "email": "test@example.invalid", "name": "테스트", "team": "B"}
+    from src.common.testing import login_as   # 업무 DB 대신 메모리 사용자 (세션 형식 v2)
+    login_as(client, {"id": 0, "email": "test@example.invalid", "name": "테스트", "team": "B"}, flask_app)
 
 
 class FakeResponse:
@@ -104,7 +104,7 @@ class SearchNormalizeTest(unittest.TestCase):
 
 class RegulationNormalizeTest(unittest.TestCase):
     def test_eu_listed_keeps_limit_condition_raw(self):
-        body = load_body("regulations_5489_EU.json")
+        body = load_body("regulations_5489_eu.json")
         result = svc.normalize_regulation_response(body, 5489, "EU")
         self.assertEqual(result["lookup_status"], "found")
         self.assertEqual(result["result_status"], "listed")
@@ -117,7 +117,7 @@ class RegulationNormalizeTest(unittest.TestCase):
         self.assertTrue(result["queried_at"])
 
     def test_us_not_listed_is_no_data_not_error(self):
-        body = load_body("regulations_5489_US.json")
+        body = load_body("regulations_5489_us.json")
         result = svc.normalize_regulation_response(body, 5489, "US")
         self.assertEqual(result["lookup_status"], "no_data")
         self.assertEqual(result["result_status"], "not_listed_in_country")
@@ -125,16 +125,16 @@ class RegulationNormalizeTest(unittest.TestCase):
         self.assertIn("No entry for US", result["result_note"])
 
     def test_unknown_result_status_is_hold(self):
-        body = load_body("regulations_5489_EU.json")
+        body = load_body("regulations_5489_eu.json")
         body = dict(body, result_status="something_new")
         self.assertEqual(svc.normalize_regulation_response(body, 5489, "EU")["lookup_status"], "hold")
 
     def test_listed_but_empty_data_is_hold(self):
-        body = dict(load_body("regulations_5489_EU.json"), data=[])
+        body = dict(load_body("regulations_5489_eu.json"), data=[])
         self.assertEqual(svc.normalize_regulation_response(body, 5489, "EU")["lookup_status"], "hold")
 
     def test_ingredient_regulation_status_not_used(self):
-        body = load_body("regulations_5489_US.json")
+        body = load_body("regulations_5489_us.json")
         self.assertEqual(body["ingredient"]["regulation_status"], "Restricted")
         result = svc.normalize_regulation_response(body, 5489, "US")
         self.assertEqual(result["lookup_status"], "no_data")
@@ -250,7 +250,7 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/regulatory/regulations?code=5489&source=api").status_code, 400)
 
     def test_regulations_eu_found(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_EU.json")) as get:
+        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_eu.json")) as get:
             res = self.client.get("/api/regulatory/regulations?code=5489&country=eu&source=api")
             get.assert_called_once_with("/v1/ingredient/5489/regulations", {"country": "EU"})
         body = res.get_json()
@@ -259,7 +259,7 @@ class RouteTest(unittest.TestCase):
         self.assertIn("【Restrictions】", body["entries"][0]["limit_condition"])
 
     def test_regulations_us_no_data(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_US.json")):
+        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_us.json")):
             res = self.client.get("/api/regulatory/regulations?code=5489&country=US&source=api")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.get_json()["lookup_status"], "no_data")
@@ -431,7 +431,7 @@ def _temp_leftovers():
 
 class ExtractPdfTest(unittest.TestCase):
     def test_sample_brief_extracts_only_ingredient_table(self):
-        with open(FIXTURES / "EU-SER-041_development_brief.pdf", "rb") as f:
+        with open(FIXTURES / "eu_ser_041_development_brief.pdf", "rb") as f:
             r = rx.extract_upload("brief.pdf", f)
         self.assertEqual(r["status"], "extracted")
         names = [it["name_raw"] for it in r["items"]]
@@ -602,7 +602,7 @@ class ExtractRouteTest(unittest.TestCase):
         self.assertEqual(_temp_leftovers(), [])
 
     def test_pdf_route_ok_and_no_regulation_api_call(self):
-        with open(FIXTURES / "EU-SER-041_development_brief.pdf", "rb") as f:
+        with open(FIXTURES / "eu_ser_041_development_brief.pdf", "rb") as f:
             data = f.read()
         with mock.patch.object(svc, "_get") as get:
             res = self._post("brief.pdf", data)
@@ -642,7 +642,7 @@ class ExtractRouteTest(unittest.TestCase):
 
 class LookupStatusDiagnosisTest(unittest.TestCase):
     def test_not_listed_is_distinct_state(self):
-        r = svc.normalize_regulation_response(load_body("regulations_1941_EU_not_listed.json"), 1941, "EU")
+        r = svc.normalize_regulation_response(load_body("regulations_1941_eu_not_listed.json"), 1941, "EU")
         self.assertEqual(r["lookup_status"], "not_listed")          # no_data 도 hold 도 아님
         self.assertEqual(r["result_status"], "not_listed")          # 원문 상태값 보존
         self.assertIn("No restriction or prohibition", r["result_note"])
@@ -650,19 +650,19 @@ class LookupStatusDiagnosisTest(unittest.TestCase):
         self.assertEqual(r["entries"], [])
 
     def test_plan_note_flag_only_no_interpretation(self):
-        r = svc.normalize_regulation_response(load_body("regulations_1013_EU_plan_note.json"), 1013, "EU")
+        r = svc.normalize_regulation_response(load_body("regulations_1013_eu_plan_note.json"), 1013, "EU")
         self.assertEqual(r["lookup_status"], "no_data")
         self.assertTrue(r["note_mentions_plan"])                    # 문구 존재 여부만
         self.assertEqual(r["markets_outside_plan"], 1)              # 원문 값 그대로
         self.assertNotIn("plan_limited", r)                         # 요금제 제한 여부를 단정하는 필드는 없음
-        r2 = svc.normalize_regulation_response(load_body("regulations_5489_US.json"), 5489, "US")
+        r2 = svc.normalize_regulation_response(load_body("regulations_5489_us.json"), 5489, "US")
         self.assertEqual(r2["lookup_status"], "no_data")
         self.assertFalse(r2["note_mentions_plan"])
 
     def test_route_passes_status_fields(self):
         flask_app.app.config["TESTING"] = True
         client = flask_app.app.test_client(); _login(client)
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_1941_EU_not_listed.json")) as get:
+        with mock.patch.object(svc, "_get", return_value=load_body("regulations_1941_eu_not_listed.json")) as get:
             res = client.get("/api/regulatory/regulations?code=1941&country=EU&source=api")
             get.assert_called_once_with("/v1/ingredient/1941/regulations", {"country": "EU"})
         body = res.get_json()
@@ -732,11 +732,11 @@ class OcrUnavailableTest(unittest.TestCase):
 
     def test_text_pdf_and_xlsx_unaffected(self):
         with mock.patch.object(ocrmod, "availability", return_value=_unavailable_info()):
-            with open(FIXTURES / "EU-SER-041_development_brief.pdf", "rb") as f:
+            with open(FIXTURES / "eu_ser_041_development_brief.pdf", "rb") as f:
                 r = rx.extract_upload("brief.pdf", f)
             self.assertEqual(len(r["items"]), 7)
             self.assertEqual(r["ocr"]["applied_pages"], [])
-            with open(SAMPLES / "한국_EU_중국_아세안_두피샴푸_주요검토성분표.xlsx", "rb") as f:
+            with open(SAMPLES / "kr_eu_cn_asean_scalp_shampoo_key_ingredients.xlsx", "rb") as f:
                 r2 = rx.extract_upload("x.xlsx", f)
             self.assertEqual(r2["status"], "extracted")
 
@@ -957,7 +957,7 @@ class OcrGridImageRealTest(unittest.TestCase):
 
 class FreshnessFieldsTest(unittest.TestCase):
     def test_api_acquired_at_equals_queried_at_and_policy(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_EU.json")):
+        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_eu.json")):
             r = svc.get_regulations(5489, "EU")
         self.assertEqual(r["acquired_at"], r["queried_at"])
         self.assertRegex(r["queried_at"], r"[+-]\d\d:\d\d$")                  # 시간대 포함 → 화면에서 KST 변환 가능

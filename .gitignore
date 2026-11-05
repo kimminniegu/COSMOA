@@ -12,6 +12,7 @@ __pycache__/
 # Virtual environments
 tdenv/
 venv/
+.venv/
 .tdenv/
 env/
 
@@ -33,3 +34,7 @@ Thumbs.db
 # Logs / uploads
 *.log
 uploads/
+
+# 로컬 참고자료 (원본 회의록·DB 안 — 저장소에 올리지 않음). local-reference/ 는 이전 이름
+/local_reference/
+/local-reference/

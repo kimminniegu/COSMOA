@@ -217,8 +217,8 @@ class RelayTest(unittest.TestCase):
         self.client = self.app.test_client()
 
     def login(self):
-        with self.client.session_transaction() as sess:
-            sess["user"] = DEMO_USER
+        from src.common.testing import login_as   # 업무 DB 대신 메모리 사용자 (세션 형식 v2)
+        login_as(self.client, DEMO_USER)
 
     def test_requires_login(self):
         res = self.client.post("/api/chatbot/message", json={"messages": [{"role": "user", "content": "hi"}]})

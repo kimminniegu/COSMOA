@@ -165,7 +165,7 @@
 |---|---|---|
 | `found` | `result_status = "listed"` 이고 `data`가 비어 있지 않음 | 규제 정보 조회됨 |
 | `no_data` | `result_status = "not_listed_in_country"` 이고 `data = []` — 요청 시장 항목 없음. `result_note` 가 "다른 시장에 있음" 또는 "요금제 밖 시장에만 있음(markets outside your plan)" 을 안내 | 규제 데이터 미확인 (허용·안전 아님). 화면은 안내문 원문과 `note_mentions_plan` 여부만 표시 |
-| `not_listed` | `result_status = "not_listed"` 이고 `data = []` — "No restriction or prohibition is listed for this ingredient in our source data" (2026-09-23 확인, `regulations_1941_EU_not_listed.json`) | 규제 목록 미등재 (허용·안전 아님) |
+| `not_listed` | `result_status = "not_listed"` 이고 `data = []` — "No restriction or prohibition is listed for this ingredient in our source data" (2026-09-23 확인, `regulations_1941_eu_not_listed.json`) | 규제 목록 미등재 (허용·안전 아님) |
 | `hold` | 확인하지 않은 `result_status` 값, 또는 `listed`인데 `data = []` 등 예상 밖 조합 | 판단 보류 · 추가 확인 필요 |
 | (오류) | HTTP 오류·연결 실패·`success != true`·형식 불일치 → 502 `error` | `error.kind` 가 `access`(403)·`auth`(401)·`rate_limit`(429) 이면 화면 ‘접근 제한’, 그 외는 ‘API 오류’ (미확인으로 바꾸지 않음) |
 
@@ -192,10 +192,10 @@
 | `search_kr_partial_etan.json` | `GET /v1/ingredient/kr?q=에탄` | 200 | `count=8`, `에탄`(6203)·`에탄올`(2093)·`에탄올아민`… 명세 예시 확인 |
 | `search_kr_english_retinol.json` | `GET /v1/ingredient/kr?q=Retinol` | 200 | `success=true, count=0, data=[]` — 한글 엔드포인트는 영문 미지원 |
 | `search_inci_partial_retin.json` | `GET /v1/ingredient/inci?q=retin` | 200 | `count=17`, 소문자 입력으로 `Retinol`·`Retinal`·`Retinyl …` 반환 — 영문 시작 일치·대소문자 무시 확인 |
-| `regulations_5489_EU.json` | `GET /v1/ingredient/5489/regulations?country=EU` | 200 | `result_status=listed`, `count=1`, `data[0].limit_condition`에 제품 유형·최대 농도(0,05 % / 0,3 % RE)·표시 문구 원문, `source_type=limit`, `markets_listed=["EU"]` |
-| `regulations_5489_US.json` | `GET /v1/ingredient/5489/regulations?country=US` | 200 | `result_status=not_listed_in_country`, `count=0`, `data=[]`, `result_note="No entry for US in our source data. There are entries for other markets."` |
-| `regulations_1013_EU_plan_note.json` | `GET /v1/ingredient/1013/regulations?country=EU` (Glycerin) | 200 | `not_listed_in_country`, `markets_listed=[]`, `markets_outside_plan=1`, `result_note="No entry for EU in our source data. There are entries for markets outside your plan only."` — KR·CN 도 같은 응답(미저장) |
-| `regulations_1941_EU_not_listed.json` | `GET /v1/ingredient/1941/regulations?country=EU` (Niacinamide) | 200 | **`result_status=not_listed`**, `count=0`, `result_note="No restriction or prohibition is listed for this ingredient in our source data."`, `ingredient.regulation_status=Not Listed` |
+| `regulations_5489_eu.json` | `GET /v1/ingredient/5489/regulations?country=EU` | 200 | `result_status=listed`, `count=1`, `data[0].limit_condition`에 제품 유형·최대 농도(0,05 % / 0,3 % RE)·표시 문구 원문, `source_type=limit`, `markets_listed=["EU"]` |
+| `regulations_5489_us.json` | `GET /v1/ingredient/5489/regulations?country=US` | 200 | `result_status=not_listed_in_country`, `count=0`, `data=[]`, `result_note="No entry for US in our source data. There are entries for other markets."` |
+| `regulations_1013_eu_plan_note.json` | `GET /v1/ingredient/1013/regulations?country=EU` (Glycerin) | 200 | `not_listed_in_country`, `markets_listed=[]`, `markets_outside_plan=1`, `result_note="No entry for EU in our source data. There are entries for markets outside your plan only."` — KR·CN 도 같은 응답(미저장) |
+| `regulations_1941_eu_not_listed.json` | `GET /v1/ingredient/1941/regulations?country=EU` (Niacinamide) | 200 | **`result_status=not_listed`**, `count=0`, `result_note="No restriction or prohibition is listed for this ingredient in our source data."`, `ingredient.regulation_status=Not Listed` |
 | (미저장) | `GET /v1/ingredient/3579/regulations?country=EU` (Phenoxyethanol) | 200 | `listed`, `count=1`, 최대 농도 1.0%, `markets_listed=[KR,EU,CN,JP,ASEAN]`, `markets_outside_plan=3` |
 
 응답 공통 필드: `data_source`(MFDS + EU CosIng), `disclaimer`, `available_country_codes = ["KR","EU","CN","US","JP","ASEAN"]`, `available_countries`(한글 표시명), `country.{requested, resolved, code}`.

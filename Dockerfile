@@ -22,8 +22,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
 
-# instance/ (계정·홈 캐시 DB)는 이미지에 넣지 않습니다 (.dockerignore). 시작할 때 새로 만들어지고,
-# 무료 서비스에서는 재시작·재배포·절전 때마다 초기화됩니다. 계정은 COSMOA_DEMO_* 로 다시 만들어집니다.
+# instance/ (홈 캐시 DB)는 이미지에 넣지 않습니다 (.dockerignore). 시작할 때 새로 만들어지고,
+# 무료 서비스에서는 재시작·재배포·절전 때마다 초기화됩니다. 로그인 계정은 업무 DB(Neon) users 에 있습니다.
+# (업무 DB 의 production 적용·배포 절차는 아직 준비 중 — docs/development.md)
 # worker 1개: 홈 데이터 백그라운드 수집의 중복 방지가 프로세스 안에서만 동작하기 때문. 동시 요청은 thread 로 처리합니다.
 # --timeout 은 gthread 에서 worker 생존 확인 시간일 뿐 요청 시간 상한이 아닙니다. 요청 시간은 각 기능의 외부 호출 제한시간이 정합니다.
 CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-10000} --workers 1 --threads 8 --timeout 150 --graceful-timeout 30 --access-logfile -"]
