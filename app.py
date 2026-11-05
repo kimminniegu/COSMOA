@@ -248,6 +248,9 @@ def dev_request():
 
 # [A] Home — 접두사: /api/home/...  (명세: src/01_home/home.md 9-1)
 
+home_projects = importlib.import_module("src.01_home.home_projects")
+
+
 @app.context_processor
 def home_asset_version():
     """홈 CSS·JS 링크에 ?v=수정시각 을 붙여, 파일이 바뀌면 브라우저가 캐시 대신 새 파일을 받게 합니다 (담당자 A 페이지 전용)"""
@@ -305,6 +308,16 @@ def home_regulations():
 def home_api_data():
     """홈 화면 전체 데이터 (갱신 중이면 화면이 몇 초 뒤 다시 호출)"""
     return jsonify(home_data.get_dashboard())
+
+
+@app.route("/api/home/projects")
+@login_required
+def home_api_projects():
+    """프로젝트 위젯 데이터 (명세 2-4) — 오늘 챙길 것, 프로젝트 현황, 이번 주 일정. 업무 DB 읽기 전용"""
+    try:
+        return jsonify(home_projects.get_widgets(app.extensions.get("business_db")))
+    except home_projects.VersionError as err:
+        return jsonify({"ok": False, "error": str(err)}), err.status
 
 
 @app.route("/api/home/regulations")

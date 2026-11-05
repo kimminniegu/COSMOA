@@ -191,6 +191,7 @@ EXIM_URL = os.getenv("EXIM_API_URL", "https://oapi.koreaexim.go.kr/site/program/
 # 표시 순서. 앞에서부터 6개를 채우며, 응답에 없는 통화(VND 등)는 건너뜁니다. (4-2, 10장)
 RATE_CODES = ["USD", "JPY(100)", "CNH", "EUR", "THB", "VND", "SGD", "MYR"]
 RATE_DISPLAY = 6
+HOME_RATE_CODES = ("USD", "JPY", "CNH")   # 홈 환율 위젯에 표시할 주요 3개 통화 (2-5)
 RATE_WARN_PCT = 10.0   # 전일 대비 이 % 이상 움직이면 이상값으로 표시 (명세 13-1)
 
 
@@ -1327,13 +1328,18 @@ def get_validation() -> dict:
     }
 
 
+def _home_rates() -> dict:
+    """홈 환율 위젯: 주요 3개 통화만. 챗봇이 쓰는 get_rates() 는 그대로 둡니다."""
+    rates = get_rates()
+    return {**rates, "items": [it for it in rates["items"] if it["code"] in HOME_RATE_CODES]}
+
+
 def get_dashboard() -> dict:
-    """홈 템플릿 / /api/home/data 공용"""
+    """홈 템플릿 / /api/home/data 공용. 수출입 통계는 화면에서 제외했지만 수집은 유지합니다.
+    (바이어 현지 시각의 수출 상위국 순위와 챗봇 도구가 trade_stats 를 사용)"""
     kick_refresh()
     return {
-        "rates": get_rates(),
-        "trade": get_trade(),
-        "trade_cards": get_trade_cards(),
+        "rates": _home_rates(),
         "news": get_news(),
         "regulations": get_regulations(),
         "buyer_cities": top_export_cities(),

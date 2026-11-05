@@ -1,7 +1,7 @@
 /* Home 전용 JavaScript (담당자 A) — 명세: src/01_home/home.md
    - 서버가 #home-data 에 넣어 준 JSON으로 화면을 그리고, 갱신 중인 구역은 /api/home/data 를 다시 불러 그립니다.
-   - 왼쪽 수출입 카드 3개는 서버(home_trade.py, pandas)가 정리한 결과를 그립니다. (5장)
-   - 뉴스 4건·규제 3건을 표시하고, 그래도 넘치면 영역 높이에 맞춰 숨깁니다. (2-7)
+   - 위젯 배치·크기·표시 여부는 사용자별로 localStorage 에 저장합니다. (2-3)
+   - 프로젝트 위젯 3종은 /api/home/projects 를 따로 불러와, 업무 DB 가 느리거나 실패해도 나머지 위젯은 그대로 나옵니다. (2-4)
    - 바이어 현지 시각은 브라우저에서 계산합니다. (7장)
    - 규제 새 소식은 10분마다 /api/home/regulations 로 확인합니다. (8-3) */
 (function () {
@@ -20,8 +20,8 @@
   };
 
   /* 공통 .container 가 container-type(레이아웃 격리)을 써서 그 안의 position:fixed 모달이 본문 스크롤을 따라 움직입니다.
-     홈의 모달 3개를 <body> 바로 아래로 옮겨 항상 화면 가운데에 뜨게 합니다. (common.js 는 document 위임이라 그대로 동작) */
-  ["home-city-modal", "home-rate-modal", "home-trade-modal"].forEach(function (id) {
+     홈의 모달 2개를 <body> 바로 아래로 옮겨 항상 화면 가운데에 뜨게 합니다. (common.js 는 document 위임이라 그대로 동작) */
+  ["home-city-modal", "home-rate-modal"].forEach(function (id) {
     var el = document.getElementById(id);
     if (el && el.parentNode !== document.body) document.body.appendChild(el);
   });
@@ -30,7 +30,6 @@
     data: JSON.parse(dataEl.textContent || "{}"),
     clockMode: storage.get("cosmoa.clock.mode") || "top_export",
     customCities: storage.getJSON("cosmoa.clock.cities") || null,
-    tradeFilter: storage.getJSON("cosmoa.trade.filter") || { hs: "3304", months: 12, country: "", metric: "exp" },
   };
 
   function esc(s) {
@@ -39,8 +38,7 @@
     });
   }
   function arrow(direction) { return direction === "up" ? "▲" : direction === "down" ? "▼" : "–"; }
-  var NEWS_LIMIT = 3, REG_LIMIT = 3;   // 홈의 뉴스 · 규제 표시 건수 (최신순 고정)
-  function isNarrow() { return window.matchMedia("(max-width: 1024px)").matches; }
+  var NEWS_LIMIT = 6, REG_LIMIT = 5, DUE_LIMIT = 5;   // 홈의 뉴스 · 규제 · 오늘 챙길 것 표시 건수
 
   /* 1. 환율 띠 -------------------------------------------------------------- */
   function renderRates(r) {
@@ -142,8 +140,6 @@
       "</svg>" + lastLabel + "</div>" +
       '<div class="home-chart__x">' + xs + (o.xTitle ? '<em class="home-chart__xtitle">' + esc(o.xTitle) + "</em>" : "") + "</div></div>";
   }
-  function musdNum(t) { return Number(String(t).replace(/,/g, "")) || 0; }
-  function fmtMusd(v) { var a = Math.abs(v); return (v < 0 ? "−" : "") + "$" + a.toLocaleString("ko-KR", { maximumFractionDigits: a >= 100 ? 0 : 1 }) + "M"; }
   function rateChart(hist) {
     return lineChart({
       values: hist.map(function (h) { return Number(h.rate); }), labels: hist.map(function (h) { return h.label; }),
@@ -237,212 +233,71 @@
     if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openRateDetail(el.getAttribute("data-code")); }
   });
 
-  /* 2. 화장품 수출입 카드 3개 (왼쪽 열, 서버의 pandas 분석 결과) ------------ */
-  function delta(d, suffix) {
-    if (!d || d.change == null) return '<span class="home-rank__delta">—</span>';
-    return '<span class="home-rank__delta is-' + esc(d.direction) + '">' + arrow(d.direction) + " " + esc(d.change_text) + (suffix || "") + "</span>";
+  /* 2. 프로젝트 위젯 3종 (2-4): 오늘 챙길 것 · 프로젝트 현황 · 이번 주 일정 --------- */
+  function dDayBadge(it) {
+    var cls = it.d_day < 0 ? "badge-danger" : it.d_day === 0 ? "badge-warning" : "badge-primary";
+    return '<span class="badge home-due__badge ' + cls + '">' + esc(it.d_day_text) + "</span>";
   }
-  function rankItem(it, unitLabel) {
-    return '<li class="home-rank__item" title="' + esc(it.name + " · $" + it.musd + "M · 비중 " + it.share + "%") + '">' +
-      '<span class="home-rank__name">' + esc(it.name) + '<small>' + esc(it.code) + "</small></span>" +
-      '<span class="home-rank__bar" aria-hidden="true"><span style="width:' + Number(it.bar || 0) + '%"></span></span>' +
-      '<span class="home-rank__value">$' + esc(it.musd) + "M</span>" +
-      '<span class="home-rank__share">' + esc(it.share) + "%</span>" +
-      delta(it) + "</li>";
-  }
-  /* 최근 12개월 수출액 꺾은선 — 라이브러리 없이 inline SVG (선: primary-bright / 영역: primary-soft) */
-  function trendChart(trend, currentYymm) {
-    var cur = trend.findIndex(function (m) { return m.yymm === currentYymm; });
-    return lineChart({
-      series: [{ name: "수출액", values: trend.map(function (m) { return musdNum(m.musd); }) }], labels: trend.map(function (m) { return m.label; }),
-      fmt: fmtMusd, title: "월별 수출액 · 12개월", unit: "백만 달러", aria: "최근 12개월 월별 수출액 (백만 달러)", zeroBase: true, current: cur, every: 3,
-    });
-  }
-  function renderTradeCards(t) {
-    var sumBody = $("home-tsum-body"), sumMonth = $("home-tsum-month"), sumMeta = $("home-tsum-meta");
-    var cList = $("home-tcountry-list"), pList = $("home-tproduct-list");
-    var cMeta = $("home-tcountry-meta"), pMeta = $("home-tproduct-meta");
-    if (!t || !t.ok) {
-      var msg = esc((t && t.message) || "수출입 실적을 불러오는 중이에요");
-      sumMonth.textContent = "";
-      sumMeta.innerHTML = '<a href="https://stat.kita.net/" target="_blank" rel="noopener">K-stat ↗</a>';
-      sumBody.innerHTML = '<span class="home-error">' + msg + "</span>";
-      cList.innerHTML = pList.innerHTML = '<li class="home-list__empty">' + msg + "</li>";
-      cMeta.textContent = pMeta.textContent = "";
+  function holdBadge(it) { return it.state === "hold" ? '<span class="badge home-due__hold">' + esc(it.state_text) + "</span>" : ""; }
+  function renderDueSoon(p) {
+    var list = $("home-today-list"), meta = $("home-today-meta"), items = p.due_soon;
+    meta.textContent = items.length ? items.length + "건" : "";
+    if (!items.length) {
+      list.innerHTML = '<li class="home-list__empty">' + (p.total ? "3일 안에 다가오는 납기가 없어요" : "등록된 프로젝트가 없어요") + "</li>";
       return;
     }
-    var s = t.summary;
-    sumMonth.textContent = s.month_text + " · HS " + t.hs_codes.join("·");
-    sumMeta.innerHTML = '<span title="' + esc(t.cleaning.text) + '">관세청 · pandas 정리</span> · <a href="' + esc(t.kstat_url) + '" target="_blank" rel="noopener" title="한국무역협회 K-stat에서 상세 조회">K-stat ↗</a>';
-    /* 왼쪽: 지표 3줄(라벨 · 값 · 전년비)을 한 줄씩 정렬 + 누계 한 줄 / 오른쪽: 회색 패널 안 월별 그래프 (공통 kpi-delta 사용) */
-    var row = function (label, musd, yoy) {
-      var d = !yoy || yoy.change == null ? '<span class="kpi-delta home-tsum__delta">—</span>'
-        : '<span class="kpi-delta home-tsum__delta is-' + esc(yoy.direction) + '" title="전년 동월 대비">' + arrow(yoy.direction) + " " + esc(yoy.change_text) + "</span>";
-      return '<div class="home-tsum__row"><span class="home-tsum__label">' + label + '</span><span class="home-tsum__value">$' + esc(musd) + "<small>M</small></span>" + d + "</div>";
-    };
-    sumBody.innerHTML =
-      '<div class="home-tsum">' +
-        '<div class="home-tsum__kpis">' +
-          row("수출", s.exp_musd, s.exp_yoy) + row("수입", s.imp_musd, s.imp_yoy) + row("무역수지", s.bal_musd, null) +
-          '<div class="home-tsum__foot"><span>최근 12개월 수출 누계</span><strong>$' + esc(s.total_12m_musd) + "M</strong></div>" +
-        "</div>" +
-        '<div class="home-tsum__trend">' + trendChart(s.trend, s.yymm) +
-        "</div>" +
-      "</div>";
-    cList.innerHTML = t.countries.map(rankItem).join("") || '<li class="home-list__empty">데이터가 없어요</li>';
-    pList.innerHTML = t.products.map(rankItem).join("") || '<li class="home-list__empty">데이터가 없어요</li>';
-    cMeta.textContent = t.period_text + " · 비중 · 전년 동기 대비";
-    pMeta.textContent = t.period_text + " · 비중 · 전년 동기 대비";
+    var more = items.length - DUE_LIMIT;
+    list.innerHTML = items.slice(0, DUE_LIMIT).map(function (it) {
+      return '<li class="home-due__item" title="' + esc("납기 " + it.due_date) + '">' + dDayBadge(it) +
+        '<span class="home-due__text"><span class="home-due__name">' + esc(it.name) + "</span>" +
+        '<span class="home-due__meta">' + esc(it.customer) + " · " + esc(it.stage_text) + "</span></span>" + holdBadge(it) + "</li>";
+    }).join("") + (more > 0 ? '<li class="home-due__more">외 ' + more + "건</li>" : "");
   }
-
-  /* 2-1. 수출입 상세 모달 (5-9): 카드 클릭 → /api/home/trade?hs&months&country&metric ---- */
-  var tradeTab = "countries", tradeLast = null, tradeFoot = "";
-  function tradeChart(points, metricName, hasPrior) {
-    var series = [{ name: metricName, values: points.map(function (p) { return musdNum(p.musd); }) }];
-    if (hasPrior && points.every(function (p) { return p.prior_musd != null; })) {
-      series.push({ name: "전년 동기", dashed: true, values: points.map(function (p) { return musdNum(p.prior_musd); }) });
+  function renderProjectStatus(p) {
+    var box = $("home-projects-body"), link = box.getAttribute("data-create-url");
+    $("home-projects-meta").textContent = p.total ? "전체 " + p.total + "건" : "";
+    if (!p.total) {
+      box.innerHTML = '<div class="state state-empty home-projects__empty"><p class="state-title">아직 프로젝트가 없어요</p>' +
+        '<p>개발요청서 탭에서 고객사와 프로젝트를 만들 수 있어요.</p><a class="btn btn-soft btn-sm" href="' + esc(link) + '">개발요청서로 이동</a></div>';
+      return;
     }
-    return lineChart({
-      series: series, labels: points.map(function (p) { return p.label; }),
-      fmt: fmtMusd, title: "월별 " + metricName + " (" + points.length + "개월)", unit: "백만 달러(USD)", xTitle: "연.월",
-      aria: "월별 " + metricName, zeroBase: true, every: Math.max(1, Math.ceil(points.length / 6)),
-    });
-  }
-  function seg(attr, value, label, active, extra) {   /* 공통 Tabs(Segmented Control) 항목 — ui_components.md 13장 */
-    return '<button class="tab' + (active ? " is-active" : "") + '" type="button" role="tab" aria-selected="' + (active ? "true" : "false") + '" ' + attr + '="' + esc(value) + '"' + (extra || "") + ">" + esc(label) + "</button>";
-  }
-  function tradeQuery() {
-    var f = state.tradeFilter;
-    return "hs=" + encodeURIComponent(f.hs || "3304") + "&months=" + encodeURIComponent(f.months || 12) +
-      "&country=" + encodeURIComponent(f.country || "") + "&metric=" + encodeURIComponent(f.metric || "exp");
-  }
-  function setTradeFilter(patch) {
-    var f = state.tradeFilter;
-    Object.keys(patch).forEach(function (k) { f[k] = patch[k]; });
-    storage.setJSON("cosmoa.trade.filter", f);
-    loadTradeDetail();
-  }
-  function tradeTable(items, metricName, nameHead) {   /* 공통 Table(ui_components.md 12장) — 순위 · 이름 · 막대 · 금액 · 비중 · 전년비 */
-    if (!items || !items.length) return '<div class="state state-empty home-traded__state"><p class="state-title">해당 조건의 실적이 없어요</p><p>다른 품목이나 기간을 골라 보세요</p></div>';
-    var rows = items.map(function (it, i) {
-      var active = state.tradeFilter.country && it.code === state.tradeFilter.country ? ' class="is-active"' : "";
-      return "<tr" + active + ' title="' + esc(it.name + " · " + metricName + " $" + it.musd + "M") + '">' +
-        '<td class="is-numeric home-traded__no">' + (i + 1) + "</td>" +
-        '<td class="home-traded__name">' + esc(it.name) + "<small>" + esc(it.code) + "</small></td>" +
-        '<td class="home-traded__barcell"><span class="home-rank__bar" aria-hidden="true"><span style="width:' + Number(it.bar || 0) + '%"></span></span></td>' +
-        '<td class="is-numeric home-traded__val">' + (it.value < 0 ? "−" : "") + "$" + esc(String(it.musd).replace("-", "")) + "M</td>" +
-        '<td class="is-numeric home-traded__share">' + (it.share != null ? esc(it.share) + "%" : "–") + "</td>" +
-        '<td class="is-numeric">' + delta(it) + "</td></tr>";
-    }).join("");
-    return '<div class="table-wrap"><table class="table home-traded__table"><thead><tr>' +
-      '<th class="is-numeric">#</th><th>' + esc(nameHead) + '</th><th></th><th class="is-numeric">' + esc(metricName) + '</th><th class="is-numeric">비중</th><th class="is-numeric">전년비</th>' +
-      "</tr></thead><tbody>" + rows + "</tbody></table></div>";
-  }
-  function renderTradeRight(d) {
-    var box = $("home-trade-right");
-    if (!box) return;
-    var tab = tradeTab;
     box.innerHTML =
-      '<div class="home-traded__head"><div class="tabs" role="tablist" aria-label="순위 기준">' +
-        seg("data-trade-tab", "countries", "국가별", tab === "countries") +
-        seg("data-trade-tab", "products", "품목별", tab === "products") +
-      '</div><span class="text-caption home-traded__meta">상위 10 · 전년 동기 대비</span></div>';
-    var isC = tab === "countries";
-    box.innerHTML += tradeTable(isC ? d.countries : d.products, d.metric_name, isC ? "국가" : "품목 (HS 6단위)") +
-      (isC && d.country ? '<p class="form-help">국가를 고른 상태예요. 품목별 탭은 ' + esc(d.country_name) + " 기준으로 보여요.</p>" : "");
+      '<div class="home-projects__counts">' + p.counts.map(function (c) {
+        return '<div class="stat-tile home-projects__tile"><span class="stat-tile__label">' + esc(c.label) + '</span><span class="stat-tile__value">' + c.count + "</span></div>";
+      }).join("") + "</div>" +
+      '<p class="home-projects__caption">진행 중인 프로젝트의 단계</p>' +
+      '<ol class="home-stages">' + p.stages.map(function (s) {
+        return '<li class="home-stages__item' + (s.count ? " has-count" : "") + '"><span class="home-stages__count">' + s.count + '</span><span class="home-stages__label">' + esc(s.label) + "</span></li>";
+      }).join("") + "</ol>";
   }
-  function renderTradeDetail(d) {
-    var body = $("home-trade-body"), f = state.tradeFilter;
-    tradeLast = d;
-    $("home-trade-title").textContent = d.ok ? d.hs_label + (d.country_name ? " · " + d.country_name : "") : "화장품 수출입 상세";
-    var hs4 = f.hs && f.hs !== "all" ? f.hs.slice(0, 4) : "all";
-    var controls =
-      '<div class="home-traded__controls">' +
-        '<div class="home-traded__ctl">' +
-          '<span class="form-label home-traded__ctl-label">품목</span>' +
-          '<div class="tabs" role="tablist" aria-label="품목">' +
-            seg("data-trade-hs", "all", "전체", hs4 === "all") +
-            (d.hs4_options || []).map(function (o) { return seg("data-trade-hs", o.code, o.code + " " + o.name, hs4 === o.code, o.has_data ? "" : ' title="처음 선택 시 관세청에서 받아와요"'); }).join("") +
-          "</div>" +
-          (hs4 !== "all" ? '<select class="form-control form-control-sm home-traded__select" id="home-trade-hs6" aria-label="세부 품목">' +
-            '<option value="' + esc(hs4) + '">세부 품목 전체</option>' +
-            (d.hs6_options || []).map(function (o) { return '<option value="' + esc(o.code) + '"' + (f.hs === o.code ? " selected" : "") + ">" + esc(o.code + " " + o.name) + "</option>"; }).join("") +
-          "</select>" : "") +
-        "</div>" +
-        '<div class="home-traded__ctl">' +
-          '<span class="form-label home-traded__ctl-label">기간</span>' +
-          '<div class="tabs" role="tablist" aria-label="기간">' + (d.periods || [3, 6, 12, 24]).map(function (m) { return seg("data-trade-months", m, m + "개월", Number(f.months) === m); }).join("") + "</div>" +
-          '<span class="form-label home-traded__ctl-label">지표</span>' +
-          '<div class="tabs" role="tablist" aria-label="지표">' + (d.metrics || []).map(function (m) { return seg("data-trade-metric", m.key, m.name, f.metric === m.key); }).join("") + "</div>" +
-          '<select class="form-control form-control-sm home-traded__select home-traded__select--right" id="home-trade-country" aria-label="국가">' +
-            '<option value="">국가 전체</option>' +
-            (d.country_options || []).map(function (o) { return '<option value="' + esc(o.code) + '"' + (f.country === o.code ? " selected" : "") + ">" + esc(o.name + " (" + o.code + ")") + "</option>"; }).join("") +
-          "</select>" +
-        "</div>" +
-      "</div>";
-    if (!d.ok) {
-      body.innerHTML = controls + '<div class="state state-empty home-traded__state"><p class="state-title">' + esc(d.message || d.error || "수출입 실적을 불러오지 못했어요") + "</p><p>다른 품목이나 기간을 골라 보세요</p></div>";
-      return;
-    }
-    var s = d.summary;
-    var tile = function (label, musd, yoy) {   /* 공통 Stat Tile(ui_components.md 5장) + kpi-delta */
-      var neg = String(musd).indexOf("-") === 0;
-      var dl = !yoy || yoy.change == null ? '<span class="kpi-delta">' + (d.has_prior ? "—" : "전년 자료 없음") + "</span>"
-        : '<span class="kpi-delta is-' + esc(yoy.direction) + '">' + arrow(yoy.direction) + " " + esc(yoy.change_text) + " 전년비</span>";
-      return '<div class="stat-tile home-traded__tile"><span class="stat-tile__label">' + label + '</span><span class="stat-tile__value">' + (neg ? "−" : "") + "$" + esc(String(musd).replace("-", "")) + "<small>M</small></span>" + dl + "</div>";
-    };
-    body.innerHTML = controls +
-      '<div class="home-traded__cols">' +
-        '<div class="home-traded__col">' +
-          '<div class="home-traded__head"><span class="home-traded__title">' + esc(d.period_text) + ' 합계</span><span class="text-caption">백만 달러</span></div>' +
-          '<div class="home-traded__tiles">' + tile("수출", s.exp_musd, s.exp_yoy) + tile("수입", s.imp_musd, s.imp_yoy) + tile("무역수지", s.bal_musd, s.bal_yoy) + "</div>" +
-          '<div class="home-traded__chart">' + tradeChart(d.trend, d.metric_name, d.has_prior) + "</div>" +
-        "</div>" +
-        '<div class="home-traded__col" id="home-trade-right"></div>' +
-      "</div>";
-    tradeFoot = "관세청 수출입실적 · " + d.latest_text + " 최신 · " + (d.cleaning_text || "");
-    $("home-trade-foot").textContent = tradeFoot;
-    renderTradeRight(d);
+  function renderWeek(p) {
+    $("home-week-meta").textContent = p.week.range_text + " · 납기일 기준";
+    $("home-week-days").innerHTML = p.week.days.map(function (d) {
+      var items = d.items.map(function (it) {
+        return '<li class="home-week__item' + (it.state === "hold" ? " is-hold" : "") + '" title="' + esc(it.customer + " · " + it.name + " · " + it.stage_text + " · " + it.state_text) + '">' + esc(it.name) + "</li>";
+      }).join("");
+      return '<li class="home-week__day' + (d.is_today ? " is-today" : "") + '"><span class="home-week__date"><strong>' + esc(d.weekday) + "</strong> " + esc(d.label) + "</span>" +
+        (items ? '<ul class="home-week__items">' + items + "</ul>" : '<span class="home-week__none">–</span>') + "</li>";
+    }).join("");
   }
-  function loadTradeDetail() {
-    var body = $("home-trade-body");
-    body.classList.add("is-loading");
-    fetch("/api/home/trade?" + tradeQuery(), { credentials: "same-origin" })
+  function renderProjectError(message) {
+    var msg = '<span class="home-error">' + esc(message || "프로젝트 정보를 불러오지 못했어요") + "</span>";
+    $("home-today-list").innerHTML = '<li class="home-list__empty">' + msg + "</li>";
+    $("home-projects-body").innerHTML = msg;
+    $("home-week-days").innerHTML = '<li class="home-week__error">' + msg + "</li>";
+    ["home-today-meta", "home-projects-meta", "home-week-meta"].forEach(function (id) { $(id).textContent = ""; });
+  }
+  function loadProjects() {
+    fetch("/api/home/projects", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
-      .then(function (d) {
-        body.classList.remove("is-loading");
-        if (d.ok && d.country && d.country !== state.tradeFilter.country) { state.tradeFilter.country = d.country; }
-        if (d.ok && !d.country && state.tradeFilter.country) { state.tradeFilter.country = ""; storage.setJSON("cosmoa.trade.filter", state.tradeFilter); }
-        renderTradeDetail(d);
+      .then(function (p) {
+        if (!p.ok) { renderProjectError(p.error); return; }
+        renderDueSoon(p);
+        renderProjectStatus(p);
+        renderWeek(p);
       })
-      .catch(function () { body.classList.remove("is-loading"); body.innerHTML = '<span class="home-error">수출입 상세를 불러오지 못했어요</span>'; });
+      .catch(function () { renderProjectError(); });
   }
-  function openTradeDetail() {
-    if (!window.Common || !window.Common.openModal) return;
-    var body = $("home-trade-body");
-    body.innerHTML = '<span class="home-loading">불러오는 중이에요 · 처음 고른 품목은 관세청에서 받아오느라 몇 초 걸려요</span>';
-    window.Common.openModal("home-trade-modal");
-    loadTradeDetail();
-  }
-  $("home-trade-col").addEventListener("click", function (e) {
-    if (e.target.closest("a")) return;
-    if (e.target.closest("[data-trade-open]")) openTradeDetail();
-  });
-  $("home-trade-col").addEventListener("keydown", function (e) {
-    if ((e.key === "Enter" || e.key === " ") && e.target.hasAttribute("data-trade-open")) { e.preventDefault(); openTradeDetail(); }
-  });
-  $("home-trade-body").addEventListener("click", function (e) {
-    var b = e.target.closest("button");
-    if (!b) return;
-    if (b.hasAttribute("data-trade-hs")) { setTradeFilter({ hs: b.getAttribute("data-trade-hs"), country: "" }); }
-    else if (b.hasAttribute("data-trade-months")) { setTradeFilter({ months: Number(b.getAttribute("data-trade-months")) }); }
-    else if (b.hasAttribute("data-trade-metric")) { setTradeFilter({ metric: b.getAttribute("data-trade-metric") }); }
-    else if (b.hasAttribute("data-trade-tab")) { tradeTab = b.getAttribute("data-trade-tab"); if (tradeLast) renderTradeRight(tradeLast); }
-  });
-  $("home-trade-body").addEventListener("change", function (e) {
-    if (e.target.id === "home-trade-hs6") setTradeFilter({ hs: e.target.value });
-    else if (e.target.id === "home-trade-country") { if (e.target.value) tradeTab = "products"; setTradeFilter({ country: e.target.value }); }
-  });
 
   /* 3. 뉴스 목록 ------------------------------------------------------------ */
   function newsItem(it) {
@@ -458,7 +313,7 @@
       meta.textContent = "";
       return;
     }
-    list.innerHTML = n.items.slice(0, NEWS_LIMIT).map(newsItem).join("");   // 홈에는 4건만
+    list.innerHTML = n.items.slice(0, NEWS_LIMIT).map(newsItem).join("");   // 최신순 NEWS_LIMIT 건만
     meta.textContent = n.updated_text || "";
   }
 
@@ -475,21 +330,9 @@
       meta.textContent = r && r.checked_text ? r.checked_text : "";
       return;
     }
-    list.innerHTML = r.items.slice(0, REG_LIMIT).map(regItem).join("");     // 홈에는 3건만
+    list.innerHTML = r.items.slice(0, REG_LIMIT).map(regItem).join("");     // 최신순 REG_LIMIT 건만
     meta.textContent = r.checked_text || "";
   }
-
-  /* 5. 목록 개수를 영역 높이에 맞춤 (2-7) --------------------------------- */
-  function fitList(list) {
-    var items = list.querySelectorAll(".home-list__item");
-    items.forEach(function (li) { li.hidden = false; });
-    if (isNarrow() || !items.length) return;
-    var limit = list.clientHeight;
-    items.forEach(function (li) {
-      if (li.offsetTop + li.offsetHeight - list.offsetTop > limit + 1) li.hidden = true;
-    });
-  }
-  function fitLists() { document.querySelectorAll(".home-list[data-fit]").forEach(fitList); }
 
   /* 6. 바이어 현지 시각 (7장) --------------------------------------------- */
   function partsIn(tz, date) {
@@ -586,20 +429,164 @@
     window.Common.closeModal("home-city-modal");
   });
 
+  /* 8. 위젯 배치·설정 (2-3): 사용자별 localStorage. 업무 DB users.home_widgets 는 7단계에서 도입 예정 ---- */
+  var WIDGET_NAMES = { today: "오늘 챙길 것", projects: "프로젝트 현황", week: "이번 주 일정", rates: "환율", clock: "바이어 현지 시각", news: "화장품 뉴스", regs: "규제 업데이트" };
+  var SIZES = [[4, "1/3"], [6, "1/2"], [8, "2/3"], [12, "전체"]];
+  var DEFAULT_LAYOUT = [
+    { id: "today", size: 4 }, { id: "week", size: 8 },
+    { id: "projects", size: 4 }, { id: "rates", size: 4 }, { id: "clock", size: 4 }, { id: "news", size: 12 },
+  ];
+  var ICONS = {
+    grip: '<circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle>',
+    left: '<path d="M15 6l-6 6 6 6"></path>', right: '<path d="M9 6l6 6-6 6"></path>', close: '<path d="M6 6l12 12M18 6L6 18"></path>',
+  };
+  function icon(name) {
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + "</svg>";
+  }
+  var grid = $("home-widgets"), layoutKey = "cosmoa.home.widgets." + ($("home").getAttribute("data-user-id") || "guest");
+  var layout = [], editing = false, dragId = null;
+
+  function cloneLayout(items) { return items.map(function (w) { return { id: w.id, size: w.size }; }); }
+  function validSize(size) { return SIZES.some(function (s) { return s[0] === size; }); }
+  function loadLayout() {   /* 저장값이 손상되었거나 없는 위젯이 있어도 화면이 깨지지 않게 걸러냅니다 */
+    var saved = storage.getJSON(layoutKey), seen = {};
+    if (!saved || !Array.isArray(saved.items)) return cloneLayout(DEFAULT_LAYOUT);
+    return saved.items.filter(function (w) {
+      if (!w || !WIDGET_NAMES[w.id] || !validSize(w.size) || seen[w.id]) return false;
+      seen[w.id] = true;
+      return true;
+    }).map(function (w) { return { id: w.id, size: w.size }; });
+  }
+  function widgetEl(id) { return grid.querySelector('[data-widget="' + id + '"]'); }
+  function indexOfWidget(id) { return layout.findIndex(function (w) { return w.id === id; }); }
+  function applyLayout() {
+    Object.keys(WIDGET_NAMES).forEach(function (id) { widgetEl(id).hidden = indexOfWidget(id) === -1; });
+    layout.forEach(function (w) {
+      var el = widgetEl(w.id);
+      SIZES.forEach(function (s) { el.classList.toggle("home-widget--" + s[0], s[0] === w.size); });
+      el.querySelectorAll("[data-widget-size]").forEach(function (b) {
+        var on = Number(b.getAttribute("data-widget-size")) === w.size;
+        b.classList.toggle("is-active", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+      grid.appendChild(el);
+    });
+    grid.appendChild($("home-widgets-empty"));
+    $("home-widgets-empty").hidden = layout.length > 0;
+    var hidden = Object.keys(WIDGET_NAMES).filter(function (id) { return indexOfWidget(id) === -1; });
+    $("home-widget-add").innerHTML = hidden.length ? hidden.map(function (id) {
+      return '<button class="btn btn-soft btn-sm" type="button" data-widget-add="' + id + '">+ ' + esc(WIDGET_NAMES[id]) + "</button>";
+    }).join("") : '<span class="text-caption">모든 위젯을 표시하고 있어요</span>';
+  }
+  function commitLayout() { storage.setJSON(layoutKey, { v: 1, items: layout }); applyLayout(); }
+  function moveWidget(id, delta) {
+    var from = indexOfWidget(id), to = from + delta;
+    if (from === -1 || to < 0 || to >= layout.length) return;
+    layout.splice(to, 0, layout.splice(from, 1)[0]);
+    commitLayout();
+  }
+  function dropWidget(id, targetId, after) {
+    if (id === targetId) return;
+    var moved = layout.splice(indexOfWidget(id), 1)[0];
+    layout.splice(indexOfWidget(targetId) + (after ? 1 : 0), 0, moved);
+    commitLayout();
+  }
+  function setEditing(on) {
+    editing = on;
+    grid.classList.toggle("is-editing", on);
+    $("home-editbar").hidden = !on;
+    var toggle = $("home-edit-toggle");
+    toggle.hidden = on;
+    Object.keys(WIDGET_NAMES).forEach(function (id) { widgetEl(id).draggable = on; });
+    if (!on) { toggle.focus(); clearDropMarks(); }
+  }
+  function clearDropMarks() {
+    grid.querySelectorAll(".is-drop-before, .is-drop-after").forEach(function (el) { el.classList.remove("is-drop-before", "is-drop-after"); });
+  }
+  function dropAfter(target, e) { var r = target.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; }
+  function initWidgets() {
+    Object.keys(WIDGET_NAMES).forEach(function (id) {
+      var name = esc(WIDGET_NAMES[id]), tools = document.createElement("div");
+      tools.className = "home-widget__tools";
+      tools.innerHTML =
+        '<span class="home-widget__grip" title="끌어서 옮기기">' + icon("grip") + "</span>" +
+        '<button class="home-widget__tool" type="button" data-widget-move="-1" aria-label="' + name + ' 앞으로" title="앞으로">' + icon("left") + "</button>" +
+        '<button class="home-widget__tool" type="button" data-widget-move="1" aria-label="' + name + ' 뒤로" title="뒤로">' + icon("right") + "</button>" +
+        '<div class="tabs home-widget__sizes" role="tablist" aria-label="' + name + ' 크기">' + SIZES.map(function (s) {
+          return '<button class="tab" type="button" role="tab" data-widget-size="' + s[0] + '" aria-selected="false">' + s[1] + "</button>";
+        }).join("") + "</div>" +
+        '<button class="home-widget__tool home-widget__remove" type="button" data-widget-remove aria-label="' + name + ' 숨기기" title="숨기기">' + icon("close") + "</button>";
+      widgetEl(id).insertBefore(tools, widgetEl(id).firstChild);
+    });
+    layout = loadLayout();
+    applyLayout();
+
+    $("home-edit-toggle").addEventListener("click", function () { setEditing(true); $("home-edit-done").focus(); });
+    $("home-edit-done").addEventListener("click", function () { setEditing(false); });
+    $("home-edit-reset").addEventListener("click", function () { layout = cloneLayout(DEFAULT_LAYOUT); commitLayout(); });
+    $("home-widget-add").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-widget-add]");
+      if (!b) return;
+      layout.push({ id: b.getAttribute("data-widget-add"), size: 6 });
+      commitLayout();
+      $("home-edit-done").focus();
+    });
+    grid.addEventListener("click", function (e) {
+      var card = e.target.closest("[data-widget]"), b = e.target.closest("button");
+      if (!editing || !card || !b || !b.closest(".home-widget__tools")) return;
+      var id = card.getAttribute("data-widget");
+      if (b.hasAttribute("data-widget-remove")) {
+        layout.splice(indexOfWidget(id), 1);
+        commitLayout();
+        $("home-edit-done").focus();
+      } else if (b.hasAttribute("data-widget-move")) {
+        moveWidget(id, Number(b.getAttribute("data-widget-move")));
+        b.focus();
+      } else if (b.hasAttribute("data-widget-size")) {
+        layout[indexOfWidget(id)].size = Number(b.getAttribute("data-widget-size"));
+        commitLayout();
+        b.focus();
+      }
+    });
+    grid.addEventListener("dragstart", function (e) {
+      var card = editing && e.target.closest && e.target.closest("[data-widget]");
+      if (!card) return;
+      dragId = card.getAttribute("data-widget");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", dragId);
+      card.classList.add("is-dragging");
+    });
+    grid.addEventListener("dragover", function (e) {
+      if (!dragId) return;
+      e.preventDefault();
+      clearDropMarks();
+      var target = e.target.closest("[data-widget]");
+      if (target && target.getAttribute("data-widget") !== dragId) target.classList.add(dropAfter(target, e) ? "is-drop-after" : "is-drop-before");
+    });
+    grid.addEventListener("drop", function (e) {
+      if (!dragId) return;
+      e.preventDefault();
+      var target = e.target.closest("[data-widget]");
+      if (target) dropWidget(dragId, target.getAttribute("data-widget"), dropAfter(target, e));
+    });
+    grid.addEventListener("dragend", function () {
+      if (dragId) widgetEl(dragId).classList.remove("is-dragging");
+      dragId = null;
+      clearDropMarks();
+    });
+  }
+
   /* 7. 그리기 + 갱신 -------------------------------------------------------- */
   function renderAll() {
     var d = state.data;
     renderRates(d.rates);
-    renderTradeCards(d.trade_cards);
     renderNews(d.news);
     renderRegs(d.regulations);
     renderClock();
-    requestAnimationFrame(fitLists);
   }
 
   function needsMore(d) {
     return (d.refreshing && d.refreshing.length) ||
-      !(d.trade_cards && d.trade_cards.ok) ||
       !(d.news && d.news.items && d.news.items.length) ||
       !(d.regulations && d.regulations.items && d.regulations.items.length);
   }
@@ -636,27 +623,18 @@
         cur.checked_text = r.checked_text || cur.checked_text;
         state.data.regulations = cur;
         renderRegs(cur);
-        requestAnimationFrame(fitLists);
       })
       .catch(function () { /* 다음 주기에 다시 */ });
   }
 
   /* 시작 */
   setClockMode(state.clockMode);
+  initWidgets();
   renderAll();
+  loadProjects();
   if (needsMore(state.data)) setTimeout(pollData, 4000);
   setInterval(pollRegulations, 10 * 60 * 1000);
 
   // 매 분 0초에 맞춰 현지 시각 갱신 (7-1)
   setTimeout(function () { renderClock(); setInterval(renderClock, 60000); }, (60 - new Date().getSeconds()) * 1000);
-
-  var resizeTimer;
-  window.addEventListener("resize", function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(fitLists, 120); });
-  window.addEventListener("load", fitLists);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitLists);
-  // 목록 영역 크기가 바뀔 때(글꼴 적용, Sidebar 접기, 창 크기 변경 등)마다 표시 개수를 다시 맞춥니다
-  if (window.ResizeObserver) {
-    var ro = new ResizeObserver(function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(fitLists, 50); });
-    document.querySelectorAll(".home-list[data-fit]").forEach(function (l) { ro.observe(l); });
-  }
 })();
