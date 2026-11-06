@@ -36,35 +36,27 @@ class BuildWidgetsTest(unittest.TestCase):
         ]
         self.result = home_projects.build_widgets(self.rows, TODAY)
 
-    def test_due_soon_includes_overdue_to_three_days_only(self):
-        self.assertEqual([i["name"] for i in self.result["due_soon"]], ["지난 납기", "오늘 납기", "홀드 납기", "3일 뒤"])
-        self.assertEqual([i["d_day_text"] for i in self.result["due_soon"]], ["D+2", "D-Day", "D-1", "D-3"])
+    def test_items_are_scheduled_projects_in_due_order(self):
+        """기간·홀드 거르기는 위젯 설정이라 화면에서 함. 서버는 드롭·완료·납기 미정만 뺌"""
+        items = self.result["items"]
+        self.assertEqual([i["name"] for i in items], ["지난 납기", "오늘 납기", "홀드 납기", "3일 뒤", "4일 뒤"])
+        self.assertEqual([i["d_day_text"] for i in items], ["D+2", "D-Day", "D-1", "D-3", "D-4"])
+        self.assertEqual([i["due_date"] for i in items][:2], ["2026-11-03", "2026-11-05"])
+        self.assertEqual(items[2]["state"], "hold")
+        self.assertEqual(self.result["today"], "2026-11-05")
 
-    def test_week_runs_monday_to_sunday_and_marks_today(self):
-        week = self.result["week"]
-        self.assertEqual(week["range_text"], "11/2 ~ 11/8")
-        self.assertEqual([d["weekday"] for d in week["days"]], list("월화수목금토일"))
-        self.assertEqual([d["date"] for d in week["days"] if d["is_today"]], ["2026-11-05"])
-
-    def test_week_lists_due_dates_without_dropped_or_completed(self):
-        names = {d["date"]: [i["name"] for i in d["items"]] for d in self.result["week"]["days"]}
-        self.assertEqual(names["2026-11-03"], ["지난 납기"])
-        self.assertEqual(names["2026-11-05"], ["오늘 납기"])
-        self.assertEqual(names["2026-11-06"], ["홀드 납기"])
-        self.assertEqual(names["2026-11-08"], ["3일 뒤"])
-        self.assertNotIn("드롭 납기", sum(names.values(), []))
-        self.assertNotIn("완료 납기", sum(names.values(), []))
-
-    def test_counts_by_state_and_active_stage(self):
+    def test_counts_by_state_and_stage_by_state(self):
         self.assertEqual(self.result["total"], 8)
         self.assertEqual({c["code"]: c["count"] for c in self.result["counts"]}, {"active": 6, "hold": 1, "drop": 1})
-        stages = {s["code"]: s["count"] for s in self.result["stages"]}
-        self.assertEqual(stages, {"proposal": 0, "development": 3, "order": 1, "production": 1, "shipping": 0, "completed": 1})
+        stages = {s["code"]: s for s in self.result["stages"]}
+        self.assertEqual({k: s["count"] for k, s in stages.items()},
+                         {"proposal": 0, "development": 3, "order": 1, "production": 1, "shipping": 0, "completed": 1})
+        self.assertEqual(stages["development"]["by_state"], {"active": 3, "hold": 1, "drop": 1})
 
     def test_empty_projects(self):
         result = home_projects.build_widgets([], TODAY)
         self.assertTrue(result["ok"])
-        self.assertEqual((result["total"], result["due_soon"]), (0, []))
+        self.assertEqual((result["total"], result["items"]), (0, []))
 
 
 class _ProjectCursor:
@@ -113,17 +105,19 @@ class HomeRouteTest(unittest.TestCase):
         for removed in ("home-trade-col", "home-trade-modal", "화장품 수출입"):
             self.assertNotIn(removed, html)
 
-    def test_dashboard_has_three_rates_and_no_trade(self):
-        def rate(code):
-            return {"code": code, "unit": 1, "name": code, "rate": 1.0, "rate_text": "1.00", "change": 0.0,
-                    "change_text": "0.00%", "direction": "flat", "warning": False}
-        six = {"items": [rate(c) for c in ("USD", "JPY", "CNH", "EUR", "THB", "SGD")], "date": "2026-11-05",
-               "date_text": "11/5", "error": None}
-        with mock.patch.object(home_data, "get_rates", return_value=six):
+    def test_dashboard_sends_widget_choices_and_no_trade(self):
+        with mock.patch.object(home_data, "get_rates", return_value={"items": [], "date": None, "error": None}) as rates:
             data = self.client.get("/api/home/data").get_json()
-        self.assertEqual([i["code"] for i in data["rates"]["items"]], ["USD", "JPY", "CNH"])
+        rates.assert_called_once_with(limit=None)   # 통화는 위젯 설정에서 고르므로 전부 보냄
+        self.assertEqual(data["news_sources"], home_data.NEWS_SOURCES)
+        self.assertEqual(data["reg_countries"], home_data.REG_COUNTRIES)
         self.assertNotIn("trade", data)
         self.assertNotIn("trade_cards", data)
+
+    def test_chatbot_rates_keep_first_six_codes(self):
+        self.assertEqual(home_data.RATE_CODES[:home_data.RATE_DISPLAY], ["USD", "JPY(100)", "CNH", "EUR", "THB", "VND"])
+        self.assertEqual(home_data._resolve_rate_code("GBP"), "GBP")   # 추가 통화도 환율 상세 모달 사용 가능
+        self.assertEqual(home_data._resolve_rate_code("IDR"), "IDR(100)")
 
     def test_trade_backend_stays_for_chatbot_and_existing_urls(self):
         rules = {r.rule for r in app_module.app.url_map.iter_rules()}
@@ -136,8 +130,8 @@ class HomeRouteTest(unittest.TestCase):
             fake.now.return_value.date.return_value = TODAY
             data = self.client.get("/api/home/projects").get_json()
         self.assertTrue(data["ok"])
-        self.assertEqual(data["due_soon"][0]["name"], "테스트 제품")
-        self.assertEqual(data["due_soon"][0]["customer"], "테스트 고객사")
+        self.assertEqual(data["items"][0]["name"], "테스트 제품")
+        self.assertEqual(data["items"][0]["customer"], "테스트 고객사")
 
     def test_projects_api_reports_db_failure_as_json(self):
         with mock.patch.object(home_projects, "get_widgets", side_effect=Unavailable("업무 DB 연결 실패")):

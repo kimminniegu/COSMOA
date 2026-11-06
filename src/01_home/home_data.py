@@ -189,9 +189,12 @@ def relative_time(dt: datetime | None) -> str:
 # ---------------------------------------------------------------------------
 EXIM_URL = os.getenv("EXIM_API_URL", "https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON")
 # 표시 순서. 앞에서부터 6개를 채우며, 응답에 없는 통화(VND 등)는 건너뜁니다. (4-2, 10장)
-RATE_CODES = ["USD", "JPY(100)", "CNH", "EUR", "THB", "VND", "SGD", "MYR"]
+# 앞 6개(RATE_DISPLAY)는 챗봇 기본 통화. 뒤는 홈 환율 위젯에서 고를 수 있는 추가 통화 (2-5)
+RATE_CODES = ["USD", "JPY(100)", "CNH", "EUR", "THB", "VND", "SGD", "MYR",
+              "GBP", "HKD", "AUD", "CAD", "IDR(100)", "AED", "SAR"]
 RATE_DISPLAY = 6
-HOME_RATE_CODES = ("USD", "JPY", "CNH")   # 홈 환율 위젯에 표시할 주요 3개 통화 (2-5)
+HOME_NEWS_LIMIT = 30   # 홈 뉴스·규제 위젯이 설정(건수·매체·국가)으로 거를 수 있게 넉넉히 보냄 (2-6)
+HOME_REG_LIMIT = 30
 RATE_WARN_PCT = 10.0   # 전일 대비 이 % 이상 움직이면 이상값으로 표시 (명세 13-1)
 
 
@@ -309,7 +312,8 @@ def refresh_rates() -> None:
         _meta_set("rates_last_try", _iso(_now()))
 
 
-def get_rates() -> dict:
+def get_rates(limit: int | None = RATE_DISPLAY) -> dict:
+    """limit=None 이면 RATE_CODES 중 저장된 통화 전부 (홈 환율 위젯의 통화 선택용)"""
     latest_date = _meta_get("rates_latest_date")
     if not latest_date:
         return {"items": [], "date": None, "error": "환율 정보를 불러오지 못했어요"}
@@ -337,7 +341,7 @@ def get_rates() -> dict:
             "direction": "up" if (change or 0) > 0 else ("down" if (change or 0) < 0 else "flat"),
             "warning": warning,   # 전일 대비 RATE_WARN_PCT 이상 변동 → 화면에 경고 표시
         })
-        if len(items) == RATE_DISPLAY:
+        if limit and len(items) == limit:
             break
     d = date.fromisoformat(latest_date)
     return {"items": items, "date": latest_date, "date_text": f"{d.month}/{d.day}", "error": None}
@@ -1328,20 +1332,16 @@ def get_validation() -> dict:
     }
 
 
-def _home_rates() -> dict:
-    """홈 환율 위젯: 주요 3개 통화만. 챗봇이 쓰는 get_rates() 는 그대로 둡니다."""
-    rates = get_rates()
-    return {**rates, "items": [it for it in rates["items"] if it["code"] in HOME_RATE_CODES]}
-
-
 def get_dashboard() -> dict:
     """홈 템플릿 / /api/home/data 공용. 수출입 통계는 화면에서 제외했지만 수집은 유지합니다.
     (바이어 현지 시각의 수출 상위국 순위와 챗봇 도구가 trade_stats 를 사용)"""
     kick_refresh()
     return {
-        "rates": _home_rates(),
-        "news": get_news(),
-        "regulations": get_regulations(),
+        "rates": get_rates(limit=None),        # 표시 통화는 위젯 설정으로 고름 (기본 USD·JPY·CNH)
+        "news": get_news(limit=HOME_NEWS_LIMIT),
+        "regulations": get_regulations(limit=HOME_REG_LIMIT),
+        "news_sources": NEWS_SOURCES,
+        "reg_countries": REG_COUNTRIES,
         "buyer_cities": top_export_cities(),
         "city_options": city_options(),
         "refreshing": is_refreshing(),
