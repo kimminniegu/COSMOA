@@ -1099,6 +1099,14 @@ const SOURCE_LABELS = { preset: '자주 쓰는 원료', ai_search: 'AI 검색', 
 let conceptMode = 'name';
 let conceptRequest = 0;
 
+// 효능 태그 카테고리별 색 (공통 Badge 색만 사용). 위에서부터 먼저 맞는 것을 씁니다.
+const TAG_TONES = [
+  ['badge-warning', /미백|브라이트|톤|광채|잡티|항산화|비타민/],
+  ['badge-success', /진정|재생|시카|트러블|회복|항염|흔적/],
+  ['badge-danger', /주름|탄력|안티|리프팅|노화|모공/],
+  ['badge-primary', /보습|장벽|수분|보호|유수분/]
+];
+const tagBadge = tag => el('span', `badge ${(TAG_TONES.find(([, re]) => re.test(tag)) || [''])[0]}`.trim(), tag);
 const findConcept = name => concepts.find(item => item.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
 function cleanInfo(info) {
   if (!info || typeof info !== 'object') return null;
@@ -1143,7 +1151,7 @@ function infoBlock(info, source) {
   if (info.properties) block.append(el('p', null, `특성 · ${info.properties}`));
   if (info.efficacy_tags.length) {
     const tags = el('div', 'simulation-concept-tags');
-    info.efficacy_tags.forEach(tag => tags.append(el('span', 'badge badge-primary', tag)));
+    info.efficacy_tags.forEach(tag => tags.append(tagBadge(tag)));
     block.append(tags);
   }
   if (info.caution) block.append(el('p', 'simulation-concept-caution', `주의 · ${info.caution}`));
@@ -1210,7 +1218,7 @@ function renderConceptSummary() {
     const tags = item.info?.efficacy_tags || [];
     if (tags.length) {
       const row = el('span', 'simulation-concept-tags');
-      tags.slice(0, 3).forEach(tag => row.append(el('span', 'badge badge-primary', tag)));
+      tags.slice(0, 3).forEach(tag => row.append(tagBadge(tag)));
       head.append(row);
     }
     head.append(el('span', 'simulation-concept-card-source', SOURCE_LABELS[item.source]));

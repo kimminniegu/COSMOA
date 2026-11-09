@@ -352,6 +352,9 @@
 .simulation-concept-block h3 { font-size: var(--font-size-label); font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
 .simulation-concept-block h3 small { margin-left: 4px; font-weight: var(--font-weight-regular); color: var(--color-text-secondary); }
 .simulation-concept-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.simulation-concept-presets .btn { height: 30px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; }
+/* 전체 코멘트는 2~3줄 정도면 충분 — 공통 textarea 최소 높이(120px)보다 작게 */
+.simulation-concept-modal #simulation-concept-comment { min-height: 72px; }
 .simulation-concept-modes { justify-self: start; }
 .simulation-concept-search { display: flex; gap: var(--space-2); }
 .simulation-concept-search .form-control { flex: 1; min-width: 0; }
