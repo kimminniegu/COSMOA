@@ -331,11 +331,12 @@
 | R&D 확인 요청사항 | 03 원료 요구사항 · 마지막 칸 | `rnd_check_requests` | 텍스트 | 칸 확정. 위치는 개발기준(규제 확인사항 반영 대상, 6단계) |
 | 용기 칸 (모델링 용기 적합성 참고값) | 02 제품 개발 요구사항 · 용기 (참고값) | `product_development.container_reference` | 텍스트 | 칸 확정. 모델링 반영은 6단계 |
 | 스킨케어 세분화 (토너·스킨·세럼·앰플·크림·로션) | 01 기본정보 · 제품 유형 → 스킨케어 선택 시 세부 유형 | `product_type` = `스킨케어` + `product_type_detail` | 세부 유형은 6개 중 하나 또는 `""`. 스킨케어가 아니면 `""` 만 | 값 확정(FIX) |
-| 점도: 서술형 + 드롭다운 | 02 제품 개발 요구사항 · 점도 (선택값 + 서술) | `product_development.viscosity_level` + `product_development.viscosity` | `viscosity` 텍스트. `viscosity_level` 값 목록은 **미정** → 지금은 `""` 만 허용, 화면 선택칸은 비활성 | 구조 확정, 값 **미정** |
+| 점도: 서술형 + 드롭다운 | 02 제품 개발 요구사항 · 점도 (구간 + 바이어 원문) | `product_development.viscosity_level` + `product_development.viscosity` | `viscosity_level` 은 구간 key(`very_thin`·`thin`·`medium`·`thick`·`very_thick`) 또는 `""`, `viscosity` 는 바이어 원문 텍스트. 구간 정의는 `src/05_requisition/viscosity_bands.py` | 구조 확정, 구간 숫자 범위는 임시값 |
+| 텍스처 태그 + 바이어 원문 | 02 제품 개발 요구사항 · 제형 / 텍스처 | `product_development.texture_tags` + `product_development.texture` | 태그 목록은 `산뜻함`·`촉촉함`·`쫀쫀함`·`리치함`·`매트함`·`기타` 복수 선택, `texture` 는 바이어 원문 텍스트 | 구현됨 |
 | 이전 차수 값 누락 경고 | 수정 화면 · 문서 정보 패널 | 저장 안 함 (`requisition_payload.js` 의 `carryoverGaps`) | SPF·PA 값이 비거나 컨셉 원료가 빠지거나 함유 필수가 해제되면 경고만 표시, 저장·완료는 막지 않음 | **임시 구현**: 수정 시작 시점 문서와 비교. 차수 기능(5단계) 후 이전 차수 요청서와 비교하도록 교체 |
 
-- 값 목록은 한 곳(`src/05_requisition/schema.py`)에서 정의하고 화면·자동변환·서버 검증이 같이 쓴다. 점도 선택값이 정해지면 `VISCOSITY_LEVELS` 에 넣으면 화면 선택칸이 켜지고 서버도 그 값만 받는다.
-- 자동변환(AI)이 채우는 FIX 칸: `product_type_detail`(원문에 명시된 경우), `spf`·`pa`(원문 표기 그대로), 컨셉 원료 이름·필수/선호 구분. **채우지 않는 칸**: 목표 가격대 금액, 점도 선택값, 용기, 컨셉원료 코멘트, R&D 확인 요청사항, 함유 필수 여부, 효능 태그. 근거(원문 발췌)가 없는 추출값은 비운다 (기존 규칙).
+- 값 목록은 한 곳(`src/05_requisition/schema.py`, 점도 구간은 `viscosity_bands.py`)에서 정의하고 화면·자동변환·서버 검증이 같이 쓴다.
+- 자동변환(AI)이 채우는 FIX 칸: `product_type_detail`(원문에 명시된 경우), `spf`·`pa`(원문 표기 그대로), 컨셉 원료 이름·필수/선호 구분, 점도 구간·텍스처 태그(원문 근거가 있을 때 AI 가 추정, 항상 확인 필요로 표시). **채우지 않는 칸**: 목표 가격대 금액, 용기, 컨셉원료 코멘트, R&D 확인 요청사항, 함유 필수 여부, 효능 태그. 근거(원문 발췌)가 없는 추출값은 비운다 (기존 규칙).
 
 ### 4-4. 이전 형식 호환 — 구현됨 (3-2)
 
@@ -353,7 +354,7 @@
 | 키 | `context` 8개(`customer_id`, `customer_name`, `project_id`, `project_name`, `creation_method`, `source_language`, `target_language`, `source_file_name`), `inputs` 는 4-2 예시의 모든 키, `outputs` 는 `{}`, `meta` 는 `field_provenance`·`reference_files`(+ 선택 `legacy_fields`). **빠진 키는 400 `missing_field`, 계약에 없는 키는 400 `unknown_field`** (저장 제외 필드는 거부하지 않고 제거) |
 | 빈 값 | 텍스트·선택값 `""`, 목록 `[]`. `null` 은 `ingredients.concept[].must_contain`(미확인)과 `field_provenance[].user_value` 만 |
 | 자료형·길이 | 텍스트 10,000자 이하 (SPF·PA 50자). 목록 항목은 문자열 300자 이하, 최대 50개, 빈 항목·중복(대소문자·앞뒤 공백 무시) 불가 → 400 `duplicate_value`. 문자열 앞뒤 공백은 그대로 저장(화면이 정리) |
-| 허용값 | `request_source`, `sample_request_type`, `product_type`, `product_type_detail`(스킨케어일 때만), `product_type_custom`(기타일 때만), `product_development.application_type`, `viscosity_level`(현재 `""` 만), `concept.kind`, `context.creation_method`(`auto`·`auto_edited`·`manual`·`manual_edited`), `context.target_language`, 출처의 `input_source`(`auto`·`user_edited`)·`review_status`(5개). 위반 400 `invalid_value` |
+| 허용값 | `request_source`, `sample_request_type`, `product_type`, `product_type_detail`(스킨케어일 때만), `product_type_custom`(기타일 때만), `product_development.application_type`, `viscosity_level`(구간 key 5개), `texture_tags`(태그 6개), `concept.kind`, `context.creation_method`(`auto`·`auto_edited`·`manual`·`manual_edited`), `context.target_language`, 출처의 `input_source`(`auto`·`user_edited`)·`review_status`(5개). 위반 400 `invalid_value` |
 | 필수값 | `request_source`, `product_name`, `sample_request_type`, `product_type`(기타면 `product_type_custom` 도), `export_countries` 1개 이상, `quality.tests` 1개 이상, `context.customer_id`·`project_id`. 비면 400 `required_field`. 화면 "작성 완료" 필수 항목과 같다 |
 | 고객사·프로젝트 | id 로 식별. 저장 시 `context.project_id` 가 URL 프로젝트와 다르면 400 `context_project_mismatch`, `customer_id` 가 그 프로젝트의 고객사와 다르면 400 `context_customer_mismatch`. 이름 사본은 서버가 DB 값으로 덮어쓴다 |
 | 출처 (`field_provenance`) | `field_key` 는 `inputs` 의 칸 경로 또는 `customer`. 허용 키 6개 밖(`translated_value` 등)은 제거 |
