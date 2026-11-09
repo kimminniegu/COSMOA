@@ -13,7 +13,7 @@
   labels.reference_notes = "기타사항";
   kinds.reference_notes = "textarea";
   const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.concept_notes", "ingredients.other_notes", "rnd_check_requests"]);
-  const wideFields = new Set(["target_prices", "ingredients.concept", "product_development.container_reference"]);
+  const wideFields = new Set(["target_prices", "ingredients.concept", "product_development.container_reference", "product_development.viscosity", "product_development.texture", "product_development.appearance_sensory"]);
   // 입력 칸 하나로 끝나지 않는 항목 (목록 편집·선택값+서술)
   const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity", "product_development.texture"]);
   const inputPaths = RequisitionPayload.inputPaths(options);
@@ -183,10 +183,11 @@
     let reviewStatus = provenance ? provenance.review_status : "";
     if ((key === "product_development.viscosity" && viscosityNeedsReview(data)) || (key === "product_development.texture" && textureNeedsReview(data))) reviewStatus = "needs_review";
     if (requiredMissing) reviewStatus = "missing";
-    else if (!editing() && !required && !filled(fieldValue(data, key)) && reviewStatus !== "not_applicable") reviewStatus = "needs_review";
     if (!editing() && reviewStatus) {
       if (reviewStatus === "not_applicable" && !required) control = '<p class="requisition-field-value">해당 없음</p>';
-      control += '<small class="text-caption requisition-review-status requisition-review-status--' + escape(reviewStatus) + '">' + ({ confirmed: "✓ 확인 완료", needs_review: "⚠ 확인필요", missing: "미입력", not_applicable: "해당 없음", user_edited: "✓ 사용자 수정" }[reviewStatus] || "") + '</small>';
+      else if (reviewStatus === "needs_review" || reviewStatus === "missing") {   // 사람이 볼 필요가 있는 상태만 표시합니다.
+        control += '<small class="text-caption requisition-review-status requisition-review-status--' + escape(reviewStatus) + '">' + (reviewStatus === "missing" ? "미입력" : "⚠ 확인필요") + '</small>';
+      }
     }
     const labelled = editing() && !compositeFields.has(key) && !(key === "customer" && documentProject);
     return '<div class="form-group' + (wideNoteFields.has(key) ? ' requisition-field-wide requisition-field-note' : wideFields.has(key) ? ' requisition-field-wide' : '') + '" id="requisition-field-' + key + '">' +
@@ -227,16 +228,16 @@
   }
   function viscosityEditor(data) {
     const level = data.product_development.viscosity_level;
-    return '<select class="form-control" id="requisition-input-product_development.viscosity_level" data-field="product_development.viscosity_level" aria-label="점도 구간"><option value="">선택 안 함</option>' +
+    return '<div class="requisition-composite"><select class="form-control" id="requisition-input-product_development.viscosity_level" data-field="product_development.viscosity_level" aria-label="점도 구간"><option value="">구간 선택 안 함</option>' +
       options.viscosity_bands.map((band) => '<option value="' + escape(band.key) + '"' + (level === band.key ? " selected" : "") + ">" + escape(bandText(band.key)) + "</option>").join("") + "</select>" +
-      '<input class="form-control mt-3" id="requisition-input-product_development.viscosity" data-field="product_development.viscosity" maxlength="10000" value="' + escape(data.product_development.viscosity) + '" placeholder="바이어 원문 (표현 그대로)" aria-label="점도 바이어 원문">' +
+      '<input class="form-control" id="requisition-input-product_development.viscosity" data-field="product_development.viscosity" maxlength="10000" value="' + escape(data.product_development.viscosity) + '" placeholder="바이어 원문 (표현 그대로)" aria-label="점도 바이어 원문"></div>' +
       '<p class="form-help">구간을 고르고, 바이어가 쓴 표현은 원문 칸에 그대로 남겨요.</p>';
   }
   function textureEditor(data) {
     const selected = data.product_development.texture_tags;
     return '<div class="requisition-options" role="group" aria-label="텍스처 태그">' + options.texture_tags.map((tag) =>
       '<label class="form-check"><input type="checkbox" data-texture-tag="' + escape(tag) + '"' + (selected.includes(tag) ? " checked" : "") + "> " + escape(tag) + "</label>").join("") + "</div>" +
-      '<textarea class="form-control mt-3" rows="3" maxlength="10000" id="requisition-input-product_development.texture" data-field="product_development.texture" placeholder="바이어 원문 (표현 그대로)" aria-label="텍스처 바이어 원문">' + escape(data.product_development.texture) + "</textarea>";
+      '<textarea class="form-control requisition-texture-text" rows="3" maxlength="10000" id="requisition-input-product_development.texture" data-field="product_development.texture" placeholder="바이어 원문 (표현 그대로)" aria-label="텍스처 바이어 원문">' + escape(data.product_development.texture) + "</textarea>";
   }
   $("section-tabs").innerHTML = sectionTitles.map((title, index) =>
     '<button type="button" class="tab" id="requisition-section-tab-' + index + '" role="tab" aria-controls="requisition-section-' + index + '" aria-selected="false" tabindex="-1" data-section="' + index + '">' + escape(title) + '</button>').join("");
@@ -250,12 +251,20 @@
       $("section-" + i).hidden = !active;
     });
     $("basic-title").textContent = sectionTitles[index];
+    $("section-prev").hidden = index === 0;
+    $("section-next").hidden = index === sectionTitles.length - 1;
+    if (index > 0) $("section-prev").textContent = "← " + sectionTitles[index - 1];
+    if (index < sectionTitles.length - 1) $("section-next").textContent = sectionTitles[index + 1] + " →";
     if (focus) $("section-tab-" + index).focus({ preventScroll: true });
   }
   $("section-tabs").addEventListener("click", (event) => {
     const tab = event.target.closest("[data-section]");
     if (tab) selectSection(Number(tab.dataset.section));
   });
+  [["section-prev", -1], ["section-next", 1]].forEach(([id, step]) => $(id).addEventListener("click", () => {
+    selectSection(activeSection + step, true);
+    $("section-tabs").scrollIntoView({ block: "start", behavior: "instant" });
+  }));
   $("section-tabs").addEventListener("keydown", (event) => {
     const tab = event.target.closest("[data-section]");
     if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -264,6 +273,16 @@
     const next = event.key === "Home" ? 0 : event.key === "End" ? count - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + count) % count;
     selectSection(next, true);
   });
+  // 결과 화면에서는 비어 있는 선택 항목을 접어 입력된 내용과 확인이 필요한 항목만 보여 줍니다.
+  function isHiddenEmpty(data, key) {
+    if (editing() || requiredFields.includes(key) || filled(fieldValue(data, key)) || reviews(data).includes(labels[key])) return false;
+    return !(data.field_provenance || []).some((item) => item.field_key === key && item.review_status === "not_applicable");
+  }
+  const visibleFields = (data, fields) => fields.filter(([key]) => !isHiddenEmpty(data, key));
+  function emptyFieldsNote(data, fields) {
+    const hidden = fields.filter(([key]) => isHiddenEmpty(data, key)).map(([, label]) => label);
+    return hidden.length ? '<p class="text-caption requisition-empty-note">입력하지 않은 항목: ' + escape(hidden.join(", ")) + "</p>" : "";
+  }
   function render() {
     if (!hasDocument()) { documentProject = null; clearVersion(); }
     const choosingMode = state === "upload" || state === "manual";
@@ -295,7 +314,7 @@
       editing() ? "필수 항목을 입력하고 개발팀에 전달할 요청서를 완성해요." : "내용을 확인하고 필요하면 수정한 뒤 PDF로 저장해요.";
     if (state === "upload" || state === "loading") return;
     const data = current();
-    $("fields").innerHTML = sections.map(([title, fields], index) => '<section class="requisition-section" id="requisition-section-' + index + '" role="tabpanel" aria-labelledby="requisition-section-tab-' + index + '" tabindex="0"><h2 class="card-title">' + escape(title) + '</h2><div class="requisition-fields">' + fields.map(([key]) => field(key)).join("") + '</div></section>').join("");
+    $("fields").innerHTML = sections.map(([title, fields], index) => '<section class="requisition-section" id="requisition-section-' + index + '" role="tabpanel" aria-labelledby="requisition-section-tab-' + index + '" tabindex="0"><h2 class="card-title">' + escape(title) + '</h2><div class="requisition-fields">' + visibleFields(data, fields).map(([key]) => field(key)).join("") + '</div>' + emptyFieldsNote(data, fields) + '</section>').join("");
     selectSection(activeSection);
     renderReferences();
     $("panel-title").textContent = editing() ? "작성 상태" : "문서 정보";
@@ -316,15 +335,32 @@
     $("count-label").textContent = editing() ? "채운 항목" : "입력 완료";
     $("count").textContent = Object.keys(labels).filter((key) => filled(get(data, key)) && !(key === "product_type" && required.includes(key))).length + " / " + definitions.length;
     $("export-review").textContent = data.export_countries.length ? data.export_countries.join(", ") + " · ⚠ 규제 확인 필요" : "";
-    $("missing-wrap").hidden = !editing() || !required.length;
-    $("missing").textContent = required.map((key) => labels[key]).join(", ");
     const gaps = state === "edit" ? RequisitionPayload.carryoverGaps(saved, data) : [];   // 임시 기준: 수정 시작 시점 문서
     $("carryover-wrap").hidden = !gaps.length;
     $("carryover").textContent = gaps.join(", ");
     renderVersion();
-    $("review").textContent = checks.length ? checks.length + "건 · " + checks.join(", ") : "없음";
+    // 누르면 해당 항목으로 이동합니다. 탭에는 항목별 건수를 표시합니다.
+    $("review").innerHTML = checks.length ? checks.length + "건 · " + checks.map((label) => '<button type="button" class="requisition-review-link" data-review="' + escape(label) + '">' + escape(label) + "</button>").join("") : "없음";
+    sections.forEach(([, fields], index) => {
+      const count = fields.filter(([, label]) => checks.includes(label)).length, tab = $("section-tab-" + index);
+      let badge = tab.querySelector(".requisition-tab-count");
+      if (!count) { if (badge) badge.remove(); return; }
+      if (!badge) { badge = document.createElement("span"); badge.className = "requisition-tab-count"; tab.append(badge); }
+      badge.textContent = count;
+      badge.setAttribute("aria-label", "확인 필요 " + count + "건");
+    });
     data.review_status = required.length || checks.length || data.export_countries.length ? "needs_review" : "complete";
   }
+  $("review").addEventListener("click", (event) => {
+    const link = event.target.closest("[data-review]");
+    if (!link) return;
+    const index = sections.findIndex(([, fields]) => fields.some(([, label]) => label === link.dataset.review));
+    const key = sections[index][1].find(([, label]) => label === link.dataset.review)[0];
+    selectSection(index);
+    $("field-" + key).scrollIntoView({ block: "center", behavior: "instant" });
+    const control = $("field-" + key).querySelector("input:not([type=hidden]),select,textarea");
+    if (control) control.focus({ preventScroll: true });
+  });
   function transition(next) {
     state = next;
     notice();
@@ -883,7 +919,7 @@
   function renderVersion() {
     const isFinal = isCurrentFinal();
     $("save-status").textContent = currentVersion ? "v" + currentVersion.version_no + (isFinal ? " ★ 최종본" : "") + (versionDirty ? " · 이후 수정됨" : "") : "저장 전";
-    $("save-help").textContent = !currentVersion ? "아직 서버에 저장하지 않은 문서예요. 저장하면 서버가 버전 번호를 정하고, 연구소 개발 차수와는 따로 관리돼요."
+    $("save-help").textContent = !currentVersion ? "저장하면 프로젝트에 새 버전으로 남아요. 원본 파일과 참고자료 본문은 저장되지 않아요."
       : versionDirty ? "수정한 내용은 아직 저장되지 않았어요. 저장하면 새 버전으로 남아요." : "저장한 버전과 같은 내용이에요. 연구소 개발 차수는 저장으로 바뀌지 않아요.";
     if (state !== "result") return;
     if (document.activeElement !== $("version-title") && !$("version-title").value) $("version-title").value = documentTitle || saved.product_name || "";

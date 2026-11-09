@@ -157,6 +157,28 @@
 .requisition-legacy-note { margin-top: var(--space-2); }
 .requisition-panel #requisition-save-help { margin: 0; }
 
+/* 정보 배치 정리: 제목 중복 제거, 패널 동작 순서, 복합 입력 칸 */
+#requisition-title:focus { outline: none; }
+.requisition-section > h2 { display: none; }
+#requisition-basic-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.requisition-paper > .card-header { padding: var(--space-6) var(--space-8) var(--space-3); }
+.requisition-drop + .form-help { margin-top: var(--space-4); }
+.requisition-panel { max-height: calc(100vh - var(--space-6) * 2); overflow-y: auto; }
+.requisition-panel-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.requisition-panel-actions > * { grid-column: 1 / -1; }
+.requisition-panel-actions > #requisition-primary { order: -1; }
+.requisition-panel-actions > #requisition-secondary, .requisition-panel-actions > #requisition-erp { grid-column: auto; }
+.requisition-panel-actions:has(#requisition-erp[hidden]) > #requisition-secondary { grid-column: 1 / -1; }
+.requisition-panel-actions > #requisition-pdf-help { order: 1; }
+.requisition-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: var(--space-1); padding: 0 5px; border-radius: 9px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 0.6875rem; font-weight: var(--font-weight-bold); }
+.requisition-review-link { display: inline; margin: 0 var(--space-2) 0 0; padding: 0; border: 0; background: none; color: var(--color-primary); font: inherit; text-decoration: underline; cursor: pointer; }
+.requisition-composite { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: var(--space-3); }
+.requisition-texture-text { margin-top: var(--space-3); }
+.requisition-empty-note { margin: var(--space-5) 0 0; }
+.requisition-section-nav { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-6); padding-top: var(--space-5); border-top: var(--border-default); }
+.requisition-section-nav > #requisition-section-next { margin-left: auto; }
+@container page (max-width: 560px) { .requisition-composite { grid-template-columns: minmax(0, 1fr); } }
+
 /* 저장·불러오기·최종본 */
 .requisition-save-box { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: var(--border-default); }
 .requisition-save-box .form-group { margin: 0; }
