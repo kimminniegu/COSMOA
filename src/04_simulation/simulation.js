@@ -1205,14 +1205,16 @@ function renderConceptSummary() {
     card.dataset.source = item.source;
     card.setAttribute('aria-label', `${item.name} 코멘트 편집`);
     const head = el('span', 'simulation-concept-card-head');
-    head.append(el('strong', null, item.name), el('span', 'simulation-concept-card-source', SOURCE_LABELS[item.source]));
-    card.append(head);
+    // 한 줄: 원료명 · 효능 태그 · (오른쪽) 출처
+    head.append(el('strong', null, item.name));
     const tags = item.info?.efficacy_tags || [];
     if (tags.length) {
       const row = el('span', 'simulation-concept-tags');
-      tags.slice(0, 4).forEach(tag => row.append(el('span', 'badge badge-primary', tag)));
-      card.append(row);
+      tags.slice(0, 3).forEach(tag => row.append(el('span', 'badge badge-primary', tag)));
+      head.append(row);
     }
+    head.append(el('span', 'simulation-concept-card-source', SOURCE_LABELS[item.source]));
+    card.append(head);
     if (item.comment) card.append(el('span', 'simulation-concept-card-comment', item.comment));
     card.title = [item.info?.summary, item.info?.caution && `주의 · ${item.info.caution}`, '눌러서 코멘트 편집'].filter(Boolean).join('\n');
     card.addEventListener('click', () => {
