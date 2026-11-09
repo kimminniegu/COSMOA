@@ -63,6 +63,7 @@
 
 .regulatory-autocomplete__list {
   position: absolute;
+  top: 100%;            /* 부모 .form-group 이 flex 라 top 이 없으면 그룹 맨 위(입력창 위)에 겹쳐 그려진다 → 검색창 영역 아래로 */
   left: 0;
   right: 0;
   z-index: 20;
@@ -99,6 +100,11 @@
 
 .regulatory-autocomplete__kr { font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
 .regulatory-autocomplete__inci { font-size: var(--font-size-label); color: var(--color-text-secondary); }
+/* 직접 검색 후보: 한글명 + 출처 배지(성분정보·규제정보) 한 줄, 영문명, 일치 근거 */
+.regulatory-autocomplete__options { max-height: 26rem; overflow-y: auto; }
+.regulatory-autocomplete__head { display: inline-flex; align-items: center; gap: var(--space-2); }
+.regulatory-autocomplete__basis { flex-basis: 100%; font-size: var(--font-size-label); color: var(--color-text-tertiary, var(--color-text-secondary)); }
+.regulatory-link-pick { margin-left: var(--space-2); }
 
 /* 확정된 성분 안내 (검색창 아래) */
 .regulatory-selected { color: var(--color-primary); }

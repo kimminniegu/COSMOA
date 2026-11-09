@@ -79,10 +79,10 @@
             <div class="form-group regulatory-autocomplete">
               <label class="form-label" for="regulatory-search-ingredient">성분명 <span class="is-required">*</span></label>
               <input class="form-control" type="text" id="regulatory-search-ingredient" name="ingredient"
-                     placeholder="한글명 또는 영문 INCI명 (예: 레티놀, Retinol)" autocomplete="off"
+                     placeholder="한글명·영문 INCI명·이명·CAS 번호 (예: 레티놀, Retinol, 122-99-6)" autocomplete="off"
                      role="combobox" aria-autocomplete="list" aria-expanded="false"
                      aria-controls="regulatory-autocomplete-list" aria-haspopup="listbox">
-              <p class="form-help" id="regulatory-search-ingredient-help">2글자 이상 입력하면 이름이 그 글자로 시작하는 성분 후보를 보여줘요. 후보를 고른 뒤 검색 버튼을 누르면 규제를 조회해요.</p>
+              <p class="form-help" id="regulatory-search-ingredient-help">2글자 이상 입력하면 성분정보·규제정보에서 후보를 찾아요 (정확 일치 → 앞부분 일치 → 포함 일치 순). 후보를 직접 고른 뒤 검색 버튼을 누르면 규제를 조회해요.</p>
               <p class="form-help regulatory-selected" id="regulatory-search-selected" hidden></p>
               <p class="form-error" id="regulatory-search-ingredient-error" hidden>성분명을 입력해 주세요.</p>
 
@@ -118,22 +118,10 @@
             </div>
           </div>
 
-          {# 규제 정보 출처 — radio 카드 단일 선택(기본 식약처 수집 DB). 선택한 출처만 조회하고 두 출처를 섞지 않는다. 값 읽기·change 는 fieldset(id) 기준 (regulatory.js searchSource/fileSource) #}
-          <div class="grid grid-2-1 mt-4">
-            <fieldset class="form-group regulatory-source" id="regulatory-search-source">
-              <legend class="form-label">규제 정보 출처</legend>
-              <div class="regulatory-source__options">
-                <label class="regulatory-source__option is-selected" for="regulatory-search-source-mfds">
-                  <input type="radio" id="regulatory-search-source-mfds" name="regulatory-search-source" value="mfds" checked>
-                  <span class="regulatory-source__name">식약처 수집 DB</span>
-                </label>
-                <label class="regulatory-source__option" for="regulatory-search-source-api">
-                  <input type="radio" id="regulatory-search-source-api" name="regulatory-search-source" value="api">
-                  <span class="regulatory-source__name">K뷰티 API (RapidAPI)</span>
-                </label>
-              </div>
-              <p class="form-help">식약처 수집 DB 는 서버에 수집해 둔 자료를 읽고, K뷰티 API 는 외부 API 를 호출해요. 출처를 바꾸면 다시 조회해야 해요. (기본 선택: 식약처 수집 DB)</p>
-            </fieldset>
+          {# 직접 검색 조회 자료 — 식약처 수집 DB 두 개만 사용 (외부 API 호출 없음). 출처 선택지는 파일 일괄 조회에만 남아 있다 (3단계에서 전환) #}
+          <div class="mt-4" id="regulatory-search-datasource">
+            <p class="form-label">조회 자료</p>
+            <p class="form-help">식약처 수집 DB — <strong>성분정보</strong>(화장품 원료성분정보)와 <strong>규제정보</strong>(화장품 사용제한 원료정보)에서 후보를 찾고, 고른 성분의 규제는 규제정보에서 조회해요. 두 출처의 후보는 합치지 않고 따로 보여줘요.</p>
           </div>
 
           {# 직접 검색은 성분명 + 시장만 입력. 함량·제품 조건 입력은 파일 일괄 조회에서만 사용 (regulatory.md 5·6항) #}
@@ -382,7 +370,7 @@
             <p class="text-caption text-secondary" id="regulatory-single-status-note"></p>
           </div>
           <div class="stat-tile">
-            <p class="stat-tile__label">규제 유형 (API 원문)</p>
+            <p class="stat-tile__label">규제 유형 (원문)</p>
             <p class="stat-tile__value" id="regulatory-single-type">—</p>
             <p class="text-caption text-secondary" id="regulatory-single-type-note"></p>
           </div>
@@ -442,7 +430,9 @@
 
         <dl class="regulatory-meta mt-4">
           <dt>실제 조회 범위</dt><dd id="regulatory-single-scope">—</dd>
-          <dt>조회 출처</dt><dd id="regulatory-single-source">—</dd>
+          <dt>선택한 성분 출처</dt><dd id="regulatory-single-ingredient-source">—</dd>
+          <dt>성분 연결 근거</dt><dd id="regulatory-single-link-basis">—</dd>
+          <dt>규제 조회 출처</dt><dd id="regulatory-single-source">—</dd>
           <dt>데이터 확보 시각</dt><dd id="regulatory-single-acquired">—</dd>
           <dt>갱신 안내</dt><dd id="regulatory-single-refresh">—</dd>
           <dt>원천 자료 갱신일</dt><dd id="regulatory-single-srcdate">미제공</dd>
@@ -646,10 +636,10 @@
             <dl class="regulatory-detail-list regulatory-detail-list--2col">
               <div><dt>입력 검색어</dt><dd data-detail="input-raw">—</dd></div>
               <div><dt>조회 시장</dt><dd data-detail="input-market">—</dd></div>
-              <div><dt>매칭 성분 · code</dt><dd data-detail="match-name">—</dd></div>
+              <div><dt>매칭 성분</dt><dd data-detail="match-name">—</dd></div>
               <div><dt>매칭 방식</dt><dd data-detail="match-method">—</dd></div>
               <div class="regulatory-detail-list__full"><dt>성분 연결 근거 (식약처 DB)</dt><dd data-detail="link-basis">해당 없음</dd></div>
-              <div class="regulatory-detail-list__full"><dt>성분 레코드 갱신일</dt><dd data-detail="match-updated">미제공</dd></div>
+              <div class="regulatory-detail-list__full"><dt>성분 레코드 갱신·수집 시각</dt><dd data-detail="match-updated">미제공</dd></div>
               <div><dt>원문 위치</dt><dd data-detail="input-location">해당 없음</dd></div>
             </dl>
           </div>

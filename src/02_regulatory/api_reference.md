@@ -11,7 +11,29 @@
 
 브라우저는 아래 Route만 호출한다. 외부 API Key는 서버 환경변수(`RAPIDAPI_KEY`, `RAPIDAPI_HOST`)에서만 읽고 응답·로그에 넣지 않는다.
 
-### GET `/api/regulatory/ingredients?q=<성분명>`
+> **직접 검색은 2단계(2026-11-09)부터 `/api/regulatory/search` · `/api/regulatory/lookup` 만 쓴다** (식약처 수집 DB 두 개, 외부 API·API 키 없음).
+> 아래 `/ingredients` · `/regulations` 는 **파일 매칭 전용**으로 남아 있으며 3단계에서 전환·정리한다.
+
+### GET `/api/regulatory/search?q=<검색어>` — 직접 검색 후보 (로그인 필요)
+
+`regulatory_search.search(q, limit=10)`. 한글명·영문명·이명·고시원료명·CAS 로 **성분정보**(`mfds_ingredients`)·**규제정보**(`mfds_restriction`) 두 DB 를 검색한다. 두 출처 후보는 합치지 않고, 성분을 자동 확정하지 않는다.
+
+- 정렬: 정확 일치 → 앞부분 일치 → 포함 일치 (같은 요청 → 같은 순서). 기본 10개.
+- 응답: `candidates[]`(key·source·kr_name·eng_name·synonym·cas·match·matched[필드·단계·근거·원문]·snapshot) / `total`(제한 전) / `returned` / `truncated` / `exact_total` / `counts{source: total·exact·prefix·contains}` / `auto_confirmed=false` / `sources{snapshot_id·run_id·collected_at}`.
+- `key` = `<source>:<snapshot_id>:<local_id>` — 수집본 안에서만 유효한 후보 키(영구 성분 코드 아님). 화면에는 표시하지 않는다.
+- 오류 (`{"ok": false, "error": {kind, message, source}}`): `validation` 400 (빈 값·2글자 미만) · `db_missing` / `db_incomplete` / `db_error` 503. 결과 없음은 200 + `total: 0` (오류와 구분).
+
+### GET `/api/regulatory/lookup?key=<후보 key>&country=<시장코드>` — 직접 검색 규제 조회 (로그인 필요)
+
+`regulatory_search.lookup_candidate(key, country)`. 서버가 `resolve_key` 로 key 를 검증한 뒤 규제 DB 를 읽는다. **브라우저가 보낸 이름·CAS·identity 는 받지 않는다.**
+
+- 규제정보 후보: 검증된 identity 그대로 `regulatory_mfds_lookup.lookup_by_identity` (이름 재매칭 없음). `link.status = direct`.
+- 성분정보 후보: 서버가 복원한 한글명 = 규제 표준명, 영문명(쉼표 나열 항목 포함) = 규제 영문명 이 **직접 정확 일치**하고 그 규제 성분이 하나뿐이며 충돌이 없을 때만 연결(`linked`). 이명·고시원료명·접두·포함·유사도·'메칠→메틸' 치환으로 연결하지 않고, CAS 로 찾지 않는다(둘 다 있을 때 충돌 확인만). 복수 후보·한쪽 이름 불일치·CAS 불일치 → `ambiguous`. 일치 없음 → `none`.
+- `lookup_status`: `found`(선택 시장 기록 있음, 조건별 레코드 모두) · `no_market_record`(규제 성분은 있으나 선택 시장 기록 없음) · `link_required`(연결 확인 필요, `link_candidates[]` 에 규제 후보 key 포함) · `not_linked`(정확 일치 규제 성분 없음). 모두 200. 기록이 없다고 허용·안전·규제 없음으로 판정하지 않는다.
+- 응답은 `/regulations?source=mfds` 와 같은 필드(entries·related·markets_listed·collection_run·출처·날짜)에 더해 `selection`(고른 후보) · `link`{status·basis·identity·candidates·conflict} · `ingredient_source` / `regulation_source`(출처별 수집 시각 따로) · `regulation_ingredient`. `ingredient` 는 사용자가 고른 후보 이름이다. `related` 는 확정 규제와 분리된 포함 일치 항목.
+- 오류: `validation` 400 (key·국가 누락·형식) · `stale_key` 409 (key 의 수집본이 현재와 다름 → 다시 검색·선택) · `not_found` 404 · `db_missing` / `db_incomplete` / `db_error` 503.
+
+### GET `/api/regulatory/ingredients?q=<성분명>` — 파일 매칭 전용 (3단계에서 전환)
 
 한글명·영문 INCI명 후보 검색. **규제 조회를 하지 않는다.** 자동완성(입력 멈춤 300ms 후)과 검색 버튼 모두 이 Route를 사용한다.
 
@@ -212,14 +234,15 @@
 - `markets_outside_plan` 의미, 규제 자료 갱신일 제공 여부
 - 429 초과 시 응답 형식. 자동완성은 300ms 디바운스·조합 중 미요청으로 호출을 줄이며 캐시는 없음
 
-## 3. 화면 흐름 (직접 검색, 현재 구현)
+## 3. 화면 흐름 (직접 검색, 2단계 — 식약처 수집 DB 전용)
 
-1. 성분명(한글 또는 영문 INCI) 입력 → 앞뒤 공백 제거 후 2글자 이상이고 한글 조합이 끝난 뒤 300ms 동안 입력이 없으면 `/api/regulatory/ingredients` → 검색창 아래 후보 최대 10개 (로딩 / 후보 없음 / 후보 검색 실패 중 하나만 표시). 입력이 바뀌거나 목록이 닫히면 진행 중 응답은 무시한다(`acSeq`). **검색 버튼**을 바로 누르면 같은 Route로 후보를 조회한다. 직접 검색에는 함량·제품 조건 입력이 없다 (2026-09-23 요구사항 변경).
-2. 후보 클릭 또는 ↑↓ + Enter 로 성분 확정 → 목록 닫힘, 검색창 아래 "선택한 성분" 표시. **이 단계에서 규제 조회는 하지 않는다.**
-   - 입력과 정확히 일치(공백·대소문자 무시)하는 후보가 **정확히 하나**이면 자동 확정 후 같은 클릭에서 3번으로 진행한다. 목록이 이미 열려 있으면 재요청 없이 그 후보 안에서 판단한다. 그 외에는 반드시 사용자 선택(첫 후보를 임의 확정하지 않음).
-3. 성분이 확정된 상태에서 **검색 버튼** → `/api/regulatory/regulations` → **결과 카드** 1장: 성분명·영문명·시장, 조회 상태, 규제 유형(`regulate_type` 원문), 규제 조건, 실제 조회 범위, '규제 원문·출처 보기' 버튼 → 상세 Modal.
+1. 성분명(한글명·영문명·이명·CAS) 입력 → 앞뒤 공백 제거 후 2글자 이상이고 한글 조합이 끝난 뒤 300ms 동안 입력이 없으면 `/api/regulatory/search` → 검색창 아래 후보 최대 10개 (로딩 / 후보 없음 / 후보 검색 실패 중 하나만 표시). 후보마다 한글명·영문명·출처 배지(**성분정보**·**규제정보**)·일치 근거(예: '영문명 정확 일치 (나열된 이름 중 하나)', '이명 정확 일치 · 원문'). 목록 머리에 전체 후보 수·출처별 정확 일치 수, 잘렸으면 'N건 중 10건만 표시 — 검색어를 구체적으로'. 입력이 바뀌거나 목록이 닫히면 진행 중 응답은 무시한다(`acSeq`). 직접 검색에는 출처 선택지·함량·제품 조건 입력이 없다.
+2. 후보 클릭 또는 ↑↓ + Enter 로 성분 선택 → 목록 닫힘, 검색창 아래 "선택한 성분 · 출처" 표시. **이 단계에서 규제 조회는 하지 않는다.**
+   - **후보가 하나이거나 정확 일치가 하나여도 자동 선택·자동 조회하지 않는다** (1단계 이전의 '정확 일치 자동 확정'은 직접 검색에서 제거, 파일 매칭에만 남음). 선택 전 검색 버튼은 후보 목록만 열고 '목록에서 직접 선택' 안내를 보인다. 목록이 열릴 때 활성 후보는 없다.
+   - 선택은 서버가 준 `key` 로만 기억한다 (`state.selected.key`). key·내부 id·해시는 화면에 표시하지 않는다.
+3. 선택한 상태에서 **검색 버튼** → `/api/regulatory/lookup?key=&country=` → **결과 카드** 1장: 고른 성분명·영문명·시장, 조회 상태, 규제 유형(원문), 규제 조건(조건별 레코드 모두), 관련 항목(분리), **선택한 성분 출처·수집 시각 / 성분 연결 근거 / 규제 조회 출처·수집 시각**(따로 표시), '규제 원문·출처 보기' → 상세 Modal.
    - 결과 영역은 `loading / error / single / batch` 중 한 블록만 표시한다. 요청 완료·실패 시 로딩과 버튼 비활성은 항상 해제된다.
-   - `found`: 중립 배지 '규제 정보 조회됨'(허용·안전으로 보이지 않도록 초록색을 쓰지 않음). `no_data`: 경고 배지 + "확인되지 않았어요 / 허용·안전 아님" 안내 + API `result_note`, 규제 조건 영역 숨김. `hold`: 경고 배지 + 보류 안내. API 오류: Error 블록에 서버가 준 `error.kind`·`message`·외부 HTTP 상태를 그대로 표시하고 '다시 시도' 제공.
+   - 상태 배지: `found` '규제 정보 조회됨'(중립) · `no_market_record` '선택 국가 기록 없음' · `link_required` '성분 연결 확인 필요'(근거 + 규제 후보 목록, 후보마다 '이 규제 성분으로 조회' 버튼 = 사용자가 명시적으로 고를 때만 조회) · `not_linked` '규제 성분 연결 미확인'. 모두 '허용·안전·규제 없음을 뜻하지 않아요' 안내. 오류: `db_*` '출처 이용 불가 (… · 성분정보/규제정보)', `stale_key`·`not_found` '후보 다시 선택 필요' — 선택을 해제하고 '다시 시도'는 이전 key 로 조회하지 않는다.
    - 검토 상태·기준 비교·입력 부족 안내는 표시하지 않는다. 적합성·안전성 판정을 생성하지 않는다.
 4. **규제 조건 표시 규칙** (`regulatory.js` `parseConditionText` / `renderConditions`)
    - `limit_condition` 원문이 `* 【태그】 라벨 : 값` 블록 구조이면 블록별로 나누고, 먼저 언어별로 배치한다: 라벨(없으면 태그·값)에 한글이 있으면 한국어, 아니면 영문. **영문 전체가 위(English · API 제공 영문), 한국어 전체가 아래(한국어 · API 제공 한국어)** 이며 한 언어만 있으면 그 언어만 표시한다. 한국어 문장 안의 영문 성분명·단위는 분리하지 않는다. 각 언어 안에서 라벨 키워드로 묶는다: 적용 제품·부위(`product type`, `body part`, `제품 유형`, `사용 부위`) / 최대 농도(`maximum concentration`, `최대 농도`) / 사용 조건·주의 문구(`conditions of use`, `warning`, `사용 조건`, `주의`) / 분류가 불확실한 블록은 '기타 원문'에 라벨 그대로 누락 없이.
@@ -227,8 +250,9 @@
    - 블록 하나라도 `라벨 : 값` 으로 읽을 수 없으면 나누지 않고 원문 전체를 `pre-wrap` 으로 표시하고 "원문 구분이 확실하지 않아 그대로 표시했어요"를 붙인다.
    - 규제 항목(`entries`)이 여러 건이면 항목별 제목(순번·유형·국가)으로 구분하고, `proviso` 가 있으면 '단서 조항 (원문)' 블록으로 붙인다.
    - 문장은 재배치만 하며 번역·요약·환산·재해석을 하지 않고, 성분별 규칙을 두지 않는다. 원문 전체·출처·고시 성분명·응답 상태값은 상세 Modal 에 그대로 둔다.
-5. '이전 조건의 결과' 안내는 표시 중인 결과의 조건 키(성분 code·시장)와 현재 입력이 다를 때만 보이고, 같은 조건으로 돌아오면 사라진다. 검색어를 수정하면 확정된 성분은 해제된다.
+5. '이전 조건의 결과' 안내는 표시 중인 결과의 조건 키(직접 검색: 후보 key·시장 / 파일: 성분 code·시장)와 현재 입력이 다를 때만 보이고, 같은 조건으로 돌아오면 사라진다. 검색어를 수정하면 선택한 성분은 해제된다. 조회 중 시장을 바꾸면 늦게 온 응답은 '이전 조건의 결과'로 표시된다.
 6. **파일 탭 (현재 구현)**: 파일·시장 선택 → ‘파일 분석’ → 화면에서 확장자·용량을 먼저 확인(이미지 등은 업로드 없이 미지원 안내) → `POST /api/regulatory/extract` → `sheet_required` 면 시트 선택 블록 → 선택 후 재전송 → 추출값 확인·수정 표(조회 포함 체크 · 원문 성분명→수정 · 함량 원문→수정(미기재 표시) · 원문 위치 · 상태(추출됨/확인 필요/수정됨/직접 입력) · 삭제, ‘행 추가’). 처리 중·실패(사유·종류)·추출 결과 없음을 한 블록씩만 표시한다. 편집값은 `fileState.items` 에만 있고 서버로 보내지 않는다.
 7. **성분 확인·규제 일괄 조회 (현재 구현, 새 Route 없음)**: ‘성분 확인’ → 조회 포함 행마다 `GET /api/regulatory/ingredients?q=<성분명>` 을 순차 호출(같은 이름은 1회). 정확 일치 하나 → 확정(`정확 일치 자동 확정`), 그 외 후보 있음 → 행에서 선택(`후보 선택`), 없음 → 성분 확인 필요, 오류 → 확인 실패. ‘확정 성분 규제 조회’ → 확정 행만 `GET /api/regulatory/regulations?code=&country=` 를 (code, country)당 1회 순차 호출. `error.kind = rate_limit` 이면 남은 호출을 중단하고 실패로 표시(자동 재시도 없음). ‘실패 항목 재시도’는 `api_error` 행만 다시 호출한다. 결과 표: 성분명·선택 시장·조회 상태·규제 유형·상세. 조회 상태는 `lookup_status`(found/no_data/hold) + 화면 상태(성분 확인 필요·성분 매칭 실패·API 오류·미조회). 시장·목록·매칭이 바뀌면 ‘이전 조건의 결과’ 안내, 늦은 응답은 순번(`fileState.batchSeq`)으로 무시. 상세 Modal 은 직접 검색과 공유하며 `input-amount`(문서 함량 참고값)·`input-location` 을 추가로 채운다. 검토 상태·기준 비교는 미구현.
+8. **3단계(파일 매칭 전환) 정리 대상** — 2단계에서 직접 검색만 바꾸고 아래는 남겨 두었다: 파일 탭 출처 radio(`regulatory-file-source`, K뷰티 선택지) · `fileSource()`·`SOURCE_LABEL.api` · `regulationsUrl()` · `findExactMatch()`/`confirmMatch(…, "정확 일치 자동 확정")` · 성분 확인의 `/api/regulatory/ingredients` 호출과 `code` 기반 매칭·캐시 키(`x.match.code`) · 일괄 조회의 `/api/regulatory/regulations` 호출 · app.py `regulatory_ingredients`·`regulatory_regulations`(source=api) Route · `regulatory_service.py` K뷰티 호출 · 상세 Modal 의 code 표시 분기.
 
 **공통 CSS 관련 PM 협의 사항**: `src/common/style.css`에 `[hidden] { display: none }` 규칙이 없어 `.loading`, `.state`, `.badge`, `.alert`처럼 class로 `display`를 지정하는 요소는 `hidden` 속성이 무시된다(로딩·오류·후보 상태가 동시에 보이던 원인). 공통 파일은 수정하지 않고 `regulatory.css`에서 이 페이지 영역(`#regulatory-panel-search`, `#regulatory-panel-file`, `#regulatory-results`, `#regulatory-detail-modal`)에만 `[hidden] { display: none !important }`를 적용했다. 공통 CSS에 같은 규칙을 추가하면 페이지 규칙은 제거해도 된다.

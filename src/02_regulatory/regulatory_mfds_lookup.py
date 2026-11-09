@@ -45,9 +45,10 @@ CAS_RE = re.compile(r"\b\d{2,7}-\d{2}-\d\b")
 
 
 class MfdsLookupError(Exception):
-    """kind: db_missing(503) | db_incomplete(503) | db_error(503) | validation(400)"""
+    """kind: db_missing(503) | db_incomplete(503) | db_error(503) | validation(400) | stale_run(409) | identity_missing(404)"""
 
-    STATUS = {"db_missing": 503, "db_incomplete": 503, "db_error": 503, "validation": 400}
+    STATUS = {"db_missing": 503, "db_incomplete": 503, "db_error": 503, "validation": 400,
+              "stale_run": 409, "identity_missing": 404}     # 뒤 두 개는 lookup_by_identity 전용
 
     def __init__(self, kind, message):
         super().__init__(message)
@@ -282,18 +283,9 @@ def lookup(kr_name=None, inci_name=None, cas=None, market=None, api_code=None, p
         note = "성분 연결 확인 필요: " + (ident["conflict"] or "")
     else:
         note = "이 출처(식약처 수집 DB)에서 이름·CAS 가 정확히 일치하는 항목을 찾지 못했어요. 허용·안전·규제 없음을 뜻하지 않아요." + (" 관련 항목 %d건은 적용 여부 확인이 필요해요." % len(related) if related else "")
-    return {
-        "source": "mfds",
-        "source_label": SOURCE_LABEL,
-        "source_page": SOURCE_PAGE,
-        "collected_at": run["finished_at"],               # DB 에 기록된 수집 완료 시각 (원천 갱신일 아님). None 이면 화면 '수집 시각 미기록'
-        "acquired_at": run["finished_at"],                # 데이터 확보 시각 = 수집 완료 시각 (runs.finished_at). 파일 수정 시각·현재 시각을 쓰지 않는다
-        "refresh_policy": MFDS_REFRESH_POLICY,
-        "refresh_basis": "프로젝트에 자동 갱신 기능 없음. 재수집은 담당자가 스크립트로 실행",
-        "law_dates": None,                                 # 법령 개정·적용일: 응답에 없음 → 미제공
-        "collection_run": {"run_id": rid, "status": run["status"], "records": run["records_saved"], "started_at": run["started_at"], "finished_at": run["finished_at"]},
+    out = _common_result(run, market, countries)
+    out.update({
         "ingredient": {"code": api_code, "kr_name": (kr_name or "").strip() or None, "inci_name": (inci_name or "").strip() or None, "cas_numbers": (cas or "").strip() or None},
-        "country": {"requested": market, "resolved": " / ".join(countries), "code": market, "country_names": countries},
         "link_status": ident["status"],
         "link_basis": ident["basis"],
         "link_conflict": ident["conflict"],
@@ -305,8 +297,81 @@ def lookup(kr_name=None, inci_name=None, cas=None, market=None, api_code=None, p
         "entries": entries,
         "related": related,
         "markets_listed": markets_listed,
+    })
+    return out
+
+
+def _common_result(run, market, countries):
+    """lookup()·lookup_by_identity() 가 같은 형식으로 돌려주는 출처·날짜·시장 필드."""
+    return {
+        "source": "mfds",
+        "source_label": SOURCE_LABEL,
+        "source_page": SOURCE_PAGE,
+        "collected_at": run["finished_at"],               # DB 에 기록된 수집 완료 시각 (원천 갱신일 아님). None 이면 화면 '수집 시각 미기록'
+        "acquired_at": run["finished_at"],                # 데이터 확보 시각 = 수집 완료 시각 (runs.finished_at). 파일 수정 시각·현재 시각을 쓰지 않는다
+        "refresh_policy": MFDS_REFRESH_POLICY,
+        "refresh_basis": "프로젝트에 자동 갱신 기능 없음. 재수집은 담당자가 스크립트로 실행",
+        "law_dates": None,                                 # 법령 개정·적용일: 응답에 없음 → 미제공
+        "collection_run": {"run_id": run["run_id"], "status": run["status"], "records": run["records_saved"], "started_at": run["started_at"], "finished_at": run["finished_at"]},
+        "country": {"requested": market, "resolved": " / ".join(countries), "code": market, "country_names": countries},
         "data_source": DATA_SOURCE_TEXT,
         "disclaimer": DISCLAIMER,
         "source_updated_at": None,                         # 원천 갱신일·법령 개정일은 응답에 없음 → 미제공
         "queried_at": _now_iso(),                          # 서비스 조회 시각 = DB 를 읽은 시각 (확보 시각과 다름)
     }
+
+
+def lookup_by_identity(std_name, eng_name_normalized, market, path=None, expected_run=None):
+    """검증된 성분 구분값(identity = (INGR_STD_NAME 원문, 영문명 정규화))으로 규제 기록을 조회한다.
+
+    직접 검색에서 사용자가 고른 후보를 서버가 regulatory_search.resolve_key 로 검증한 뒤 쓴다.
+    이름을 다시 매칭하지 않으므로 CAS·이름 재검색 때문에 다른 성분으로 바뀌거나 모호해지지 않는다.
+    lookup() (파일 매칭용, 이름·CAS 매칭) 의 계약은 바꾸지 않는다.
+
+    expected_run: {"run_id", "started_at", "finished_at"} — 검증 당시 수집본과 다르면 stale_run 오류.
+    lookup_status: found (선택 시장 기록 있음) | no_market_record (성분은 있으나 선택 시장 기록 없음)
+    """
+    if market not in MARKET_TO_COUNTRY:
+        raise MfdsLookupError("validation", "식약처 수집 DB 조회는 %s 시장만 연결되어 있어요." % ", ".join(MARKET_CODES))
+    ident = (std_name or "", norm_name(eng_name_normalized))
+    conn = open_readonly(path)
+    try:
+        run = latest_completed_run(conn)
+        if expected_run is not None and any(expected_run.get(k) != run[k] for k in ("run_id", "started_at", "finished_at")):
+            raise MfdsLookupError("stale_run", "규제 DB 수집본이 후보를 검증한 뒤 바뀌었어요. 성분을 다시 검색해 선택해 주세요.")
+        rid = run["run_id"]
+        countries = MARKET_TO_COUNTRY[market]
+        try:
+            rows = [r for r in conn.execute("SELECT * FROM records WHERE run_id=? AND COALESCE(INGR_STD_NAME,'')=? ORDER BY page_no, row_index", (rid, ident[0]))
+                    if _identity(r) == ident]
+            if not rows:
+                raise MfdsLookupError("identity_missing", "현재 규제 DB 수집본에 이 성분이 없어요. 다시 검색해 주세요.")
+            entries = [_entry(r) for r in rows if r["COUNTRY_NAME"] in countries]      # 조건별 레코드를 모두 (합치지 않음)
+            markets_listed = sorted({r["COUNTRY_NAME"] for r in rows})
+            related = related_items(conn, rid, countries, ident[0] or None, ident[1] or None, exclude_identity=ident)
+        except sqlite3.Error as exc:
+            raise MfdsLookupError("db_error", "식약처 수집 DB 를 읽지 못했어요 (%s)." % exc.__class__.__name__)
+    finally:
+        conn.close()
+    first = rows[0]
+    lookup_status = "found" if entries else "no_market_record"
+    note = None if entries else (
+        "이 성분은 식약처 규제 DB 에 있지만 선택한 시장(%s)의 기록은 없어요. 허용·안전·규제 없음을 뜻하지 않아요." % " / ".join(countries))
+    out = _common_result(run, market, countries)
+    out.update({
+        "ingredient": {"code": None, "kr_name": (first["INGR_STD_NAME"] or "").strip() or None, "inci_name": (first["INGR_ENG_NAME"] or "").strip() or None,
+                       "cas_numbers": ", ".join(sorted({(r["CAS_NO"] or "").strip() for r in rows if (r["CAS_NO"] or "").strip()})) or None},
+        "link_status": "confirmed",
+        "link_basis": ["선택한 규제 성분"],
+        "link_conflict": None,
+        "link_candidates": [],
+        "matched_identity": {"std_name": ident[0], "eng_name": first["INGR_ENG_NAME"]},
+        "identity": {"std_name": ident[0], "eng_name_normalized": ident[1]},
+        "lookup_status": lookup_status,
+        "result_status": "mfds_" + lookup_status,
+        "result_note": note,
+        "entries": entries,
+        "related": related,
+        "markets_listed": markets_listed,
+    })
+    return out

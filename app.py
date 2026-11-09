@@ -373,6 +373,13 @@ _regulatory_mfds_spec = _regulatory_importlib.spec_from_file_location(
 regulatory_mfds = _regulatory_importlib.module_from_spec(_regulatory_mfds_spec)
 _regulatory_mfds_spec.loader.exec_module(regulatory_mfds)
 
+# 식약처 성분 DB + 규제 DB 통합 검색 (읽기 전용, 외부 API·API 키 없음). 직접 검색 화면 전용 — 파일 매칭은 아직 /ingredients·/regulations 사용
+_regulatory_search_spec = _regulatory_importlib.spec_from_file_location(
+    "regulatory_search", SRC_DIR / "02_regulatory" / "regulatory_search.py"
+)
+regulatory_search = _regulatory_importlib.module_from_spec(_regulatory_search_spec)
+_regulatory_search_spec.loader.exec_module(regulatory_search)
+
 
 def _regulatory_error(exc):
     """RegulatoryApiError → JSON 오류 응답. 설정 오류 503, 그 외 외부 API 오류 502."""
@@ -430,6 +437,43 @@ def regulatory_regulations():
     result["ok"] = True
     result["source"] = "api"
     result["source_label"] = "기존 API (RapidAPI K-Beauty Cosmetic Ingredients)"
+    return _regulatory_jsonify(result)
+
+
+def _regulatory_search_error(exc):
+    """SearchError → JSON. validation 400 · db_missing/db_incomplete/db_error 503 · stale_key 409 · not_found 404"""
+    return _regulatory_jsonify({"ok": False, "error": exc.to_dict()}), exc.http_status
+
+
+@app.route("/api/regulatory/search")
+@login_required
+def regulatory_search_route():
+    """직접 검색 자동완성. ?q=한글명·영문명·이명·CAS (2글자 이상) → 성분정보·규제정보 후보 (기본 10개, 출처 구분, 자동 확정 없음)"""
+    q = _regulatory_request.args.get("q") or ""
+    try:
+        result = regulatory_search.search(q, limit=regulatory_search.DEFAULT_LIMIT)
+    except regulatory_search.SearchError as exc:
+        return _regulatory_search_error(exc)
+    result["ok"] = True
+    return _regulatory_jsonify(result)
+
+
+@app.route("/api/regulatory/lookup")
+@login_required
+def regulatory_lookup_route():
+    """직접 검색 규제 조회. ?key=<후보 키>&country=EU — 서버가 후보 키를 검증(resolve_key)한 뒤 규제 DB 를 읽는다.
+    브라우저가 보낸 이름·CAS·identity 는 받지 않는다."""
+    key = (_regulatory_request.args.get("key") or "").strip()
+    country = (_regulatory_request.args.get("country") or "").strip().upper()
+    if not key:
+        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "성분 후보를 먼저 선택해 주세요.", "source": None}}), 400
+    if country not in regulatory_service.MARKET_CODES:
+        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "국가/시장을 선택해 주세요.", "source": None}}), 400
+    try:
+        result = regulatory_search.lookup_candidate(key, country)
+    except regulatory_search.SearchError as exc:
+        return _regulatory_search_error(exc)
+    result["ok"] = True
     return _regulatory_jsonify(result)
 
 

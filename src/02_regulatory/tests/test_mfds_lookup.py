@@ -214,16 +214,18 @@ class RouteSourceTest(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
 
     def test_page_has_source_radio_cards(self):
-        """출처 선택은 radio 카드 2개(직접 검색·파일 탭 각각), 기본 checked 는 mfds. 드롭다운(select) 아님"""
+        """출처 선택 radio 카드는 파일 탭에만 남는다 (기본 checked mfds, 드롭다운 아님).
+        직접 검색은 2단계에서 식약처 수집 DB 고정으로 바뀌어 출처 선택지가 없다 (test_regulatory_direct_search 참고)"""
         html = self.client().get("/regulatory").get_data(as_text=True)
-        for p in ("search", "file"):
-            self.assertIn('<fieldset class="form-group regulatory-source" id="regulatory-%s-source"' % p, html)
-            self.assertRegex(html, r'<input type="radio" id="regulatory-%s-source-mfds" name="regulatory-%s-source" value="mfds" checked>' % (p, p))
-            self.assertRegex(html, r'<input type="radio" id="regulatory-%s-source-api" name="regulatory-%s-source" value="api">' % (p, p))
-            self.assertIn('for="regulatory-%s-source-mfds"' % p, html); self.assertIn('for="regulatory-%s-source-api"' % p, html)
+        p = "file"
+        self.assertIn('<fieldset class="form-group regulatory-source" id="regulatory-%s-source"' % p, html)
+        self.assertRegex(html, r'<input type="radio" id="regulatory-%s-source-mfds" name="regulatory-%s-source" value="mfds" checked>' % (p, p))
+        self.assertRegex(html, r'<input type="radio" id="regulatory-%s-source-api" name="regulatory-%s-source" value="api">' % (p, p))
+        self.assertIn('for="regulatory-%s-source-mfds"' % p, html); self.assertIn('for="regulatory-%s-source-api"' % p, html)
+        self.assertNotIn('id="regulatory-search-source"', html)
         self.assertNotRegex(html, r'<select[^>]*id="regulatory-(search|file)-source"')
         self.assertIn("K뷰티 API (RapidAPI)", html); self.assertNotIn("기존 API", html)
-        self.assertEqual(html.count('value="mfds" checked'), 2); self.assertEqual(html.count('value="api" checked'), 0)
+        self.assertEqual(html.count('value="mfds" checked'), 1); self.assertEqual(html.count('value="api" checked'), 0)
 
 
 @unittest.skipUnless(REAL_DB.is_file(), "수집 DB 가 있을 때만")
