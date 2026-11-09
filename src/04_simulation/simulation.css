@@ -143,7 +143,9 @@
 /* Desktop: available viewport height is assigned to the preview, never clipped. */
 @media (min-width: 1200px) and (min-height: 700px) {
   /* 상단 시뮬레이션 8 : 하단 용기·제안 2. 하단 행은 용기 적합성 카드가 필요로 하는 높이 아래로 줄지 않습니다. */
-  .simulation-page { height: calc(100dvh - var(--layout-page-padding-y) - var(--layout-footer-height)); display: grid; grid-template-rows: auto auto minmax(0, 8fr) minmax(max-content, 2fr); gap: var(--layout-card-gap); overflow: clip; overflow-clip-margin: var(--layout-card-gap); }
+  /* 미리보기 행은 최소 580px. 큰 화면에서는 남는 높이만큼 더 커지고, 낮은 화면에서는 페이지가 조금 길어져 세로 스크롤이 생깁니다.
+     (400px ≈ 제목·프로젝트 바·하단 행·간격의 합) */
+  .simulation-page { --simulation-preview-h: max(580px, calc(100dvh - 400px)); display: grid; grid-template-rows: auto auto var(--simulation-preview-h) auto; gap: var(--layout-card-gap); }
   .simulation-bottom-grid .card-header { padding-top: var(--space-4); }
   .simulation-bottom-grid .card-header + .card-body { padding-top: var(--space-3); padding-bottom: var(--space-4); }
   .simulation-bottom-grid .form-control-sm, .simulation-bottom-grid .btn-sm { height: 32px; }
