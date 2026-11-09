@@ -256,6 +256,39 @@ class ScreenPayloadTest(unittest.TestCase):
         self.assertEqual(self.gaps(previous, renamed_case), [])
         self.assertEqual(self.gaps(current, previous), [])        # 새로 추가된 값은 경고 대상이 아님
 
+    def restore(self, payload):
+        script = ("const b = require(process.argv[1]); const [p, o] = JSON.parse(process.argv[2]);"
+                  "console.log(JSON.stringify(b.restore(p, o)));")
+        run = subprocess.run(["node", "-e", script, str(ROOT / "src/05_requisition/requisition_payload.js"),
+                              json.dumps([payload, schema.page_options()], ensure_ascii=False)],
+                             capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return json.loads(run.stdout)
+
+    def test_saved_version_round_trip(self):
+        doc = self.restore(EXAMPLE)                               # 저장본 → 화면 문서 → 다시 저장 payload
+        self.assertEqual(doc["customer"], "A사")
+        self.assertEqual(doc["reference_files"], [{"name": "benchmark.png", "size": 183204, "type": "image/png"}])
+        rebuilt = self.build(doc)["payload"]
+        self.assertEqual(rebuilt["inputs"], EXAMPLE["inputs"])
+        self.assertEqual(rebuilt["meta"], EXAMPLE["meta"])
+        self.assertTrue(validate(rebuilt).validation()["fully_validated"])
+
+    def test_old_or_broken_saved_version_loads_without_error(self):
+        old = copy.deepcopy(EXAMPLE)                              # 예전 저장본: 키 없음·자료형 다름
+        del old["inputs"]["ingredients"]["concept_notes"]
+        del old["inputs"]["product_development"]
+        old["inputs"]["target_prices"] = [{"amount": "1300", "currency": "KRW"}, "mid"]
+        old["inputs"]["export_countries"] = "미국"
+        old["inputs"]["ingredients"]["concept"] = [{"name": "Retinol"}, "x"]
+        doc = self.restore(old)
+        self.assertEqual(doc["ingredients"]["concept_notes"], "")
+        self.assertEqual(doc["product_development"]["viscosity"], "")
+        self.assertEqual((doc["target_prices"], doc["export_countries"]), ([], []))
+        self.assertEqual(doc["ingredients"]["concept"], [{"name": "Retinol", "kind": "necessary", "must_contain": None, "efficacy_tags": []}])
+        empty = self.restore({"inputs": {}})
+        self.assertEqual((empty["creation_method"], empty["target_language"], empty["reference_files"]), ("manual", "ko", []))
+
     def test_unlinked_document_cannot_build_payload(self):
         doc = self.converted_and_edited()
         for project in (None, {"id": 12, "name": "x"}):

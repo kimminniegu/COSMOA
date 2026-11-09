@@ -91,7 +91,58 @@
     return gaps;
   }
 
-  var api = { build: build, carryoverGaps: carryoverGaps, schemaVersion: SCHEMA_VERSION, inputPaths: function (options) { return leafPaths(options.input_defaults); } };
+  // 빈 구조(defaults)의 모양대로 값을 맞춥니다. 없거나 자료형이 다른 값은 빈 값 — 예전 저장본을 불러와도 화면이 깨지지 않게.
+  function coerce(defaults, source) {
+    var out = {};
+    Object.keys(defaults).forEach(function (key) {
+      var fallback = defaults[key], value = isObject(source) ? source[key] : undefined;
+      if (isObject(fallback)) out[key] = coerce(fallback, value);
+      else if (Array.isArray(fallback)) out[key] = Array.isArray(value) ? clone(value) : [];
+      else out[key] = typeof value === "string" ? value : fallback;
+    });
+    return out;
+  }
+  function strings(list) { return list.filter(function (item) { return typeof item === "string" && item.trim(); }); }
+
+  // 저장본 payload → 화면 문서 (build 의 반대). 파일 본문은 저장하지 않으므로 참고자료는 파일명 등 메타데이터만 돌아옵니다.
+  function restore(payload, options) {
+    var source = isObject(payload) ? payload : {}, context = isObject(source.context) ? source.context : {};
+    var meta = isObject(source.meta) ? source.meta : {};
+    var doc = coerce(options.input_defaults, source.inputs);
+    doc.export_countries = strings(doc.export_countries);
+    doc.buyer_prohibited_ingredients = strings(doc.buyer_prohibited_ingredients);
+    doc.regulatory_restricted_ingredients = strings(doc.regulatory_restricted_ingredients);
+    doc.quality.tests = strings(doc.quality.tests);
+    doc.target_prices = doc.target_prices.filter(function (item) {
+      return isObject(item) && typeof item.amount === "number" && typeof item.currency === "string";
+    }).map(function (item) { return { amount: item.amount, currency: item.currency }; });
+    doc.ingredients.concept = doc.ingredients.concept.filter(function (item) {
+      return isObject(item) && typeof item.name === "string" && item.name.trim();
+    }).map(function (item) {
+      return {
+        name: item.name, kind: Object.prototype.hasOwnProperty.call(options.concept_kinds, item.kind) ? item.kind : "necessary",
+        must_contain: item.must_contain === true || item.must_contain === false ? item.must_contain : null,
+        efficacy_tags: Array.isArray(item.efficacy_tags) ? strings(item.efficacy_tags) : [],
+      };
+    });
+    doc.customer = typeof context.customer_name === "string" ? context.customer_name : "";
+    doc.creation_method = ["auto", "auto_edited", "manual", "manual_edited"].indexOf(context.creation_method) >= 0 ? context.creation_method : "manual";
+    doc.source_language = typeof context.source_language === "string" ? context.source_language : "";
+    doc.target_language = typeof context.target_language === "string" && context.target_language ? context.target_language : "ko";
+    doc.source_file = typeof context.source_file_name === "string" ? context.source_file_name : "";
+    doc.review_status = "needs_review";
+    doc.raw_extracted_data = {};
+    doc.field_provenance = (Array.isArray(meta.field_provenance) ? meta.field_provenance : []).filter(function (item) {
+      return isObject(item) && typeof item.field_key === "string";
+    }).map(clone);
+    doc.reference_files = (Array.isArray(meta.reference_files) ? meta.reference_files : []).filter(isObject).map(function (file) {
+      return { name: String(file.name || ""), size: Number(file.size) || 0, type: String(file.type || "") };
+    });
+    doc.legacy = isObject(meta.legacy_fields) ? clone(meta.legacy_fields) : {};
+    return doc;
+  }
+
+  var api = { build: build, restore: restore, carryoverGaps: carryoverGaps, schemaVersion: SCHEMA_VERSION, inputPaths: function (options) { return leafPaths(options.input_defaults); } };
   root.RequisitionPayload = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

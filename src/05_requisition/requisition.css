@@ -156,3 +156,14 @@
 #requisition-app .requisition-concept-title { margin: 0 0 var(--space-2); color: var(--color-text-body); font-weight: var(--font-weight-bold); }
 .requisition-legacy-note { margin-top: var(--space-2); }
 .requisition-panel #requisition-save-help { margin: 0; }
+
+/* 저장·불러오기·최종본 */
+.requisition-save-box { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: var(--border-default); }
+.requisition-save-box .form-group { margin: 0; }
+.requisition-save-box p { margin: 0; overflow-wrap: anywhere; }
+.requisition-load-list { display: grid; gap: var(--space-2); max-height: 360px; margin: var(--space-3) 0; overflow-y: auto; }
+.requisition-load-item { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: var(--border-default); border-radius: var(--radius-md); cursor: pointer; }
+.requisition-load-item:has(input:checked) { border-color: var(--color-primary-bright); background: var(--color-primary-soft); }
+.requisition-load-item span { min-width: 0; overflow-wrap: anywhere; }
+.requisition-load-item strong, .requisition-load-item small { display: block; }
+.requisition-load-item small { color: var(--color-text-secondary); }

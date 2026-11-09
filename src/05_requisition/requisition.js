@@ -31,6 +31,8 @@
   // project: 화면에서 선택한 프로젝트. documentProject: 지금 작성 중인 요청서가 연결된 프로젝트 (요청서를 시작할 때 정함).
   // 둘이 달라지지 않도록, 작성 중 프로젝트를 바꾸면 확인 후 요청서를 초기화합니다. (저장 연결은 3단계 다음 작업)
   let project = null, documentProject = null;
+  // 저장본 상태: currentVersion = 마지막으로 저장·불러온 버전, versionDirty = 그 뒤 내용이 바뀜, finalState = 프로젝트의 현재 최종본 기록
+  let currentVersion = null, versionDirty = false, documentTitle = "", finalState = null, versionBusy = false;
   let printFrame = null;
   let activeSection = 0;
   const sectionTitles = [...sections.map(([title]) => title), "05 참고자료"];
@@ -240,7 +242,7 @@
     selectSection(next, true);
   });
   function render() {
-    if (!hasDocument()) documentProject = null;
+    if (!hasDocument()) { documentProject = null; clearVersion(); }
     const choosingMode = state === "upload" || state === "manual";
     $("modes").hidden = !choosingMode;
     ["auto", "manual"].forEach((mode) => {
@@ -262,6 +264,8 @@
     $("loading").hidden = state !== "loading";
     $("document").hidden = !["manual", "edit", "result"].includes(state);
     $("new").hidden = state !== "result";
+    $("load").hidden = state === "loading";
+    $("save-box").hidden = state !== "result";
     const headings = { upload: "개발요청서 분석", loading: "개발요청서 분석", result: "개발요청서", edit: "개발요청서 수정", manual: "개발요청서 직접 작성" };
     $("title").textContent = headings[state];
     $("description").textContent = state === "upload" || state === "loading" ? "바이어 요청서를 변환하거나 직접 작성하여 개발팀에 전달해요." :
@@ -294,6 +298,7 @@
     const gaps = state === "edit" ? RequisitionPayload.carryoverGaps(saved, data) : [];   // 임시 기준: 수정 시작 시점 문서
     $("carryover-wrap").hidden = !gaps.length;
     $("carryover").textContent = gaps.join(", ");
+    renderVersion();
     $("review").textContent = checks.length ? checks.length + "건 · " + checks.join(", ") : "없음";
     data.review_status = required.length || checks.length || data.export_countries.length ? "needs_review" : "complete";
   }
@@ -331,7 +336,7 @@
     return (data.reference_files || []).map((file, index) => '<figure class="requisition-reference">' +
       (/^data:image\/(png|jpeg|webp);base64,/.test(file.data_url || "") ? '<img src="' + escape(file.data_url) + '" alt="' + escape(file.name) + '" style="max-width:100%;max-height:65mm">' : '') +
       '<figcaption>' + escape(file.name) + '</figcaption>' +
-      (!printable ? '<a download="' + escape(file.name) + '" href="' + escape(file.data_url) + '">다운로드</a>' : '') +
+      (!printable && file.data_url ? '<a download="' + escape(file.name) + '" href="' + escape(file.data_url) + '">다운로드</a>' : '') +
       (!printable && editing() ? '<button type="button" class="btn btn-secondary btn-sm" data-remove-reference="' + index + '">삭제</button>' : '') + '</figure>').join("");
   }
   function renderReferences() {
@@ -618,6 +623,7 @@
       const keys = [...inputPaths, "customer", "reference_files"];
       if (keys.some((key) => JSON.stringify(get(draft, key)) !== JSON.stringify(get(saved, key)))) {
         draft.creation_method = saved.creation_method.startsWith("auto") ? "auto_edited" : "manual_edited";
+        versionDirty = true;
       }
     }
     saved = clone(draft);
@@ -711,7 +717,8 @@
       const data = clone(saved);
       const date = new Date(), datePart = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("");
       const safePart = (value) => String(value || "Unknown").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\s+/g, "").slice(0, 70);
-      const filename = "DevelopmentRequest_" + safePart(data.customer) + "_" + safePart(data.product_name) + "_" + datePart;
+      const savedNo = currentVersion && !versionDirty ? currentVersion.version_no : null;   // 저장한 내용 그대로일 때만 버전 표시
+      const filename = "DevelopmentRequest_" + safePart(data.customer) + "_" + safePart(data.product_name) + "_" + datePart + (savedNo ? "_v" + savedNo : "");
       const pdfValue = (key) => {
         const provenance = data.field_provenance.find((item) => item.field_key === key);
         if (provenance?.review_status === "not_applicable") return "해당 없음";
@@ -747,7 +754,7 @@
         '</td><td class="title">DEVELOPMENT<br>REQUEST</td></tr></table>' +
         '<table class="info"><tr><td style="width: 55%;"><span class="label">Request to</span><br><span class="bold" style="font-size: 11pt;">연구소 (R&amp;D Center)</span><br>제품 개발 요청서 · 연구소 전달용' +
           (filled(data.customer) ? '<br><span class="muted">고객사: ' + escape(data.customer) + '</span>' : '') + '</td>' +
-          '<td><table class="meta">' + printMeta("Version", "저장 전 (서버 버전 없음)") + printMeta("Date", issuedDate) +
+          '<td><table class="meta">' + printMeta("Version", savedNo ? "v" + savedNo : "저장 전 (서버 버전 없음)") + printMeta("Date", issuedDate) +
           printMeta("Product", data.product_name || "") + printMeta("Prepared by", preparedBy || "-") + printMeta("Method", methods[data.creation_method] || "미지정") + '</table></td></tr></table>' +
         '<table class="terms"><tr>' + termCell("샘플 구분", pdfValue("sample_request_type")) + termCell("제품 유형", pdfValue("product_type")) +
           termCell("목표 가격대", pdfValue("target_prices")) + termCell("수출 대상국", listText(fieldValue(data, "export_countries"))) + '</tr></table>' +
@@ -758,7 +765,7 @@
           '<li>수출 대상국별 규제 적합성(금지·제한 원료, 표시사항)은 별도 확인이 필요합니다.</li></ol></td></tr></table>' +
         '<table class="sign"><tr><td class="line" style="width: 42%;">Prepared by<br><span class="bold">' + escape(preparedBy || company.name) + '</span><br><span class="muted">' + escape(company.name) + ' · Overseas Sales</span></td>' +
           '<td style="width: 16%;">&nbsp;</td><td class="line">Reviewed by<br><span class="bold">&nbsp;</span><br><span class="muted">R&amp;D Center · Signature / Date</span></td></tr></table>' +
-        '<div class="doc-footer">' + escape(company.name) + ' &middot; Development Request &middot; 저장 전 문서 &middot; ' + issuedDate + '</div>';
+        '<div class="doc-footer">' + escape(company.name) + ' &middot; Development Request &middot; ' + (savedNo ? "v" + savedNo : "저장 전 문서") + ' &middot; ' + issuedDate + '</div>';
       const printStyles = `
         @page { size: A4; margin: 16mm 15mm 20mm 15mm; }
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -824,7 +831,170 @@
     }
   }
   window.addEventListener("beforeunload", (event) => {
-    if (saved || editing() || state === "loading" || originalFile) { event.preventDefault(); event.returnValue = ""; }
+    const stored = currentVersion && !versionDirty && !originalFile && state === "result";   // 저장본과 같은 내용이면 잃을 것이 없음
+    if (!stored && (saved || editing() || state === "loading" || originalFile)) { event.preventDefault(); event.returnValue = ""; }
+  });
+  /* 저장·불러오기·최종본 — 공통 저장 API (docs/api_contract.md 2장). 저장은 항상 새 버전이고 번호는 서버가 정합니다. */
+  const REQUISITION_SCHEMA = RequisitionPayload.schemaVersion;
+  const versionsUrl = (projectId) => "/api/projects/" + projectId + "/tabs/requisition/versions";
+  const finalUrl = (projectId) => "/api/projects/" + projectId + "/tabs/requisition/final";
+  const selectedProject = () => project || (window.ProjectBar ? ProjectBar.current() : null);
+  const isCurrentFinal = () => Boolean(currentVersion && finalState && finalState.version && finalState.version.id === currentVersion.id);
+  function clearVersion() {
+    currentVersion = null; versionDirty = false; documentTitle = ""; finalState = null;
+    $("version-title").value = "";
+    versionFeedback();
+  }
+  function versionFeedback(message = "") {
+    $("version-feedback").textContent = message;
+    $("version-feedback").hidden = !message;
+  }
+  function renderVersion() {
+    const isFinal = isCurrentFinal();
+    $("save-status").textContent = currentVersion ? "v" + currentVersion.version_no + (isFinal ? " ★ 최종본" : "") + (versionDirty ? " · 이후 수정됨" : "") : "저장 전";
+    $("save-help").textContent = !currentVersion ? "아직 서버에 저장하지 않은 문서예요. 저장하면 서버가 버전 번호를 정하고, 연구소 개발 차수와는 따로 관리돼요."
+      : versionDirty ? "수정한 내용은 아직 저장되지 않았어요. 저장하면 새 버전으로 남아요." : "저장한 버전과 같은 내용이에요. 연구소 개발 차수는 저장으로 바뀌지 않아요.";
+    if (state !== "result") return;
+    if (document.activeElement !== $("version-title") && !$("version-title").value) $("version-title").value = documentTitle || saved.product_name || "";
+    const unchanged = currentVersion && !versionDirty && $("version-title").value.trim() === (currentVersion.title || "");
+    $("version-save").disabled = versionBusy || Boolean(unchanged);
+    $("version-final").hidden = !currentVersion;
+    $("version-final").disabled = versionBusy || versionDirty;
+    $("version-final").textContent = isFinal ? "최종본 해제" : "최종본으로 지정";
+  }
+  // 응답이 늦게 도착해도 지금 문서의 프로젝트가 아니면 버립니다.
+  async function refreshFinal() {
+    const target = documentProject;
+    if (!target) return false;
+    const result = await Common.api("GET", finalUrl(target.id));
+    if (target !== documentProject) return false;
+    if (!result.ok) { versionFeedback(result.error.message); return false; }
+    finalState = result.data.final;
+    renderVersion();
+    return true;
+  }
+  async function saveVersion() {
+    if (state !== "result" || versionBusy) return;
+    const title = $("version-title").value.trim();
+    if (!title) { $("version-title").focus(); return versionFeedback("문서 이름을 입력해 주세요."); }
+    const built = RequisitionPayload.build(saved, documentProject, options);
+    if (built.error) return versionFeedback(built.error + " 위에서 프로젝트를 선택해 주세요.");
+    versionBusy = true;
+    versionFeedback("저장하고 있어요…");
+    renderVersion();
+    const target = documentProject;
+    const result = await Common.api("POST", versionsUrl(target.id), {
+      schema_version: built.schema_version, title, based_on_id: currentVersion ? currentVersion.id : null, payload: built.payload,
+    });
+    versionBusy = false;
+    if (target !== documentProject) return;
+    if (!result.ok) { versionFeedback("저장하지 못했어요. " + result.error.message); return renderVersion(); }
+    currentVersion = result.data.version;
+    versionDirty = false;
+    documentTitle = title;
+    const base = result.data.base || {};
+    versionFeedback("v" + currentVersion.version_no + "로 저장했어요." + (base.is_stale
+      ? " v" + base.based_on_version_no + "에서 시작했는데 그사이 v" + base.latest_version_no_before_save + "까지 저장돼 있었어요. 다른 버전의 내용을 확인해 주세요." : ""));
+    renderVersion();
+    await refreshFinal();
+  }
+  async function toggleFinal() {
+    if (!currentVersion || versionBusy || versionDirty) return;
+    versionBusy = true;
+    renderVersion();
+    const target = documentProject;
+    const ready = finalState || await refreshFinal();
+    let result = null;
+    if (ready && target === documentProject) {
+      const expected = finalState.final_history_id ?? null;
+      result = await Common.api("POST", finalUrl(target.id), isCurrentFinal()
+        ? { action: "unset", expected_final_history_id: expected }
+        : { action: "set", version_id: currentVersion.id, expected_final_history_id: expected });
+    }
+    versionBusy = false;
+    if (target !== documentProject) return;
+    if (result && result.ok) {
+      finalState = result.data.final;
+      versionFeedback(isCurrentFinal() ? "최종본으로 지정했어요." : "최종본을 해제했어요.");
+    } else if (result && result.status === 409) {
+      finalState = result.error.current;                    // 입력은 그대로 두고 바뀐 상태만 보여 줍니다.
+      versionFeedback("다른 사용자가 먼저 최종본을 바꿨어요. 현재 상태를 확인하고 다시 선택해 주세요.");
+    } else if (result) versionFeedback("최종본을 변경하지 못했어요. " + result.error.message);
+    renderVersion();
+  }
+  let loadTarget = null, loadBefore = null, loadRows = [], loadFinalId = null;
+  function renderLoadList() {
+    const checked = document.querySelector('input[name="requisition-load-version"]:checked');
+    const selected = checked ? Number(checked.value) : loadFinalId || (loadRows[0] && loadRows[0].id);
+    $("load-list").innerHTML = loadRows.map((item) => '<label class="requisition-load-item"><input type="radio" name="requisition-load-version" value="' + item.id + '"' + (item.id === selected ? " checked" : "") + '><span><strong>v' + item.version_no + (item.is_final ? " ★ 최종본" : "") + " · " + escape(item.title || "이름 없음") + "</strong><small>" +
+      escape((item.created_by && item.created_by.name) || "") + " · " + escape(new Date(item.created_at).toLocaleString("ko-KR")) + "</small></span></label>").join("");
+    $("load-more").hidden = !loadBefore;
+    $("load-confirm").disabled = !loadRows.length;
+  }
+  async function fetchLoadPage() {
+    const target = loadTarget;
+    const result = await Common.api("GET", versionsUrl(target.id) + "?limit=50" + (loadBefore ? "&before=" + loadBefore : ""));
+    if (target !== loadTarget) return;
+    if (!result.ok) { $("load-status").textContent = result.error.message; return; }
+    loadRows = loadRows.concat(result.data.items);
+    loadBefore = result.data.next_before;
+    const final = loadRows.find((item) => item.is_final);
+    loadFinalId = final ? final.id : null;
+    $("load-status").textContent = loadRows.length ? "‘" + projectLabel(target) + "’의 저장본이에요. 원본 파일과 참고 이미지는 복원되지 않아요." : "이 프로젝트에 저장된 요청서가 없어요.";
+    renderLoadList();
+  }
+  function openLoad() {
+    notice();
+    const target = selectedProject();
+    if (!target) return notice("저장본을 불러오려면 먼저 프로젝트를 선택해 주세요.");
+    loadTarget = target; loadBefore = null; loadRows = []; loadFinalId = null;
+    $("load-list").innerHTML = "";
+    $("load-more").hidden = true;
+    $("load-confirm").disabled = true;
+    $("load-status").textContent = "저장본 목록을 불러오고 있어요…";
+    Common.openModal("requisition-load-modal");
+    fetchLoadPage();
+  }
+  async function confirmLoad() {
+    const checked = document.querySelector('input[name="requisition-load-version"]:checked');
+    if (!checked || !loadTarget) return;
+    const target = loadTarget;
+    const safe = !hasDocument() || (state === "result" && currentVersion && !versionDirty && !originalFile);
+    if (!safe && !confirm("지금 작성 중인 내용이 불러온 저장본으로 바뀌어요. 계속할까요?")) return;
+    $("load-confirm").disabled = true;
+    const result = await Common.api("GET", "/api/versions/" + Number(checked.value));
+    if (target !== loadTarget) return;
+    if (!result.ok || result.data.version.schema_version !== REQUISITION_SCHEMA || result.data.version.tab !== "requisition" || result.data.version.project_id !== target.id) {
+      $("load-confirm").disabled = false;
+      $("load-status").textContent = result.ok ? "이 저장본은 현재 화면에서 불러올 수 없어요." : result.error.message;
+      return;
+    }
+    const version = result.data.version;
+    saved = RequisitionPayload.restore(version.payload, options);
+    saved.customer = target.customer.name;
+    draft = originalFile = null;
+    documentProject = target;
+    currentVersion = version;
+    versionDirty = false;
+    documentTitle = version.title || "";
+    finalState = null;
+    activeSection = 0;
+    $("file").value = "";
+    $("version-title").value = documentTitle;
+    Common.closeModal("requisition-load-modal");
+    transition("result");
+    versionFeedback("v" + version.version_no + "을 불러왔어요." + (saved.reference_files.length || saved.source_file ? " 원본 파일과 참고자료 본문은 저장되지 않아 복원되지 않아요. 필요하면 수정에서 다시 첨부해 주세요." : ""));
+    await refreshFinal();
+  }
+  document.body.append($("load-modal"));   // 페이지 container 밖에 두어 fixed 위치를 유지합니다.
+  $("load").addEventListener("click", openLoad);
+  $("load-more").addEventListener("click", fetchLoadPage);
+  $("load-confirm").addEventListener("click", confirmLoad);
+  $("version-save").addEventListener("click", saveVersion);
+  $("version-final").addEventListener("click", toggleFinal);
+  $("version-title").addEventListener("input", renderVersion);
+  $("version-title").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); saveVersion(); }   // 양식 제출(PDF 인쇄)이 되지 않게
   });
   /* 프로젝트 연결 — 선택 UI 는 공통 프로젝트 바(common/project_bar.js)가 맡고, 여기서는 요청서 보호 규칙만 처리합니다. */
   const idOf = (item) => item ? item.id : null;
@@ -875,7 +1045,7 @@
     ProjectBar.setGuard(projectChangeAllowed);
     ProjectBar.onChange(applyProject);
   }
-  // 저장용 payload (계약 v1) — 저장 버튼 연결(다음 작업)과 테스트에서 씁니다.
+  // 저장용 payload (계약 v1) — 저장 버튼과 테스트에서 씁니다.
   // 화면에서 지금 고른 프로젝트가 아니라 요청서의 연결 프로젝트(documentProject)로 만듭니다.
   root.buildRequisitionPayload = () => RequisitionPayload.build(current(), documentProject, options);
   render();
