@@ -3,6 +3,12 @@
    Button / Card / Form 등 공통 요소는 src/common/style.css 를 사용하고 다시 정의하지 않습니다.
    충돌 방지를 위해 class 이름은 "margin-" 접두사를 사용합니다. */
 
+/* 임시 저장 버튼 — 공통 저장 영역이 들어오면 제거. 넓은 화면에서 제목 줄이 두 줄로 밀리지 않도록 */
+@media (min-width: 881px) {
+  .margin-page > .page-header { flex-wrap: nowrap; }
+  .margin-page > .page-header .page-actions { flex-shrink: 0; flex-wrap: nowrap; align-items: center; }
+}
+
 /* 판정 단계 색 — 공통 Status Token에서 파생 (좋음 → 주의 → 경고 → 위험) */
 .margin-page {
   --margin-zone-good: var(--color-success);

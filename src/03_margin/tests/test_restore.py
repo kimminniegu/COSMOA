@@ -108,7 +108,25 @@ function bootPage(fetchImpl) {
     getElementById: get, createElement: () => element("created"), activeElement: null,
     body: { appendChild() {} }, addEventListener() {},
   };
-  const window = { addEventListener() {}, innerHeight: 900, scrollY: 0, prompt() {} };
+  const versions = [];
+  const env = { guard: () => true, listeners: [], confirms: [], confirmAnswer: true, posts: [], failPost: false, holdPost: null, versions };
+  const window = {
+    addEventListener() {}, innerHeight: 900, scrollY: 0, prompt() {},
+    confirm(message) { env.confirms.push(message); return env.confirmAnswer; },
+    ProjectBar: { current: () => null, onChange: (fn) => env.listeners.push(fn), setGuard: (fn) => { env.guard = fn; } },
+    Common: { api: async (method, url, body) => {
+      if (method === "POST") {
+        env.posts.push(JSON.parse(JSON.stringify(body)));
+        if (env.holdPost) await env.holdPost;
+        if (env.failPost) return { ok: false, status: 500, error: { message: "저장 실패" } };
+        const version = { id: 100 + versions.length, version_no: versions.length + 1, payload: JSON.parse(JSON.stringify(body.payload)) };
+        versions.unshift(version);
+        return { ok: true, status: 201, data: { version } };
+      }
+      if (url.includes("?limit=1")) return { ok: true, status: 200, data: { items: versions.slice(0, 1) } };
+      return { ok: true, status: 200, data: { version: versions.find((v) => url.endsWith("/" + v.id)) } };
+    } },
+  };
   const sandbox = {
     document, window, fetch: fetchImpl, console, Promise, Math, JSON, Date, Object, Number, String, Array, parseFloat, parseInt, isNaN,
     getComputedStyle: () => ({ position: "", top: "0", marginBottom: "0", paddingBottom: "0" }),
@@ -118,7 +136,13 @@ function bootPage(fetchImpl) {
   vm.runInContext(source, sandbox);
   const $ = (id) => get("margin-" + id);
   return {
-    $, root,
+    $, root, env,
+    select(next) {   // 공통 프로젝트 막대처럼 확인 후 알림
+      if (!env.guard(next)) return false;
+      env.listeners.forEach((fn) => fn(next));
+      return true;
+    },
+    status: () => $("save-status").textContent,
     collect: () => JSON.parse(JSON.stringify(root.collectMarginPayload())),
     restore: (payload) => JSON.parse(JSON.stringify(root.restoreMarginPayload(payload))),
     type(id, v) { $(id).value = v; $(id).fire("input"); },
@@ -128,7 +152,7 @@ function bootPage(fetchImpl) {
 }
 
 const json = (body) => ({ ok: true, headers: { get: () => "application/json" }, json: async () => body });
-const FX = { rate: 1351.12 };
+const FX = { rate: 1400 };
 const ERP = { raw: 1150, proc: 538, pack: 1485, rate_raw: 20, rate_proc: 10, rate_pack: 15, loss: 3, sagup: false, item_code: "EU-SER-041", item_name: "세럼 30ml", synced_at: "2026-11-09 13:10:00", product_en: "Serum 30ml",
   quote: { qty: 10000, incoterm: "FOB", m2: 20, m2min: 15, counter_pct: 5 }, logistics: { preset: "SERUM_30ML", rate_logi: 10 } };
 function server(url) { return Promise.resolve(json(url.startsWith("/fx") ? FX : url.startsWith("/erp") ? ERP : {})); }
@@ -155,12 +179,156 @@ async function roundTrip(page) {
   return { first: first.payload, next };
 }
 
+const A = { id: 1, name: "프로젝트A", customer: { id: 7, name: "고객A" } };
+const B = { id: 2, name: "프로젝트B", customer: { id: 8, name: "고객B" } };
+const UNSAVED = "저장하지 않은 변경 있음";
+async function linked(project = A) {
+  const page = bootPage(server); await flush();
+  page.select(project);
+  return page;
+}
+async function save(page) { page.$("save").click(); await flush(); }
+async function loadLatest(page) { page.$("load-latest").click(); await flush(); }
+
 const TESTS = {
+  async buttons_wait_for_project() {
+    const page = bootPage(server); await flush();
+    assert.strictEqual(page.$("save").disabled, true);
+    assert.strictEqual(page.$("load-latest").disabled, true);
+    await save(page);
+    assert.strictEqual(page.env.posts.length, 0);
+  },
+  async auto_filled_values_are_not_changes() {
+    const page = await linked();
+    assert.strictEqual(page.status(), "변경 없음", "첫 TTB 자동 적용은 변경이 아닙니다");
+    assert.notStrictEqual(page.$("fx").value, "1320");
+  },
+  async undo_returns_to_clean() {
+    const page = await linked();
+    const before = page.$("qty").value;
+    page.type("qty", 7000);
+    assert.strictEqual(page.status(), UNSAVED);
+    page.type("qty", before);
+    assert.strictEqual(page.status(), "변경 없음");
+  },
+  async first_selection_keeps_values() {
+    const page = bootPage(server); await flush();
+    page.type("qty", 7000);
+    assert.strictEqual(page.select(A), true);
+    assert.strictEqual(page.env.confirms.length, 0);
+    assert.strictEqual(page.$("qty").value, "7000");
+    assert.strictEqual(page.status(), UNSAVED);
+  },
+  async clean_change_resets_without_confirm() {
+    const page = await linked();
+    page.type("qty", 7000);
+    await save(page);
+    assert.strictEqual(page.select(B), true);
+    assert.strictEqual(page.env.confirms.length, 0);
+    assert.strictEqual(page.$("qty").value, "10000");
+    assert.strictEqual(page.status(), "변경 없음");
+    await save(page);
+    assert.strictEqual(page.env.posts[1].based_on_id, null, "이전 프로젝트 저장본을 기준으로 보내면 안 됩니다");
+  },
+  async dirty_change_confirm_cancel_and_accept() {
+    const page = await linked();
+    page.type("qty", 7000);
+    page.env.confirmAnswer = false;
+    assert.strictEqual(page.select(B), false);
+    assert.strictEqual(page.$("qty").value, "7000");
+    assert.strictEqual(page.status(), UNSAVED);
+    page.env.confirmAnswer = true;
+    assert.strictEqual(page.select(null), true);
+    assert.strictEqual(page.env.confirms.length, 2);
+    assert.strictEqual(page.$("qty").value, "10000");
+  },
+  async reset_keeps_ttb_based_fx() {
+    const page = await linked();
+    const fx = page.$("fx").value;
+    page.type("fx", 1500);
+    page.select(B);
+    assert.strictEqual(page.$("fx").value, fx);
+    assert.strictEqual(page.status(), "변경 없음");
+  },
+  async save_sends_context_and_version_chain() {
+    const page = await linked();
+    page.type("qty", 7000);
+    await save(page);
+    const first = page.env.posts[0];
+    assert.deepStrictEqual(first.payload.context, { customer_id: 7, customer_name: "고객A", project_id: 1, project_name: "프로젝트A" });
+    assert.strictEqual(first.based_on_id, null);
+    assert.strictEqual(page.status(), "v1 기준 · 변경 없음");
+    page.type("qty", 8000);
+    await save(page);
+    assert.strictEqual(page.env.posts[1].based_on_id, 100);
+    assert.strictEqual(page.status(), "v2 기준 · 변경 없음");
+  },
+  async failed_or_invalid_save_stays_unsaved() {
+    const page = await linked();
+    page.type("qty", 7000);
+    page.env.failPost = true;
+    await save(page);
+    assert.strictEqual(page.status(), "저장 실패");
+    page.type("qty", 7100);
+    assert.strictEqual(page.status(), UNSAVED);
+    page.env.failPost = false;
+    page.type("qty", 0);
+    await save(page);
+    assert.strictEqual(page.env.posts.length, 1, "입력 오류면 요청을 보내지 않습니다");
+  },
+  async edit_during_save_stays_unsaved() {
+    const page = await linked();
+    page.type("qty", 7000);
+    let release;
+    page.env.holdPost = new Promise((ok) => { release = ok; });
+    page.$("save").click();
+    await flush();
+    page.type("qty", 7500);
+    release();
+    await flush();
+    assert.strictEqual(page.status(), UNSAVED);
+  },
+  async project_change_during_save_is_ignored() {
+    const page = await linked();
+    let release;
+    page.env.holdPost = new Promise((ok) => { release = ok; });
+    page.$("save").click();
+    await flush();
+    page.select(B);
+    release();
+    await flush();
+    await save(page);
+    assert.strictEqual(page.env.posts[1].based_on_id, null);
+  },
+  async load_latest_restores_and_confirms() {
+    const page = await linked();
+    await loadLatest(page);
+    assert.strictEqual(page.status(), "아직 저장본이 없어요");
+    page.type("qty", 7000);
+    await save(page);
+    page.type("qty", 9000);
+    page.env.confirmAnswer = false;
+    await loadLatest(page);
+    assert.strictEqual(page.$("qty").value, "9000");
+    assert.strictEqual(page.status(), UNSAVED);
+    page.env.confirmAnswer = true;
+    await loadLatest(page);
+    assert.strictEqual(page.$("qty").value, "7000");
+    assert.strictEqual(page.status(), "v1 기준 · 변경 없음");
+  },
+  async load_rejects_foreign_payload() {
+    const page = await linked();
+    page.env.versions.unshift({ id: 55, version_no: 1, payload: { inputs: { q: 1 } } });
+    page.type("qty", 7000);
+    await loadLatest(page);
+    assert.strictEqual(page.status(), "불러올 수 없는 저장본이에요.");
+    assert.strictEqual(page.$("qty").value, "7000");
+  },
   async default_values() {
     const page = bootPage(server); await flush();
     const { first, next } = await roundTrip(page);
-    assert.strictEqual(first.inputs.quote.base_fx, 1320);
-    assert.strictEqual(next.$("fx").value, "1320");
+    assert.strictEqual(first.inputs.quote.base_fx, 1370);
+    assert.strictEqual(next.$("fx").value, "1370");
   },
   async full_scenario() {
     const page = bootPage(server); await flush();

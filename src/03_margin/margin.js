@@ -353,10 +353,10 @@
       if (!res.ok || !(res.headers.get("Content-Type") || "").includes("json")) throw new Error();
       liveFx = await res.json();
       if (!(liveFx.rate > 0)) throw new Error();
-      if (fxAuto) {
+      if (fxAuto) keepClean(() => {
         $("fx").value = safeFx(liveFx.rate);
         render();
-      }
+      });
     } catch (e) {
       liveFx = null;
     }
@@ -389,7 +389,8 @@
   });
 
   /* ---------- 렌더 ---------- */
-  function render() {
+  function render() { renderAll(); updateSaveBar(); }
+  function renderAll() {
     st.outputs = { quote: null, reverse: null, tier: null, fx_impact: null };
     syncLiveFx();
     syncCbmLogi();           // 자동 반영 중이면 물류비·해상운임 칸을 먼저 채워 readInputs 가 같은 값을 읽도록
@@ -612,8 +613,10 @@
       if (!res.ok || !(res.headers.get("Content-Type") || "").includes("json")) throw new Error();
       const data = await res.json();
       $("q-company").value = data.company.name;
-      if (!qv("q-contact-name")) $("q-contact-name").value = data.contact.name || "";
-      if (!qv("q-contact-email")) $("q-contact-email").value = data.contact.email || "";
+      keepClean(() => {
+        if (!qv("q-contact-name")) $("q-contact-name").value = data.contact.name || "";
+        if (!qv("q-contact-email")) $("q-contact-email").value = data.contact.email || "";
+      });
       profileLoaded = true;
     } catch (e) {
       $("q-err").textContent = "회사 정보를 불러오지 못했어요. 다시 로그인한 뒤 열어 주세요.";
@@ -1210,7 +1213,7 @@
   function restorePayload(payload) {
     const i = payload && payload.inputs;
     const valid = i && PAYLOAD_SECTIONS.every((k) => i[k] && typeof i[k] === "object")
-      && i.reverse.ve && Array.isArray(i.tier.discounts) && Array.isArray(i.tier.rows) && i.tier.rows.length > 0;
+      && i.document.contact && i.document.buyer && i.reverse.ve && Array.isArray(i.tier.discounts) && Array.isArray(i.tier.rows) && i.tier.rows.length > 0;
     if (!valid) return { ok: false, error: "불러올 수 없는 저장본이에요." };
     const { quote, cost, logistics, reverse, tier, fx_impact: fxImpact, document: doc } = clone(i);
 
@@ -1291,8 +1294,102 @@
   root.collectMarginPayload = collectPayload;
   root.restoreMarginPayload = restorePayload;
 
+  /* ---------- 프로젝트 연결·변경 감지·저장 (margin.md 17) ----------
+     저장·불러오기는 saveMargin / loadLatestMargin 에 모아 둡니다. 공통 저장 영역이 들어오면 버튼 연결만 옮깁니다. */
+  const versionsUrl = (p) => `/api/projects/${p.id}/tabs/margin/versions`;
+  let project = null, basedOn = null, baseline = null, busy = false;
+  let defaultInputs = null;
+
+  const inputsKey = () => JSON.stringify(collectInputs());
+  const isDirty = () => baseline !== null && inputsKey() !== baseline;
+  const apiMessage = (res) => (res.error && res.error.message) || "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
+  function markClean() { baseline = inputsKey(); updateSaveBar(); }
+  /* 사용자가 하지 않은 자동 입력(첫 TTB, 담당자 정보)은 변경으로 세지 않습니다. */
+  function keepClean(change) {
+    const clean = !isDirty();
+    change();
+    if (clean) markClean();
+  }
+  function saySave(message) { $("save-status").textContent = message; }
+  function setBusy(on) { busy = on; updateSaveBar(); }
+
+  function updateSaveBar() {
+    if (baseline === null) return;
+    $("save").disabled = $("load-latest").disabled = !project || busy;
+    if (!project) saySave("프로젝트를 선택하면 저장할 수 있어요");
+    else if (busy) saySave("처리 중…");
+    else if (isDirty()) saySave("저장하지 않은 변경 있음");
+    else saySave(basedOn ? `v${basedOn.no} 기준 · 변경 없음` : "변경 없음");
+  }
+
+  function resetInputs() {
+    const firstFxPending = fxAuto;   // 첫 TTB 조회 전이면 조회가 끝날 때 자동 적용되도록 유지
+    restorePayload({ inputs: defaultInputs });
+    fxAuto = firstFxPending;
+    if (liveFx && !firstFxPending) { $("fx").value = safeFx(liveFx.rate); render(); }
+    profileLoaded = false;   // 담당자 정보를 비웠으므로 팝업을 열 때 다시 채움
+    basedOn = null;
+    markClean();
+  }
+
+  async function saveMargin() {
+    if (busy || !project) return;
+    const target = project, collected = collectPayload();
+    if (!collected.ok) { saySave(collected.error); return; }
+    const key = inputsKey();
+    collected.payload.context = { customer_id: target.customer.id, customer_name: target.customer.name, project_id: target.id, project_name: target.name };
+    setBusy(true);
+    const res = await window.Common.api("POST", versionsUrl(target), { schema_version: 1, based_on_id: basedOn ? basedOn.id : null, payload: collected.payload });
+    setBusy(false);
+    if (!project || project.id !== target.id) return;   // 기다리는 사이 프로젝트가 바뀜
+    if (!res.ok) { saySave(apiMessage(res)); return; }
+    basedOn = { id: res.data.version.id, no: res.data.version.version_no };
+    baseline = key;   // 저장 요청 뒤에 고친 값은 변경으로 남김
+    updateSaveBar();
+  }
+
+  async function loadLatestMargin() {
+    if (busy || !project) return;
+    const target = project, stale = () => !project || project.id !== target.id;
+    setBusy(true);
+    const finish = (message) => { setBusy(false); if (message && !stale()) saySave(message); };
+    const list = await window.Common.api("GET", versionsUrl(target) + "?limit=1");
+    if (stale()) return finish();
+    if (!list.ok) return finish(apiMessage(list));
+    const latest = list.data.items[0];
+    if (!latest) return finish("아직 저장본이 없어요");
+    if (isDirty() && !window.confirm("저장하지 않은 변경이 사라져요. 최신 저장본을 불러올까요?")) return finish();
+    const got = await window.Common.api("GET", `/api/versions/${latest.id}`);
+    if (stale()) return finish();
+    if (!got.ok) return finish(apiMessage(got));
+    const restored = restorePayload(got.data.version.payload);
+    if (!restored.ok) return finish(restored.error);
+    basedOn = { id: latest.id, no: latest.version_no };
+    markClean();
+    finish();
+  }
+
+  function connectProject() {
+    if (!window.ProjectBar) return;
+    window.ProjectBar.setGuard((next) => !project || (next && next.id === project.id) || !isDirty()
+      || window.confirm("저장하지 않은 변경이 사라져요. 프로젝트를 바꿀까요?"));
+    window.ProjectBar.onChange((next) => {
+      const previous = project;
+      project = next;
+      if (previous && (!next || next.id !== previous.id)) resetInputs();   // 다른 프로젝트에 이전 값이 저장되지 않도록
+      else updateSaveBar();   // 처음 선택할 때는 입력해 둔 값을 그대로 이어감
+    });
+    project = window.ProjectBar.current();
+  }
+
+  $("save").addEventListener("click", saveMargin);
+  $("load-latest").addEventListener("click", loadLatestMargin);
+
   drawTiers();
   render();
+  defaultInputs = clone(collectInputs());
+  connectProject();
+  markClean();
   fitAside();
   loadLiveFx();
   setInterval(loadLiveFx, FX_REFRESH_MS);
