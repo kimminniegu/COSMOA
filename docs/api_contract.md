@@ -2,6 +2,7 @@
 
 > **상태: 2단계 구현됨** — 서버 API·DB(`0003_versioning`, test·dev 적용). **화면(저장 버튼·개발요청서 연결)은 아직 연결하지 않았다** (3단계).
 > **3-1단계 구현됨** — 고객사·프로젝트 생성·조회 API 와 개발요청서의 프로젝트 선택 화면 ([5장](#5-고객사프로젝트-생성조회-api--3-1단계-구현됨)).
+> **임시저장 API(6장)는 설계 단계·미구현이다.** 서버 코드·DB 테이블 모두 아직 없다.
 > 코드: `src/common/versions_api.py`(경로) → `versions.py`(업무 규칙) → `versions_repo.py`(SQL), payload 검증 `payloads.py`.
 > 규칙 근거: [DB 규칙](db_rules.md) 3·4·5장, [데이터 계약](data_contract.md) 2·3·5·6장.
 
@@ -12,7 +13,7 @@
 ### 1-1. 인증·사용자 범위
 
 - 세션 쿠키 로그인(`/login`) 후 사용한다. 로그인하지 않으면 **401** (JSON).
-- 로그인한 팀 사용자 전체가 모든 프로젝트·저장본을 조회·저장한다 (개발용 기본 정책, `db_rules.md` 3-5). 운영 권한 체계는 별도 확정 항목.
+- 로그인한 팀 사용자 전체가 모든 프로젝트·저장본을 조회·저장한다 (개발용 기본 정책, `db_rules.md` 3-5). 운영 권한 체계는 별도 확정 항목. 임시저장은 예외로 본인만 쓴다 (6장, 미구현).
 - 작성자(`created_by`)는 **서버 로그인 사용자**로 정한다. 버전 번호(`version_no`)는 **DB 가 부여**한다. 요청 본문에 `created_by`·`version_no` 등 받지 않는 필드가 있으면 400 `unknown_fields`.
 
 ### 1-2. CSRF — 변경 요청(POST)
@@ -108,6 +109,7 @@ Content-Type: application/json
 - 규제 메모(`regulatory_notes`) 출처는 4단계에서 추가한다. 지금은 저장본 출처만 받는다.
 - 보관된 프로젝트에는 저장할 수 없다 (400 `project_archived`).
 - 개발요청서 v1 은 payload 의 `context.project_id`·`customer_id` 가 URL 프로젝트·그 고객사와 같아야 한다 (400 `context_project_mismatch` / `context_customer_mismatch`). 이름 사본은 서버가 DB 값으로 저장한다. 계약 전체: [데이터 계약](data_contract.md) 4-5.
+- 정식 저장 성공 시 임시저장을 지우는 연동은 6-5 (설계 단계·미구현). 지금 이 API 는 임시저장을 다루지 않는다.
 
 ### 2-2. 버전 목록 / 불러오기
 
@@ -275,3 +277,110 @@ POST /api/customers/7/projects {"name": "x", "due_date": "2026-02-30"} → 400 i
   3. 프로젝트 없이 작성 중이면, 프로젝트를 고를 때 “이 프로젝트에 연결할까요?” 확인 후 내용을 유지한 채 연결한다.
   4. 선택은 브라우저 탭 단위(`sessionStorage`)로 기억한다. 새로 고침하면 서버에서 다시 확인하고, 없어졌거나 보관됐으면 선택을 해제한다. 요청서 내용은 지금처럼 페이지 메모리에만 있다.
 - 저장·불러오기·최종본 버튼과 FIX 필드는 아직 연결하지 않았다. 저장을 연결할 때는 화면의 현재 선택이 아니라 **요청서의 연결 프로젝트**로 저장 API 를 호출한다.
+
+---
+
+## 6. 임시저장 API — **설계 단계·미구현**
+
+> 서버 코드·테이블(`tab_drafts`)·화면 모두 없다. 아래 경로는 아직 등록되어 있지 않다.
+> 테이블·저장 규칙: [DB 규칙](db_rules.md) 2-6·3-7 / 데이터 구조: [데이터 계약](data_contract.md) 8장 / 화면: [공통 UI 규격](ui_components.md) 20장.
+> 표기: **확정(개발기준)** = 채택한 설계 / **제안** = 구현 전 확인 / **추가 결정 필요** = 정하지 않으면 구현할 수 없는 항목 / **구현 설계에서 검토** = 기술 세부, 구현 PR 에서 정하고 검토 / **이번 범위에서 제외** = 이번 설계에 넣지 않음.
+
+### 6-1. 공통 규칙 — 확정(개발기준)
+
+- **소유자는 서버 로그인 세션 사용자**다 (`auth.current_user()["id"]`). 서버가 세션으로 사용자를 식별하고 소유권을 검사하며, 클라이언트가 보낸 사용자 id 는 믿지 않는다. 주소·본문에 사용자 id 를 두지 않고, 본문에 `user_id`·`created_by` 등이 오면 400 `unknown_fields`. 서버는 항상 "세션 사용자 + 프로젝트 + 탭" 조건으로 찾으므로 **다른 사람의 임시저장은 웹사이트·API 로 조회·수정·삭제할 수 없다.** 서로 다른 사용자의 임시저장은 별개다. 보호 범위는 웹·API 이며, DB 직접 접속에서의 차단(RLS 등)은 이번 범위에서 제외했다 ([DB 규칙](db_rules.md) 3-7·8-9).
+- 인증(401)·CSRF(403, `X-CSRF-Token`)·JSON 필수(400 `json_required`)·응답 형식·오류에 내부 정보 없음 — 1장 그대로. 지금 `versions_api` 의 공통 검사는 POST·PUT·PATCH·DELETE 모두에 CSRF·JSON 을 요구한다. 화면은 `Common.api()` 로 보낸다 (DELETE 도 빈 JSON `{}` 본문을 자동으로 붙임).
+- 크기·파일 본문: 정식 저장과 **같은 상한**(4장 `VERSION_PAYLOAD_MAX_BYTES`)과 3장 파일 본문 규칙을 적용한다. 임시저장 전용 크기 환경변수는 두지 않는다. 넘으면 잘라 저장하지 않고 413.
+- 검사 기준: 필수값은 검사하지 않고, 구조·자료형·크기는 임시저장용 기준으로 검사한다 ([데이터 계약](data_contract.md) 8-3).
+- **보관된 프로젝트**: 보관 상태만을 이유로 조회·저장·갱신·삭제를 거부하지 않는다 (`project_archived` 는 임시저장 API 에서 쓰지 않음). 정식 저장(2-1)의 `project_archived` 거부는 그대로다.
+- 임시저장은 2장 목록·불러오기·최종본 API 에 나오지 않는다. 버전 번호가 없다 (`revision` 은 충돌 방지용, 6-4).
+- 자동 만료·정기 삭제 없음. 지워지는 경우는 정식 저장 연동(6-5)과 사용자 삭제(DELETE)뿐이다.
+
+### 6-2. 경로 (안)
+
+| 메서드 | 경로 | 설명 | 상태 |
+|---|---|---|---|
+| GET | `/api/projects/<project_id>/tabs/<tab>/draft` | 내 임시저장 조회. 없으면 `"draft": null` (200) | 제안 |
+| PUT | `/api/projects/<project_id>/tabs/<tab>/draft` | 내 임시저장 저장 — 없으면 만들고 있으면 갱신 | 제안 |
+| DELETE | `/api/projects/<project_id>/tabs/<tab>/draft` | 내 임시저장 삭제 (사용자가 확인한 뒤에만 화면이 호출). 서버의 임시저장만 지우며 화면 입력은 화면이 그대로 둔다 ([공통 UI 규격](ui_components.md) 20-4). 없어도 200 (`deleted: false`) | 제안 |
+
+- 세 기능(조회·저장/갱신·삭제)은 확정(개발기준)이고, **경로·메서드·응답 모양은 제안**이다. 기존 저장 API 와 같은 `/api/projects/<id>/tabs/<tab>/…` 아래에 두고, 사용자는 경로에 넣지 않는다 (세션으로 정함).
+- 없는 프로젝트 404 `project_not_found`, 잘못된 탭 400 `invalid_tab`. 보관된 프로젝트도 세 기능 모두 허용한다 (확정(개발기준), 6-1).
+
+### 6-3. 예시 (안)
+
+```http
+PUT /api/projects/12/tabs/requisition/draft
+X-CSRF-Token: Qm9…
+Content-Type: application/json
+
+{
+  "schema_version": 1,
+  "payload": {"context": {"customer_id": 7, "project_id": 12, …}, "inputs": {…필수값이 비어 있어도 됨…}, "outputs": {}, "meta": {…}},
+  "expected_revision": 3
+}
+```
+
+```json
+200
+{
+  "ok": true,
+  "draft": {"project_id": 12, "tab": "requisition", "schema_version": 1, "revision": 4,
+            "updated_at": "2026-11-05T06:10:02.511+00:00", "payload_bytes": 2094},
+  "validation": {"level": "draft", "fully_validated": false, "removed_fields": [], "note": "임시저장 기준 — 필수값 검사 안 함"}
+}
+```
+
+- 예시의 필드 이름·값(`expected_revision`, `level: "draft"` 등)은 **제안**이다. 기준 번호를 보내고 서버 번호와 비교한다는 동작만 확정이다 (6-4).
+- GET 응답의 `draft` 에는 위 항목 + `payload` 가 들어간다. 소유자는 항상 본인이므로 응답에 사용자 정보를 넣지 않아도 된다 (제안).
+- 임시저장 요청·응답에는 `based_on_id` 가 없다 (이번 범위에서 제외, [DB 규칙](db_rules.md) 2-6). 정식 저장(2-1)의 `based_on_id` 는 그대로다.
+
+### 6-4. 여러 창에서 동시에 수정 — 확정(개발기준)
+
+같은 사람이 두 창(또는 두 기기)에서 같은 프로젝트·탭을 고치면 오래된 창의 내용이 최신 임시저장을 덮어쓸 수 있다. 이를 `revision` 으로 막는다.
+
+**확정(개발기준)**
+- 같은 사용자·프로젝트·탭의 임시저장에 저장 번호 **`revision`** 을 둔다. 정식 저장본의 `version_no` 와 다른, 충돌 방지용 번호다.
+- 저장 요청에는 화면이 알고 있는 기준 번호를 담는다. **서버의 현재 번호와 다르면 갱신하지 않고 409 로 거부**한다 — 오래된 화면의 덮어쓰기 방지.
+- 409 가 나도 **현재 화면의 입력은 그대로 둔다** (지우거나 서버 내용으로 바꾸지 않음).
+- 서로 다른 사용자의 임시저장은 별개라 서로 충돌하지 않는다.
+
+**제안** (확정 아님)
+- 요청 필드 이름 `expected_revision`, 오류 코드 `draft_conflict`, 409 응답에 현재 `revision`·`updated_at` 을 담는다 — 최종본 변경(2-3, `expected_final_history_id`)과 같은 방식.
+- 409 뒤 화면의 다음 선택지(예: 서버 내용 확인 후 덮어쓰기)는 [공통 UI 규격](ui_components.md) 20-6 에서 정한다.
+
+**구현 설계에서 검토** (확정 아님)
+- 같은 조합의 임시저장을 두 창에서 동시에 **처음 만들 때**의 충돌 처리.
+- 임시저장을 **삭제한 뒤 다시 만들 때**, 삭제 전 번호를 기준으로 한 오래된 요청의 처리.
+- `revision` 의 시작값·증가 방식.
+
+### 6-5. 정식 저장과 연동 — 확정(개발기준)
+
+**확정(개발기준)**
+1. 정식 저장 요청(2-1)에 연결할 임시저장 번호 **`draft_revision`** 을 담을 수 있다 (선택 필드).
+2. 서버는 정식 저장과 임시저장 정리를 **같은 트랜잭션**에서 처리한다. "세션 사용자 + 같은 프로젝트·탭 + 현재 `revision` = `draft_revision`" 일 때만 임시저장을 지운다.
+3. 번호가 다르면 정식 저장 요청 뒤에 더 최신 임시저장이 생긴 것이므로 **지우지 않는다.** 정식 저장은 그대로 성공한다.
+4. 정식 저장이 실패하면(400·409·413·503 등) 트랜잭션 전체가 취소되어 임시저장은 **남는다.**
+5. `draft_revision` 이 없는 요청으로는 임시저장을 **지우지 않는다** (무조건 삭제 금지).
+6. 정식 저장의 기존 동작(새 버전 추가·번호·검증·`based_on_id`·`project_archived` 거부)은 바꾸지 않는다.
+
+**제안** (확정 아님)
+- 응답에 정리 결과를 담는다: `"draft": {"deleted": true}` / `{"deleted": false, "reason": "changed"}` / `{"deleted": false, "reason": "none"}`. 화면은 `changed` 면 "정식 저장 뒤에 바뀐 임시저장이 남아 있어요" 로 안내한다.
+
+- `draft_revision` 을 추가하면 2-1 의 허용 필드 목록이 바뀐다 (지금은 받지 않는 필드라 400 `unknown_fields`). 구현 PR 에서 2-1 을 함께 고친다.
+
+### 6-6. 오류 (안)
+
+| 상태 | `error.code` |
+|---|---|
+| 400 | `invalid_tab`, `unknown_fields`, `invalid_json`, `json_required`, `invalid_payload`, `unsupported_schema_version`, `file_content_not_allowed`, `context_project_mismatch`, `context_customer_mismatch` — 기존 코드 재사용. 필수값(`required_field`)·보관 프로젝트(`project_archived`)는 임시저장에서 나오지 않는다 |
+| 401 / 403 | `unauthorized` / `csrf_failed` |
+| 404 | `project_not_found` (임시저장이 없는 것은 오류가 아님 — GET 은 `null`, DELETE 는 `deleted: false`) |
+| 409 | 기준 `revision` 불일치 (6-4, 확정). 코드 이름 `draft_conflict` 는 제안 |
+| 413 | `payload_too_large`, `request_too_large` |
+| 503 | `db_unavailable` |
+
+### 6-7. 자동저장 — 후속 검토
+
+- 첫 구현은 **수동 임시저장 버튼**만 둔다. 자동저장은 하지 않는다.
+- 자동저장은 후속 검토 항목이다. "변경 시 30초 간격" 은 **검토안**이며 확정한 동작이 아니다. 도입하면 요청 빈도·6-4 충돌 처리·화면 표시를 함께 정한다.
