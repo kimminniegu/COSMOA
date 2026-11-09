@@ -135,7 +135,7 @@
 /* Desktop: available viewport height is assigned to the preview, never clipped. */
 @media (min-width: 1200px) and (min-height: 700px) {
   /* 상단 시뮬레이션 8 : 하단 용기·제안 2. 하단 행은 용기 적합성 카드가 필요로 하는 높이 아래로 줄지 않습니다. */
-  .simulation-page { height: calc(100dvh - var(--layout-page-padding-y) - var(--layout-footer-height)); display: grid; grid-template-rows: auto minmax(0, 8fr) minmax(max-content, 2fr); gap: var(--layout-card-gap); overflow: clip; overflow-clip-margin: var(--layout-card-gap); }
+  .simulation-page { height: calc(100dvh - var(--layout-page-padding-y) - var(--layout-footer-height)); display: grid; grid-template-rows: auto auto minmax(0, 8fr) minmax(max-content, 2fr); gap: var(--layout-card-gap); overflow: clip; overflow-clip-margin: var(--layout-card-gap); }
   .simulation-bottom-grid .card-header { padding-top: var(--space-4); }
   .simulation-bottom-grid .card-header + .card-body { padding-top: var(--space-3); padding-bottom: var(--space-4); }
   .simulation-bottom-grid .form-control-sm, .simulation-bottom-grid .btn-sm { height: 32px; }
@@ -147,7 +147,7 @@
   .simulation-report h3 { font-size: 14px; }
   .simulation-report p { font-size: 13px; line-height: 1.45; }
   .simulation-pitch .card-body { padding-bottom: var(--space-3); }
-  .simulation-page .page-header, .simulation-bottom-grid { margin: 0; }
+  .simulation-page .page-header, .simulation-page .project-bar, .simulation-bottom-grid { margin: 0; }
   .simulation-top-grid { min-height: 0; }
   /* 사이드바를 접어 늘어난 폭은 배합 조절 쪽이 받아, 미리보기가 과하게 커지지 않게 합니다. */
   .is-sidebar-collapsed .simulation-page { --simulation-columns: minmax(0, 1fr) clamp(248px, 21%, 300px); }

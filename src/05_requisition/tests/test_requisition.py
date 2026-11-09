@@ -111,10 +111,10 @@ class RequisitionTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         self.assertIn("개발요청서 분석", page)
-        for element in ("requisition-project-current", "requisition-customer-select", "requisition-project-select",
-                        "requisition-customer-new", "requisition-project-new", "requisition-document-project",
+        for element in ("project-bar-customer", "project-bar-project", "project-bar-customer-new", "project-bar-project-new",
+                        "requisition-document-project",
                         "requisition-options", "requisition-save-status"):
-            self.assertIn(f'id="{element}"', page)   # 연결 프로젝트 선택 (고객사 → 프로젝트)
+            self.assertIn(f'id="{element}"', page)   # 공통 프로젝트 바 (고객사 / 프로젝트)
         for asset_name in ("requisition.css", "requisition.js", "requisition_payload.js"):
             with self.client.get(f"/assets/05_requisition/{asset_name}") as asset:
                 self.assertEqual(asset.status_code, 200)
