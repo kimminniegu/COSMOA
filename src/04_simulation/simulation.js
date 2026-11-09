@@ -173,7 +173,7 @@ for (const [key, p] of Object.entries(PACKS)) {
   icon.append(outline);
   button.append(icon, group, action);
 
-  button.addEventListener('click', () => testPack(key));
+  button.addEventListener('click', () => { testPack(key); markDirty(); });
 
   $('recommendations').append(button);
   recommendationButtons[key] = { button, action, detail };
@@ -200,25 +200,38 @@ function generateReports(v, key, state, score, brief) {
   return { report, action, sales };
 }
 
-// 종합 상태 업데이트
-function update() {
+// 현재 슬라이더·용기·의뢰서 스펙으로 계산한 상태 (애니메이션 중간값이 아닌 최종값). 화면 표시와 저장이 함께 씁니다.
+function computeState() {
   const a = +$('active').value;
   const c = +$('carb').value;
   const o = +$('oil').value;
   const h = +$('hum').value;
   const key = $('pack').value;
-
   // spec: 의뢰서 배합이 유지되는 동안의 분석값, brief: 요청 용기까지 같을 때의 분석 결과
   const spec = briefLocked && appliedBrief ? appliedBrief.result : null;
   const brief = spec && key === appliedBrief.pack ? spec : null;
-  const baseV = spec ? spec.v : calculateViscosity(a, c, o, h);
-  const liveState = evaluatePackage(baseV, key);
-  const liveScore = calculateScore(baseV, key, liveState);
-  let v = baseV;
-  let flow = spec ? spec.flow : Math.round(100 / (1 + baseV / 6500));
-  let score = brief ? brief.score : liveScore;
+  const v = spec ? spec.v : calculateViscosity(a, c, o, h);
+  const liveState = evaluatePackage(v, key);
+  const liveScore = calculateScore(v, key, liveState);
   const tone = brief ? brief.tone : liveState === 'optimal' && liveScore >= 95 ? 'excellent' : liveState;
-  const state = tone === 'excellent' ? 'optimal' : tone;
+  const water = Math.max(0, 100 - a - c - o - h);
+  return {
+    a, c, o, h, key, spec, brief, v, tone, water,
+    state: tone === 'excellent' ? 'optimal' : tone,
+    score: brief ? brief.score : liveScore,
+    flow: spec ? spec.flow : Math.round(100 / (1 + v / 6500)),
+    stated: Boolean(spec && appliedBrief.viscosityStated),
+    stability: water < 45 || (o >= 20 && c < 0.2) ? 'unstable' : water < 60 || (o >= 12 && c < 0.2) ? 'review' : 'stable',
+    texture: spec ? spec.texture : textureLabel(v),
+    label: brief ? brief.label : STATES[tone].label
+  };
+}
+
+// 종합 상태 업데이트
+function update() {
+  const s = computeState();
+  const { a, c, o, h, key, spec, brief, tone, state, water } = s;
+  let { v, flow, score } = s;
   if (roll) {
     const mix = (from, to) => from + (to - from) * roll.t;
     v = Math.round(mix(roll.from.v, v));
@@ -226,9 +239,7 @@ function update() {
     score = Math.round(mix(roll.from.score, score));
   }
   shown = { v, flow, score };
-  const water = Math.max(0, 100 - a - c - o - h);
-
-  current = { a, c, o, h, v, state, score, flow, water };
+  current ={ a, c, o, h, v, state, score, flow, water };
   updateBriefBadge();
 
 
@@ -250,19 +261,19 @@ function update() {
   });
   $('formula-total').textContent = Object.values(parts).reduce((sum, pct) => sum + pct, 0).toFixed(1) + '%';
   $('formula-bar').setAttribute('aria-label', `유효 ${a}%, 점증제 ${c}%, 오일 ${o}%, 보습 ${h}%, 정제수 ${water.toFixed(2)}%`);
-  const stability = water < 45 || (o >= 20 && c < 0.2) ? 'unstable' : water < 60 || (o >= 12 && c < 0.2) ? 'review' : 'stable';
+  const { stability } = s;
   $('formula-badge').dataset.state = stability;
   $('formula-badge').textContent = { stable: '안정', review: '검토', unstable: '주의' }[stability];
   $('formula-badge').dataset.en = { stable: 'Stable', review: 'Review', unstable: 'Unstable' }[stability];
   $('lab-flow').textContent = `${flow} / 100`;
   $('lab-cycle').textContent = `${(.9 / (1 + v / 9000) + .08).toFixed(2)} /s`;
 
-  $('texture').textContent = spec ? spec.texture : textureLabel(v);
+  $('texture').textContent = s.texture;
   $('flow-caption').textContent = v < 9000 ? '빠른 유동성 · 얇은 퍼짐성' : v < 25000 ? '완만한 레벨링 · 보습 밀착' : '형태 유지 · 높은 응집력';
 
 
   $('status-card').className = 'simulation-status-card';
-  const stateLabel = brief ? brief.label : STATES[tone].label;
+  const stateLabel = s.label;
   $('status-label').textContent = stateLabel;
   $('status-card').dataset.state = tone;
   $('status-icon').textContent = { excellent: '✓', optimal: '✓', caution: '!', incompatible: '×' }[tone];
@@ -308,13 +319,14 @@ function loadPreset() {
   update();
 }
 
-$('preset').addEventListener('change', () => { stopBriefAnimation(); loadPreset(); });
-$('pack').addEventListener('change', () => testPack($('pack').value));
+$('preset').addEventListener('change', () => { stopBriefAnimation(); loadPreset(); markDirty(); });
+$('pack').addEventListener('change', () => { testPack($('pack').value); markDirty(); });
 
 ['active', 'carb', 'oil', 'hum'].forEach(id => {
   $(id).addEventListener('input', () => {
     briefLocked = false; // 사용자가 배합을 바꾸면 실시간 계산으로 전환
     update();
+    markDirty();
   });
   // 적용 애니메이션 중 사용자가 직접 조작하면 사용자 조작을 우선합니다.
   $(id).addEventListener('pointerdown', stopBriefAnimation);
@@ -408,23 +420,34 @@ async function analyzeBrief(file) {
 // OpenAI가 읽은 스펙을 시뮬레이터 의뢰서로 바꿉니다. 점도가 문서에 없으면 추정 배합의 예측 점도식을 씁니다.
 function buildBrief(data) {
   const f = data.formula;
-  const stated = data.viscosity.value != null;
-  const v = stated ? data.viscosity.value : calculateViscosity(f.active, f.carbomer, f.oil, f.humectant);
-  // 요청 용기가 없으면 점도에 가장 잘 맞는 용기를 기준으로 삼습니다.
+  const quotes = [...data.evidence];
+  if (data.viscosity.quote) quotes.unshift({ label: '목표 점도', quote: data.viscosity.quote, page: data.viscosity.page });
+  return makeSpecBrief({
+    kind: data.kind, formula: { a: f.active, c: f.carbomer, o: f.oil, h: f.humectant }, pack: data.pack,
+    file: data.file, code: data.code, title: data.product_name ? `${data.code} · ${data.product_name}` : data.code,
+    statedV: data.viscosity.value, texture: data.texture, basis: ['의뢰서 명시 점도', '추정 배합의 예측 점도'],
+    evidence: quotes.slice(0, 6).map(q => ({ label: String(q.label || '').slice(0, 60), quote: String(q.quote || '').slice(0, 300), page: String(q.page || '').slice(0, 20) }))
+  });
+}
+
+// 목표 스펙(의뢰서 파일 분석·개발요청서 저장본·모델링 저장본 복원 공통). 점도는 명시값이 있으면 그 값, 없으면 배합 예측식.
+// 용기가 없으면 점도에 가장 잘 맞는 용기를 기준으로 삼습니다.
+function makeSpecBrief({ kind = '', formula, pack = '', file = '', code = '', title = '', statedV = null, texture = '', basis = ['명시 점도', '배합의 예측 점도'], evidence = [] }) {
+  const stated = typeof statedV === 'number' && statedV > 0;
+  const v = stated ? Math.round(statedV) : calculateViscosity(formula.a, formula.c, formula.o, formula.h);
   const scoreOf = key => calculateScore(v, key, evaluatePackage(v, key));
-  const pack = data.pack || Object.keys(PACKS).reduce((best, key) => scoreOf(key) > scoreOf(best) ? key : best);
-  const state = evaluatePackage(v, pack);
-  const score = calculateScore(v, pack, state);
+  const target = PACKS[pack] ? pack : Object.keys(PACKS).reduce((best, key) => scoreOf(key) > scoreOf(best) ? key : best);
+  const state = evaluatePackage(v, target);
+  const score = calculateScore(v, target, state);
   const tone = state === 'optimal' && score >= 95 ? 'excellent' : state;
   return {
-    kind: data.kind, a: f.active, c: f.carbomer, o: f.oil, h: f.humectant, pack,
-    file: data.file, code: data.code, title: data.product_name ? `${data.code} · ${data.product_name}` : data.code,
-    viscosityStated: stated, packStated: Boolean(data.pack),
+    kind, ...formula, pack: target, file, code, title, evidence, texture,
+    viscosityStated: stated, packStated: Boolean(PACKS[pack]),
     result: {
       v, flow: Math.round(100 / (1 + v / 6500)), score, tone, label: STATES[tone].label,
-      texture: data.texture || textureLabel(v),
-      diagnosis: `${stated ? '의뢰서 명시 점도' : '추정 배합의 예측 점도'} 기준. ${packDiagnosis(v, pack, state)}`,
-      risk: packRisk(v, pack, state), recs: getEligiblePacks(v)
+      texture: texture || textureLabel(v),
+      diagnosis: `${stated ? basis[0] : basis[1]} 기준. ${packDiagnosis(v, target, state)}`,
+      risk: packRisk(v, target, state), recs: getEligiblePacks(v)
     }
   };
 }
@@ -479,16 +502,18 @@ function flashViscosity() {
   void box.offsetWidth;
   box.classList.add('is-flash');
 }
-function showToast(brief) {
+// tone: 'success'(체크 아이콘) / 'notice'(느낌표 아이콘, 확인이 필요한 안내). 안내가 길면 duration 을 늘립니다.
+function showToast(title, detail, { tone = 'success', duration = 3200 } = {}) {
   const toast = $('toast');
-  $('toast-title').textContent = `${brief.code} 의뢰서 스펙 동기화됨`;
-  $('toast-detail').textContent = `${brief.kind} 제형 · 목표 점도 ${fmt(brief.result.v)} cPs · 호환도 ${brief.result.score}점`;
+  $('toast-title').textContent = title;
+  $('toast-detail').textContent = detail || '';
+  toast.dataset.tone = tone;
   toast.hidden = false;
   toast.classList.remove('is-visible');
   void toast.offsetWidth;
   toast.classList.add('is-visible');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 3200);
+  toastTimer = setTimeout(() => toast.classList.remove('is-visible'), duration);
 }
 // 표시값(점도·유동성·점수)을 duration 동안 직전 값에서 새 값으로 롤링합니다. sliders가 있으면 함께 이동합니다.
 let pendingSliders = null;
@@ -535,14 +560,24 @@ function testPack(key) {
 function applyBrief(brief) {
   cancelAnalyze();
   window.Common.closeModal('simulation-brief-modal');
+  work.method = 'brief_upload';
+  applySpec(brief);
+  markDirty();
+  showToast(`${brief.code} 의뢰서 스펙 동기화됨`, `${brief.kind} 제형 · 목표 점도 ${fmt(brief.result.v)} cPs · 호환도 ${brief.result.score}점`);
+}
+// 샘플 제형 드롭다운의 '개발요청서' 항목을 이 스펙으로 바꾸고 배합·용기를 롤링 전환합니다.
+function setBriefOption(brief) {
   appliedBrief = brief;
   let option = $('preset').querySelector('option[value=brief]');
+  if (!brief) { option?.remove(); return; }
   if (!option) option = $('preset').appendChild(Object.assign(document.createElement('option'), { value: 'brief' }));
   option.textContent = `개발요청서 · ${brief.title}`;
+}
+function applySpec(brief) {
+  setBriefOption(brief);
   $('preset').value = 'brief';
   $('pack').value = brief.pack;
   briefLocked = true;
-  showToast(brief);
   startRoll(500, [brief.a, brief.c, brief.o, brief.h], flashViscosity);
 }
 
@@ -586,6 +621,7 @@ $('reset').addEventListener('click', () => {
   $('preset').value = 'ampoule';
   phase = 0;
   loadPreset();
+  markDirty();
 });
 
 // 피칭 스크립트 복사 기능
@@ -599,6 +635,660 @@ $('copy-pitch-btn').addEventListener('click', () => {
     $('copy-pitch-btn').querySelector('span').textContent = '복사하지 못했어요. 다시 시도해 주세요';
   });
 });
+
+/* ==========================================================================
+   프로젝트 연결 · 저장 · 불러오기 · 최종본 (simulation.md 9장)
+   공통 API: docs/api_contract.md 2장, 프로젝트 선택은 공통 프로젝트 바(ProjectBar)를 씁니다.
+   ========================================================================== */
+const CALC_VERSION = 'sim-calc-1';
+const SCHEMA_VERSION = 1;
+const PRESET_KEYS = ['serum', 'ampoule', 'lotion', 'cream', 'brief'];
+const bar = window.ProjectBar || null;
+const work = {
+  linked: null,      // 연결 프로젝트 — 처음 저장하거나 불러올 때 정해지고, 저장은 항상 이 프로젝트로 합니다.
+  version: null,     // 지금 화면의 기준 모델링 저장본 { id, version_no, title, project_id }
+  final: null,       // 연결 프로젝트의 현재 모델링 최종본 기록 (GET .../final 의 final)
+  requisition: null, // 불러온 개발요청서 { version_id, version_no, title, texture, viscosity }
+  method: 'manual',  // context.creation_method
+  dirty: false
+};
+let concepts = [];   // 컨셉원료 코멘트 [{ name, comment, info, source }]
+let overallComment = '';
+
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+};
+const projectLabel = project => `${project.customer.name} › ${project.name}`;
+const apiMessage = r => r.status === 401 ? '로그인이 만료됐어요. 페이지를 새로 고친 뒤 다시 로그인해 주세요.'
+  : (r.data && typeof r.data.error === 'string' && r.data.error) || r.error?.message || '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
+const formatDate = iso => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+function setError(id, message) {
+  const node = $(id);
+  node.textContent = message || '';
+  node.hidden = !message;
+}
+function setBusy(button, busy, label) {
+  button.disabled = busy;
+  if (busy) {
+    button.dataset.label = button.textContent;
+    button.replaceChildren(el('span', 'spinner spinner-sm'), document.createTextNode(` ${label || button.textContent}`));
+  } else if (button.dataset.label) {
+    button.textContent = button.dataset.label;
+  }
+}
+document.body.append($('save-modal'), $('load-modal'), $('concept-modal'));
+
+function markDirty() {
+  work.dirty = true;
+  renderStatus();
+}
+function renderStatus() {
+  const chip = $('version-chip');
+  const isFinal = Boolean(work.version && work.final?.version?.id === work.version.id);
+  chip.textContent = work.version
+    ? `v${work.version.version_no}${isFinal ? ' · ★ 최종본' : ''}${work.dirty ? ' · 수정 중' : ''}`
+    : '저장 전';
+  chip.dataset.state = isFinal ? 'final' : work.version ? 'saved' : 'draft';
+  chip.title = work.version
+    ? `${work.version.title || '이름 없음'}${work.linked ? ` · ${projectLabel(work.linked)}` : ''}`
+    : '아직 저장하지 않은 모델링이에요. 버전 번호는 저장할 때 서버가 정해요.';
+  const toggle = $('final-toggle');
+  toggle.disabled = !work.version || !work.linked;
+  toggle.textContent = isFinal ? '최종본 해제' : '최종본 지정';
+  toggle.title = toggle.disabled ? '저장하거나 불러온 모델링 저장본이 있을 때 지정할 수 있어요' : '';
+}
+
+// 배합·코멘트·불러온 요청서를 기본 프리셋으로 되돌립니다 (연결된 작업 중 다른 프로젝트로 바꿀 때).
+function resetWork() {
+  stopBriefAnimation();
+  setBriefOption(null);
+  briefLocked = false;
+  $('preset').value = 'ampoule';
+  loadPreset();
+  concepts = [];
+  overallComment = '';
+  Object.assign(work, { linked: null, version: null, final: null, requisition: null, method: 'manual', dirty: false });
+  renderConcepts();
+  renderStatus();
+}
+// 롤링 전환 중이면 최종값으로 바로 옮깁니다 (저장값이 애니메이션 중간값이 되지 않게).
+function settleAnimation() {
+  if (!briefFrame) return;
+  const sliders = pendingSliders;
+  stopBriefAnimation();
+  if (sliders) SLIDERS.forEach((id, i) => { $(id).value = sliders[i]; });
+  update();
+}
+
+// 9-1 프로젝트 연결: 연결된 작업 중 다른 프로젝트를 고르면 확인 후 초기화, 연결 전 작업 중이면 확인 후 그대로 연결.
+let pendingProjectAction = null;
+if (bar) {
+  bar.setGuard(next => {
+    pendingProjectAction = null;
+    if (work.linked && (!next || next.id !== work.linked.id)) {
+      if (!confirm(`이 모델링은 「${projectLabel(work.linked)}」 프로젝트에 연결되어 있어요.\n다른 프로젝트로 바꾸면 배합·코멘트·불러온 개발요청서가 초기화돼요. 바꿀까요?`)) return false;
+      pendingProjectAction = 'reset';
+    } else if (!work.linked && work.dirty && next) {
+      if (!confirm(`작업 중인 배합·코멘트를 「${next.name}」 프로젝트에 연결할까요?\n지금 내용은 그대로 유지돼요.`)) return false;
+      pendingProjectAction = 'link';
+    }
+    return true;
+  });
+  bar.onChange(project => {
+    const action = pendingProjectAction;
+    pendingProjectAction = null;
+    if (action === 'reset') resetWork();
+    if (action === 'link' && project) {
+      work.linked = project;
+      refreshFinal();
+    }
+    renderStatus();
+  });
+}
+const currentProject = () => work.linked || bar?.current() || null;
+
+// ---- 저장 payload (9-2, tab = simulation, schema_version = 1) ----
+function buildPayload(project) {
+  settleAnimation();
+  const s = computeState();
+  const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
+  const reports = generateReports(s.v, s.key, s.state, s.score, s.brief);
+  const brief = appliedBrief;
+  return {
+    context: {
+      customer_id: project.customer.id, customer_name: project.customer.name,
+      project_id: project.id, project_name: project.name,
+      source_requisition: work.requisition ? { version_id: work.requisition.version_id, version_no: work.requisition.version_no, title: work.requisition.title } : null,
+      brief_file_name: brief?.file || '',
+      creation_method: work.method
+    },
+    inputs: {
+      preset: $('preset').value,
+      formula: { active: s.a, carbomer: s.c, oil: s.o, humectant: s.h },
+      package: s.key,
+      target_spec: brief ? {
+        title: brief.title, code: brief.code, kind: brief.kind, applied: briefLocked,
+        formula: { active: brief.a, carbomer: brief.c, oil: brief.o, humectant: brief.h },
+        package: brief.pack, package_stated: brief.packStated,
+        viscosity_cps: brief.viscosityStated ? brief.result.v : null, texture: brief.texture || ''
+      } : null,
+      concept_comments: concepts.map(item => ({ name: item.name, comment: item.comment, info: item.info, source: item.source })),
+      comment: overallComment
+    },
+    outputs: {
+      predicted_viscosity_cps: s.v,
+      viscosity_basis: s.stated ? 'stated' : 'formula',
+      total_ratio: { active: s.a, carbomer: s.c, oil: s.o, humectant: s.h, water: round(s.water, 2), total: 100 },
+      texture: s.texture,
+      flow_index: s.flow,
+      stability: s.stability,
+      package_fit: { package: s.key, state: s.tone, score: s.score, label: s.label, diagnosis: s.brief ? s.brief.diagnosis : packDiagnosis(s.v, s.key, s.state) },
+      recommended_packages: s.brief ? [...s.brief.recs] : getEligiblePacks(s.v),
+      buyer_guide: { rd_report: reports.report, rd_action: reports.action, sales_pitch: reports.sales }
+    },
+    meta: {
+      brief_evidence: brief?.evidence || [],
+      calc_version: CALC_VERSION
+    }
+  };
+}
+
+// ---- 저장 ----
+function defaultTitle(project) {
+  const base = work.requisition?.title || appliedBrief?.title || project?.name || '제형';
+  return `${base} 모델링`.slice(0, 200);
+}
+$('save-open').addEventListener('click', () => {
+  const project = currentProject();
+  setError('save-error', '');
+  $('save-submit').disabled = !project;
+  $('save-name').disabled = !project;
+  if (!project) {
+    $('save-project').textContent = '';
+    setError('save-error', '먼저 화면 위 프로젝트 바에서 고객사와 프로젝트를 선택해 주세요. 저장은 프로젝트 단위로 해요.');
+  } else {
+    $('save-project').textContent = `연결 프로젝트: ${projectLabel(project)}${work.linked ? '' : ' — 처음 저장하면 이 프로젝트가 이 모델링의 연결 프로젝트가 돼요.'}`;
+    $('save-name').value = work.version?.title || defaultTitle(project);
+  }
+  window.Common.openModal('simulation-save-modal');
+  requestAnimationFrame(() => (project ? $('save-name') : $('save-modal').querySelector('[data-modal-close]')).focus());
+});
+async function submitSave() {
+  const project = currentProject();
+  const button = $('save-submit');
+  if (!project || button.disabled) return;
+  const title = $('save-name').value.trim();
+  if (!title) { setError('save-error', '저장본 이름을 입력해 주세요.'); $('save-name').focus(); return; }
+  setError('save-error', '');
+  const body = { schema_version: SCHEMA_VERSION, title, payload: buildPayload(project) };
+  if (work.version && work.version.project_id === project.id) body.based_on_id = work.version.id;
+  setBusy(button, true, '저장 중');
+  const r = await window.Common.api('POST', `/api/projects/${project.id}/tabs/simulation/versions`, body);
+  setBusy(button, false);
+  if (!r.ok) { setError('save-error', apiMessage(r)); return; }
+  const saved = r.data.version;
+  work.linked = project;
+  work.version = { id: saved.id, version_no: saved.version_no, title: saved.title, project_id: saved.project_id };
+  work.dirty = false;
+  window.Common.closeModal('simulation-save-modal');
+  const base = r.data.base;
+  showToast(`v${saved.version_no} 저장됨`, base?.is_stale
+    ? `v${base.based_on_version_no}에서 시작해 저장했어요. 그 사이 v${base.latest_version_no_before_save}까지 저장본이 있었어요.`
+    : `${saved.title} · ${projectLabel(project)}`, { duration: base?.is_stale ? 6000 : 3200 });
+  await refreshFinal();
+}
+$('save-submit').addEventListener('click', submitSave);
+$('save-name').addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); submitSave(); }
+});
+
+// ---- 최종본 (9-4) ----
+async function refreshFinal() {
+  const project = work.linked;
+  if (!project) { work.final = null; renderStatus(); return; }
+  const r = await window.Common.api('GET', `/api/projects/${project.id}/tabs/simulation/final`);
+  if (r.ok && work.linked === project) work.final = r.data.final;
+  renderStatus();
+}
+$('final-toggle').addEventListener('click', async () => {
+  const button = $('final-toggle');
+  if (!work.version || !work.linked || button.disabled) return;
+  const isFinal = work.final?.version?.id === work.version.id;
+  const expected = work.final ? work.final.final_history_id : null;
+  const body = isFinal
+    ? { action: 'unset', expected_final_history_id: expected }
+    : { action: 'set', version_id: work.version.id, expected_final_history_id: expected ?? null };
+  setBusy(button, true);
+  const r = await window.Common.api('POST', `/api/projects/${work.linked.id}/tabs/simulation/final`, body);
+  setBusy(button, false);
+  if (r.ok) {
+    work.final = r.data.final;
+    renderStatus();
+    showToast(isFinal ? '최종본을 해제했어요' : `v${work.version.version_no}을 최종본으로 지정했어요`,
+      isFinal ? '' : '개발요청서에서 모델링을 불러올 때 기본으로 선택돼요. 발송 기록과는 별개예요.');
+    return;
+  }
+  if (r.status === 409 && r.error?.current) {
+    // 다른 사람이 먼저 바꿨으면 작업 내용은 그대로 두고 바뀐 상태만 보여 줍니다.
+    work.final = r.error.current;
+    renderStatus();
+    const now = work.final.version ? `지금 최종본은 v${work.final.version.version_no}이에요.` : '지금은 최종본이 없어요.';
+    showToast('다른 사용자가 먼저 최종본을 바꿨어요', `${now} 확인한 뒤 다시 지정해 주세요.`, { tone: 'notice', duration: 6000 });
+    return;
+  }
+  renderStatus();
+  showToast('최종본을 바꾸지 못했어요', apiMessage(r), { tone: 'notice', duration: 6000 });
+});
+
+// ---- 불러오기 (9-3) ----
+let loadTab = 'simulation';
+const loadLists = { simulation: [], requisition: [] };
+const loadSelection = { simulation: null, requisition: null };
+let loadRequest = 0;
+
+function renderLoadList(tab) {
+  const list = $(`load-list-${tab}`);
+  const items = loadLists[tab];
+  if (!items.length) {
+    const empty = el('li', 'state state-empty');
+    empty.append(el('p', 'state-title', tab === 'simulation' ? '저장한 모델링이 없어요' : '저장한 개발요청서가 없어요'),
+      el('p', null, tab === 'simulation' ? '배합을 조절한 뒤 [저장]하면 여기에 쌓여요.' : '개발요청서 탭에서 요청서를 저장하면 불러올 수 있어요.'));
+    list.replaceChildren(empty);
+    return;
+  }
+  list.replaceChildren(...items.map(item => {
+    const li = el('li', 'simulation-version-item');
+    const label = el('label');
+    const radio = Object.assign(document.createElement('input'), { type: 'radio', name: `simulation-load-${tab}`, value: String(item.id) });
+    radio.checked = loadSelection[tab] === item.id;
+    radio.addEventListener('change', () => { loadSelection[tab] = item.id; syncLoadSubmit(); });
+    const main = el('span', 'simulation-version-main');
+    const head = el('span', 'simulation-version-head');
+    head.append(el('strong', null, `v${item.version_no}`), el('span', 'simulation-version-title', item.title || '이름 없음'));
+    if (item.is_final) head.append(el('span', 'badge badge-primary', '★ 최종본'));
+    main.append(head, el('small', 'text-caption', [item.created_by?.name, formatDate(item.created_at)].filter(Boolean).join(' · ')));
+    label.append(radio, main);
+    li.append(label);
+    return li;
+  }));
+}
+function syncLoadSubmit() {
+  $('load-submit').disabled = !loadSelection[loadTab];
+}
+async function fetchLoadList(project, tab, request) {
+  const r = await window.Common.api('GET', `/api/projects/${project.id}/tabs/${tab}/versions?limit=50`);
+  if (request !== loadRequest) return;
+  if (!r.ok) { setError('load-error', apiMessage(r)); return; }
+  loadLists[tab] = r.data.items;
+  // 개발요청서는 최종본이 기본 선택 (FIX)
+  if (tab === 'requisition') loadSelection.requisition = (r.data.items.find(item => item.is_final) || {}).id || null;
+  renderLoadList(tab);
+  syncLoadSubmit();
+}
+$('load-open').addEventListener('click', () => {
+  const project = currentProject();
+  const request = ++loadRequest;
+  setError('load-error', '');
+  loadSelection.simulation = loadSelection.requisition = null;
+  ['simulation', 'requisition'].forEach(tab => {
+    loadLists[tab] = [];
+    $(`load-list-${tab}`).replaceChildren(el('li', 'loading', '불러오는 중이에요'));
+  });
+  syncLoadSubmit();
+  window.Common.openModal('simulation-load-modal');
+  if (!project) {
+    $('load-project').textContent = '';
+    ['simulation', 'requisition'].forEach(tab => $(`load-list-${tab}`).replaceChildren());
+    setError('load-error', '먼저 화면 위 프로젝트 바에서 고객사와 프로젝트를 선택해 주세요.');
+    return;
+  }
+  $('load-project').textContent = projectLabel(project);
+  fetchLoadList(project, 'simulation', request);
+  fetchLoadList(project, 'requisition', request);
+});
+$('load-modal').querySelectorAll('[data-load-tab]').forEach(tab => tab.addEventListener('click', () => {
+  loadTab = tab.dataset.loadTab;
+  syncLoadSubmit();
+}));
+$('load-submit').addEventListener('click', async () => {
+  const id = loadSelection[loadTab];
+  const project = currentProject();
+  if (!id || !project) return;
+  if (work.dirty && !confirm('지금 작업 중인 내용이 불러온 내용으로 바뀌어요. 불러올까요?')) return;
+  const button = $('load-submit');
+  setBusy(button, true, '불러오는 중');
+  const r = await window.Common.api('GET', `/api/versions/${id}`);
+  setBusy(button, false);
+  syncLoadSubmit();
+  if (!r.ok) { setError('load-error', apiMessage(r)); return; }
+  const version = r.data.version;
+  const payload = version.payload || {};
+  if (version.project_id !== project.id || version.tab !== loadTab || typeof payload.inputs !== 'object' || !payload.inputs) {
+    setError('load-error', '이 저장본은 불러올 수 없는 형식이에요.');
+    return;
+  }
+  window.Common.closeModal('simulation-load-modal');
+  if (loadTab === 'simulation') restoreModeling(version, project);
+  else applyRequisition(version, project);
+});
+
+const num = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
+const str = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+
+// (1) 모델링 저장본 복원: 저장된 inputs 로 다시 계산하고, 저장 당시 결과와 다르면 함께 안내합니다.
+function restoreModeling(version, project) {
+  const { context = {}, inputs, outputs = {} } = version.payload;
+  stopBriefAnimation();
+  const spec = inputs.target_spec && typeof inputs.target_spec === 'object' ? inputs.target_spec : null;
+  setBriefOption(spec ? makeSpecBrief({
+    kind: str(spec.kind, 40), code: str(spec.code, 40), title: str(spec.title, 200) || '저장된 스펙', file: str(context.brief_file_name, 200),
+    formula: { a: num(spec.formula?.active, 0), c: num(spec.formula?.carbomer, 0), o: num(spec.formula?.oil, 0), h: num(spec.formula?.humectant, 0) },
+    pack: spec.package_stated ? str(spec.package, 20) : '', statedV: num(spec.viscosity_cps, null), texture: str(spec.texture, 200),
+    basis: ['의뢰서 명시 점도', '배합의 예측 점도'], evidence: Array.isArray(version.payload.meta?.brief_evidence) ? version.payload.meta.brief_evidence.slice(0, 6) : []
+  }) : null);
+  const preset = PRESET_KEYS.includes(inputs.preset) && (inputs.preset !== 'brief' || appliedBrief) ? inputs.preset : 'ampoule';
+  $('preset').value = preset;
+  briefLocked = preset === 'brief' && Boolean(spec?.applied);
+  const f = inputs.formula || {};
+  SLIDERS.forEach((id, i) => { $(id).value = num([f.active, f.carbomer, f.oil, f.humectant][i], +$(id).value); });
+  if (PACKS[inputs.package]) $('pack').value = inputs.package;
+  concepts = sanitizeConcepts(inputs.concept_comments);
+  overallComment = str(inputs.comment, 3000);
+  const req = context.source_requisition;
+  work.requisition = req && typeof req === 'object' ? { version_id: req.version_id, version_no: req.version_no, title: str(req.title, 200), texture: '', viscosity: '' } : null;
+  Object.assign(work, {
+    linked: project, method: ['manual', 'brief_upload', 'requisition_load'].includes(context.creation_method) ? context.creation_method : 'manual',
+    version: { id: version.id, version_no: version.version_no, title: version.title, project_id: version.project_id }, dirty: false
+  });
+  update();
+  renderConcepts();
+  refreshFinal();
+  const now = computeState();
+  const diffs = [];
+  if (num(outputs.predicted_viscosity_cps, now.v) !== now.v) diffs.push(`예측 점도 ${fmt(outputs.predicted_viscosity_cps)} cPs`);
+  if (num(outputs.package_fit?.score, now.score) !== now.score) diffs.push(`호환도 ${outputs.package_fit.score}점`);
+  if (typeof outputs.texture === 'string' && outputs.texture !== now.texture) diffs.push(`질감 ${outputs.texture}`);
+  const notes = [];
+  if (diffs.length) notes.push(`저장 당시 결과와 달라요 (계산식 변경 등) — 저장 당시: ${diffs.join(' · ')}`);
+  if (context.brief_file_name) notes.push('의뢰서 원본 파일은 저장하지 않아 복원되지 않아요.');
+  showToast(`v${version.version_no} 불러옴 · ${version.title || '이름 없음'}`, notes.join(' ') || projectLabel(project),
+    { tone: diffs.length ? 'notice' : 'success', duration: notes.length ? 9000 : 3200 });
+}
+
+// (2) 개발요청서 저장본 불러오기: 요청서 payload 를 읽어 제형·용기를 바로 시뮬레이션합니다 (PDF 재업로드 없음).
+const DETAIL_PRESETS = { 세럼: 'serum', 앰플: 'ampoule', 로션: 'lotion', 크림: 'cream' };
+const PACK_WORDS = [
+  ['airless', /에어리스|airless/i], ['onetouch', /원\s*터치|one[\s-]?touch/i], ['dropper', /스포이드|드롭퍼|dropper|pipette/i],
+  ['mist', /미스트|스프레이|mist|spray/i], ['jar', /크림\s*자|단지|(^|[^가-힣])자([^가-힣]|$)|jar|tub/i], ['pump', /펌프|디스펜서|pump|dispenser/i]
+];
+function matchPack(text) {
+  return (PACK_WORDS.find(([, re]) => re.test(text || '')) || [''])[0];
+}
+// "12,000 cPs", "8,000~12,000 mPa·s" 처럼 단위가 붙은 숫자만 목표 점도로 씁니다 (범위는 가운데 값).
+function parseCps(text) {
+  const match = /(\d[\d,]*(?:\.\d+)?)\s*(?:(?:~|-|–|to)\s*(\d[\d,]*(?:\.\d+)?)\s*)?(?:cps|cp|mpa\s*[·.]?\s*s)\b/i.exec(text || '');
+  if (!match) return null;
+  const low = parseFloat(match[1].replace(/,/g, ''));
+  const high = match[2] ? parseFloat(match[2].replace(/,/g, '')) : low;
+  const value = (low + high) / 2;
+  return value > 0 ? Math.min(200000, Math.round(value)) : null;
+}
+function applyRequisition(version, project) {
+  const inputs = version.payload.inputs;
+  const pd = inputs.product_development && typeof inputs.product_development === 'object' ? inputs.product_development : {};
+  const detail = str(inputs.product_type_detail, 20);
+  const preset = PRESETS[DETAIL_PRESETS[detail]];
+  // 요청서에는 배합 수치가 없으므로 세부 유형 프리셋(없으면 현재 배합)에서 시작합니다.
+  const formula = preset ? { a: preset.a, c: preset.c, o: preset.o, h: preset.h } : { a: +$('active').value, c: +$('carb').value, o: +$('oil').value, h: +$('hum').value };
+  const title = str(version.title, 200) || str(inputs.product_name, 200) || '개발요청서';
+  const texture = str(pd.texture, 200);
+  const viscosity = str(pd.viscosity, 300);
+  const brief = makeSpecBrief({
+    kind: detail || str(inputs.product_type, 20), formula, pack: matchPack(pd.container_reference),
+    code: `요청서 v${version.version_no}`, title: `${title} v${version.version_no}`,
+    statedV: parseCps(viscosity), texture, basis: ['개발요청서 명시 점도', `${preset ? detail + ' 프리셋' : '현재'} 배합의 예측 점도`]
+  });
+  // 컨셉 원료는 코멘트 목록에 미리 채웁니다 (이미 있는 원료는 그대로 둠).
+  const concept = Array.isArray(inputs.ingredients?.concept) ? inputs.ingredients.concept : [];
+  let added = 0;
+  concept.forEach(item => {
+    const name = str(item?.name, 100).trim();
+    if (!name || findConcept(name) || concepts.length >= CONCEPT_MAX) return;
+    const kind = item.kind === 'necessary' ? '필수 원료' : item.kind === 'ideal' ? '선호 원료' : '컨셉 원료';
+    const must = item.must_contain === true ? ' · 함유 필수' : item.must_contain === false ? ' · 함유 필수 아님' : '';
+    const tags = Array.isArray(item.efficacy_tags) ? item.efficacy_tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.slice(0, 30)).slice(0, 6) : [];
+    concepts.push({ name, comment: `개발요청서 ${kind}${must}`, info: tags.length ? { summary: '', properties: '', efficacy_tags: tags, caution: '' } : null, source: 'requisition' });
+    added += 1;
+  });
+  work.requisition = { version_id: version.id, version_no: version.version_no, title, texture, viscosity };
+  work.linked = project;
+  work.method = 'requisition_load';
+  applySpec(brief);
+  renderConcepts();
+  markDirty();
+  refreshFinal();
+  const container = brief.packStated ? PACKS[brief.pack].name.split(' (')[0] : '요청 용기 없음 · 점도 기준 선택';
+  showToast(`개발요청서 v${version.version_no} 불러옴`,
+    `${brief.viscosityStated ? `목표 점도 ${fmt(brief.result.v)} cPs` : '점도 수치 없음 · 프리셋 배합 기준'} · ${container}${added ? ` · 컨셉 원료 ${added}개 추가` : ''}`, { duration: 5000 });
+}
+
+/* ==========================================================================
+   컨셉원료 코멘트 창 (simulation.md 8장)
+   자주 쓰는 원료는 이 목록에서만 정의합니다. 정보는 일반적인 참고 설명이며 함량·규제 판단이 아닙니다.
+   ========================================================================== */
+const CONCEPT_MAX = 30;
+const CONCEPT_PRESETS = [
+  { name: '나이아신아마이드', inci: 'Niacinamide', summary: '비타민 B3 계열의 수용성 원료예요.', properties: '물에 잘 녹고 비교적 안정해 다양한 제형에 쓰기 쉬워요.', efficacy_tags: ['미백', '피지 조절', '장벽'], caution: '고함량에서 따끔함·홍조가 있을 수 있어요. 기능성 함량 기준은 인허가 규제 탭에서 확인하세요.' },
+  { name: '아데노신', inci: 'Adenosine', summary: '세포 에너지 대사와 관련된 뉴클레오사이드 원료예요.', properties: '수용성이고 소량으로 배합되며 제형 사용감에 주는 영향이 적어요.', efficacy_tags: ['주름개선', '탄력'], caution: '기능성 함량 기준은 국가별로 다르니 인허가 규제 탭에서 확인하세요.' },
+  { name: '레티놀', inci: 'Retinol', summary: '비타민 A 계열의 지용성 원료예요.', properties: '빛·산소·열에 약해 캡슐화 원료나 차광·에어리스 용기를 함께 검토해요.', efficacy_tags: ['주름개선', '탄력', '피부결'], caution: '자극(붉어짐·각질)이 생길 수 있고 국가별 사용 제한이 있어요. 인허가 규제 탭에서 확인하세요.' },
+  { name: '아스코빅애시드', inci: 'Ascorbic Acid', summary: '순수 비타민 C 원료예요.', properties: '수용성이고 산화·변색이 쉬워 낮은 pH와 산소 차단 용기가 필요해요.', efficacy_tags: ['미백', '항산화'], caution: '산성 제형이라 따끔할 수 있고, 갈변 등 안정성 확인이 필요해요.' },
+  { name: '히알루론산', inci: 'Sodium Hyaluronate', summary: '수분을 붙잡는 다당류 보습 원료예요.', properties: '분자량에 따라 사용감이 달라지고, 함량을 높이면 점도가 올라가요.', efficacy_tags: ['보습'], caution: '고함량에서 끈적임·밀림이 생길 수 있어요.' },
+  { name: '세라마이드', inci: 'Ceramide NP', summary: '피부 장벽을 이루는 지질 성분을 닮은 원료예요.', properties: '물에 잘 녹지 않아 유상 또는 리포좀 등 분산 처방이 필요해요.', efficacy_tags: ['보습', '장벽'], caution: '결정이 석출되지 않도록 처방 안정성 확인이 필요해요.' },
+  { name: '펩타이드', inci: 'Peptides', summary: '아미노산이 이어진 원료군이에요 (종류가 많아요).', properties: '대부분 수용성이고 소량 배합해요. 원료마다 컨셉과 단가 차이가 커요.', efficacy_tags: ['탄력', '주름개선'], caution: '구체적인 펩타이드 종류와 근거 자료를 원료사에 확인하세요.' },
+  { name: '병풀추출물(시카)', inci: 'Centella Asiatica Extract', summary: '병풀에서 얻은 추출물로 시카 컨셉의 대표 원료예요.', properties: '추출물이라 색·향이 날 수 있고, 지표 성분 함량이 원료마다 달라요.', efficacy_tags: ['진정', '장벽'], caution: '마데카소사이드 등 지표 성분 표기 방식은 원료 규격으로 확인하세요.' },
+  { name: 'PDRN', inci: 'Sodium DNA', summary: '연어 등에서 얻은 DNA 단편 원료예요.', properties: '수용성이고 소량 배합해요. 원료 출처와 등급이 다양해요.', efficacy_tags: ['재생', '진정'], caution: '동물 유래 원료라 비건·할랄 요구가 있는 바이어에게는 사전 확인이 필요해요.' },
+  { name: '판테놀', inci: 'Panthenol', summary: '프로비타민 B5 원료예요.', properties: '수용성이고 안정해 토너부터 크림까지 넓게 써요.', efficacy_tags: ['보습', '진정'], caution: '고함량에서 끈적임이 생길 수 있어요.' }
+];
+const SOURCE_LABELS = { preset: '자주 쓰는 원료', ai_search: 'AI 검색', ai_recommend: 'AI 추천', manual: '직접 입력', requisition: '개발요청서' };
+let conceptMode = 'name';
+let conceptRequest = 0;
+
+const findConcept = name => concepts.find(item => item.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
+function cleanInfo(info) {
+  if (!info || typeof info !== 'object') return null;
+  return {
+    summary: str(info.summary, 300), properties: str(info.properties, 300), caution: str(info.caution, 300),
+    efficacy_tags: Array.isArray(info.efficacy_tags) ? info.efficacy_tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.slice(0, 30)).slice(0, 6) : []
+  };
+}
+function sanitizeConcepts(list) {
+  if (!Array.isArray(list)) return [];
+  const result = [];
+  list.forEach(item => {
+    const name = str(item?.name, 100).trim();
+    if (!name || result.some(other => other.name.toLocaleLowerCase() === name.toLocaleLowerCase()) || result.length >= CONCEPT_MAX) return;
+    result.push({ name, comment: str(item.comment, 1000), info: cleanInfo(item.info), source: SOURCE_LABELS[item.source] ? item.source : 'manual' });
+  });
+  return result;
+}
+function addConcept(name, info, source) {
+  name = name.trim().slice(0, 100);
+  if (!name) return;
+  const existing = findConcept(name);
+  if (!existing) {
+    if (concepts.length >= CONCEPT_MAX) { showConceptError(`컨셉원료는 ${CONCEPT_MAX}개까지 추가할 수 있어요.`); return; }
+    concepts.push({ name, comment: '', info: cleanInfo(info), source });
+    markDirty();
+    renderConcepts();
+  }
+  const item = $('concept-list').querySelector(`[data-concept-name="${CSS.escape((existing || findConcept(name)).name)}"]`);
+  item?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  item?.querySelector('textarea')?.focus({ preventScroll: true });
+}
+function showConceptError(message) {
+  const box = $('concept-error');
+  box.querySelector('p').textContent = message || '';
+  box.hidden = !message;
+}
+function infoBlock(info, source) {
+  const block = el('div', 'simulation-concept-info');
+  if (source === 'ai_search' || source === 'ai_recommend') block.append(el('span', 'badge badge-warning', 'AI 요약 · 확인 필요'));
+  if (info.summary) block.append(el('p', null, info.summary));
+  if (info.properties) block.append(el('p', null, `특성 · ${info.properties}`));
+  if (info.efficacy_tags.length) {
+    const tags = el('div', 'simulation-concept-tags');
+    info.efficacy_tags.forEach(tag => tags.append(el('span', 'badge badge-primary', tag)));
+    block.append(tags);
+  }
+  if (info.caution) block.append(el('p', 'simulation-concept-caution', `주의 · ${info.caution}`));
+  return block;
+}
+function renderConcepts() {
+  // 자주 쓰는 원료 칩: 이미 추가한 원료는 눌린 상태로 표시
+  $('concept-presets').querySelectorAll('button').forEach(button => {
+    const added = Boolean(findConcept(button.dataset.name));
+    button.setAttribute('aria-pressed', String(added));
+    button.className = `btn ${added ? 'btn-soft' : 'btn-secondary'} btn-sm`;
+  });
+  $('concept-count').textContent = concepts.length ? `${concepts.length}개` : '';
+  $('concept-list').replaceChildren(...(concepts.length ? concepts.map((item, index) => {
+    const li = el('li', 'simulation-concept-item');
+    li.dataset.conceptName = item.name;
+    const head = el('div', 'simulation-concept-item-head');
+    const name = el('strong', null, item.name);
+    const remove = el('button', 'btn btn-ghost btn-sm', '삭제');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `${item.name} 삭제`);
+    remove.addEventListener('click', () => { concepts.splice(index, 1); markDirty(); renderConcepts(); });
+    head.append(name, el('span', 'badge', SOURCE_LABELS[item.source]), remove);
+    li.append(head);
+    if (item.info) li.append(infoBlock(item.info, item.source));
+    const note = el('textarea', 'form-control form-control-sm');
+    note.rows = 2;
+    note.maxLength = 1000;
+    note.placeholder = '이 원료에 대한 코멘트 (바이어 요구, 연구소 전달 사항 등)';
+    note.setAttribute('aria-label', `${item.name} 코멘트`);
+    note.value = item.comment;
+    note.addEventListener('input', () => { item.comment = note.value; markDirty(); renderConceptSummary(); });
+    li.append(note);
+    return li;
+  }) : [el('li', 'text-caption', '아직 추가한 원료가 없어요.')]));
+  if ($('concept-comment').value !== overallComment) $('concept-comment').value = overallComment;
+  // AI 결과 카드의 [코멘트에 추가] 버튼 상태도 맞춥니다.
+  $('concept-results').querySelectorAll('[data-add-name]').forEach(button => {
+    const added = Boolean(findConcept(button.dataset.addName));
+    button.disabled = added;
+    button.textContent = added ? '추가됨' : '코멘트에 추가';
+  });
+  renderConceptSummary();
+}
+// 하단 카드: 추가한 원료 칩과 전체 코멘트 미리보기
+function renderConceptSummary() {
+  const note = $('requisition-note');
+  note.hidden = !work.requisition;
+  if (work.requisition) {
+    const target = [work.requisition.texture && `목표 질감 ${work.requisition.texture}`, work.requisition.viscosity && `점도 ${work.requisition.viscosity}`].filter(Boolean).join(' · ');
+    note.textContent = `불러온 개발요청서 · ${work.requisition.title} (v${work.requisition.version_no})${target ? ` — ${target}` : ''}`;
+  }
+  $('concept-chips').replaceChildren(...concepts.map(item => {
+    const chip = el('li', 'simulation-concept-chip');
+    chip.append(el('strong', null, item.name));
+    const tags = item.info?.efficacy_tags?.slice(0, 2) || [];
+    if (tags.length) chip.append(el('small', null, tags.join('·')));
+    chip.title = [item.comment, item.info?.summary].filter(Boolean).join('\n');
+    return chip;
+  }));
+  $('concept-overall').textContent = overallComment;
+  $('concept-overall').hidden = !overallComment;
+  $('concept-empty').hidden = Boolean(concepts.length || overallComment);
+  $('concept-open').textContent = concepts.length || overallComment ? '코멘트 편집' : '코멘트 작성';
+}
+
+CONCEPT_PRESETS.forEach(preset => {
+  const button = el('button', 'btn btn-secondary btn-sm', preset.name);
+  button.type = 'button';
+  button.dataset.name = preset.name;
+  button.title = `${preset.inci} · ${preset.efficacy_tags.join(', ')}`;
+  button.addEventListener('click', () => addConcept(preset.name, preset, 'preset'));
+  $('concept-presets').append(button);
+});
+$('concept-modal').querySelectorAll('[data-concept-mode]').forEach(tab => tab.addEventListener('click', () => {
+  conceptMode = tab.dataset.conceptMode;
+  $('concept-modal').querySelectorAll('[data-concept-mode]').forEach(other => {
+    other.classList.toggle('is-active', other === tab);
+    other.setAttribute('aria-pressed', String(other === tab));
+  });
+  $('concept-query').placeholder = conceptMode === 'name' ? '예: 나이아신아마이드' : '예: 미백, 탄력, 재생';
+  $('concept-query').focus();
+}));
+$('concept-search').addEventListener('submit', async event => {
+  event.preventDefault();
+  const query = $('concept-query').value.trim();
+  const button = $('concept-search-btn');
+  if (button.disabled) return;
+  if (!query) { showConceptError(conceptMode === 'name' ? '원료명을 입력해 주세요.' : '원하는 기능 키워드를 입력해 주세요.'); $('concept-query').focus(); return; }
+  showConceptError('');
+  const request = ++conceptRequest;
+  const mode = conceptMode;
+  setBusy(button, true, '검색 중');
+  $('concept-results').replaceChildren(el('div', 'loading', 'AI가 원료 정보를 정리하고 있어요'));
+  const r = await window.Common.api('POST', $('brief-modal').dataset.ingredientUrl, { query, mode });
+  if (request !== conceptRequest) return;
+  setBusy(button, false);
+  if (!r.ok) {
+    $('concept-results').replaceChildren();
+    showConceptError(r.status === 404 && !(r.data && r.data.error)
+      ? 'AI 검색이 아직 서버에 연결되지 않았어요. 자주 쓰는 원료나 직접 입력은 지금도 쓸 수 있어요.'
+      : apiMessage(r));
+    return;
+  }
+  const items = Array.isArray(r.data.items) ? r.data.items : [];
+  const source = mode === 'name' ? 'ai_search' : 'ai_recommend';
+  if (!items.length) {
+    $('concept-results').replaceChildren(el('p', 'text-caption', r.data.note || '검색 결과를 찾지 못했어요.'));
+    return;
+  }
+  $('concept-results').replaceChildren(...items.map(item => {
+    const info = cleanInfo(item);
+    const card = el('article', 'simulation-concept-result');
+    const head = el('div', 'simulation-concept-item-head');
+    head.append(el('strong', null, str(item.name, 100)));
+    if (item.inci) head.append(el('small', 'text-caption', str(item.inci, 150)));
+    const add = el('button', 'btn btn-soft btn-sm', '코멘트에 추가');
+    add.type = 'button';
+    add.dataset.addName = str(item.name, 100);
+    add.addEventListener('click', () => addConcept(add.dataset.addName, info, source));
+    head.append(add);
+    card.append(head, infoBlock(info, source));
+    return card;
+  }));
+  if (r.data.note) $('concept-results').append(el('p', 'text-caption', r.data.note));
+  renderConcepts();
+});
+$('concept-manual').addEventListener('submit', event => {
+  event.preventDefault();
+  const name = $('concept-manual-name').value.trim();
+  if (!name) { $('concept-manual-name').focus(); return; }
+  addConcept(name, null, 'manual');
+  $('concept-manual-name').value = '';
+});
+$('concept-comment').addEventListener('input', event => {
+  overallComment = event.target.value;
+  markDirty();
+  renderConceptSummary();
+});
+$('concept-open').addEventListener('click', () => {
+  showConceptError('');
+  requestAnimationFrame(() => $('concept-query').focus());
+});
+renderConcepts();
+renderStatus();
 
 // Canvas lighting layers retain the original viscosity-driven animation.
 const canvas=$('canvas'),ctx=canvas.getContext('2d');let width=0,height=0,phase=0,last=0,frame=0;

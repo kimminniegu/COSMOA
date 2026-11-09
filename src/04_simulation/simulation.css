@@ -4,16 +4,24 @@
 .simulation-page { --simulation-columns: minmax(0, 1fr) clamp(236px, 20%, 272px); --layout-card-padding: var(--space-5); --layout-section-gap: var(--layout-card-gap); min-width: 0; }
 /* 머리글도 본문과 같은 두 칸: 개발요청서 버튼은 샘플 제형 카드 오른쪽 위, 초기화·시연 버튼은 배합 조절 카드 오른쪽 위에 맞춥니다. */
 .simulation-page .page-header { display: grid; grid-template-columns: var(--simulation-columns); align-items: center; gap: var(--layout-card-gap); }
-.simulation-header-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.simulation-header-main { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); min-width: 0; }
+/* 제목 옆 저장 상태 칩: 저장 전 / vN / vN · ★ 최종본 */
+.simulation-title-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.simulation-version-chip { flex: none; padding: 2px 10px; border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text-secondary); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.simulation-version-chip[data-state=saved] { color: var(--color-text-body); }
+.simulation-version-chip[data-state=final] { background: var(--color-primary-soft); color: var(--color-primary); }
+.simulation-work-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.simulation-work-actions .btn-secondary { background: var(--color-surface); }
+.simulation-work-actions .btn-secondary:hover:not(:disabled) { background: var(--color-surface-muted); }
 .simulation-page .page-actions { justify-content: flex-end; }
 .simulation-page .page-title { font-size: var(--font-size-section-title); }
 .simulation-page .card-header { align-items: center; gap: var(--space-2); }
 .simulation-page .card-header + .card-body { padding-top: var(--space-3); }
 .simulation-top-grid, .simulation-bottom-grid { display: grid; gap: var(--layout-card-gap); }
 .simulation-top-grid { grid-template-columns: var(--simulation-columns); }
-.simulation-bottom-grid { margin-top: var(--layout-card-gap); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; }
+.simulation-bottom-grid { margin-top: var(--layout-card-gap); grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, .85fr); gap: 0; }
 .simulation-bottom-grid > section { display: flex; flex-direction: column; }
-.simulation-pitch { border-left: 1px solid var(--color-border-strong); }
+.simulation-pitch, .simulation-concept { border-left: 1px solid var(--color-border-strong); }
 .simulation-top-grid > *, .simulation-bottom-grid > * { min-width: 0; }
 /* 흰 카드 크기는 그대로 두고, 카드 안쪽 여백을 12px로 줄여 스포이드·샬레가 있는 회색 챔버를 최대한 넓힙니다. */
 .simulation-preview > .card-header { padding: var(--space-3) var(--space-3) 0 var(--space-4); }
@@ -139,11 +147,9 @@
   .simulation-bottom-grid .card-header { padding-top: var(--space-4); }
   .simulation-bottom-grid .card-header + .card-body { padding-top: var(--space-3); padding-bottom: var(--space-4); }
   .simulation-bottom-grid .form-control-sm, .simulation-bottom-grid .btn-sm { height: 32px; }
-  /* 제안 가이드는 행 높이 계산에서 빠지고(contain: size) 남는 높이 안에서 스크롤합니다. */
-  .simulation-pitch { contain: size; }
-  .simulation-pitch .card-body { min-height: 0; overflow-y: auto; }
-  .simulation-report-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-  .simulation-report + .simulation-report { padding-top: 0; padding-left: var(--space-4); border-top: 0; border-left: var(--border-default); }
+  /* 제안 가이드·컨셉원료 코멘트는 행 높이 계산에서 빠지고(contain: size) 남는 높이 안에서 스크롤합니다. */
+  .simulation-pitch, .simulation-concept { contain: size; }
+  .simulation-pitch .card-body, .simulation-concept .card-body { min-height: 0; overflow-y: auto; }
   .simulation-report h3 { font-size: 14px; }
   .simulation-report p { font-size: 13px; line-height: 1.45; }
   .simulation-pitch .card-body { padding-bottom: var(--space-3); }
@@ -202,7 +208,8 @@
 @container page (max-width: 900px) {
   .simulation-top-grid, .simulation-bottom-grid, .simulation-page .page-header { grid-template-columns: minmax(0, 1fr); }
   .simulation-stage { width: min(100%, 480px); height: auto; }
-  .simulation-pitch { border-left: 0; border-top: 1px solid var(--color-border-strong); }
+  .simulation-pitch, .simulation-concept { border-left: 0; border-top: 1px solid var(--color-border-strong); }
+  .simulation-work-actions { justify-content: flex-start; }
 }
 @container page (max-width: 560px) { .simulation-hud { grid-template-columns: repeat(2, minmax(0, 1fr)); } .simulation-page .card-header { flex-wrap: wrap; } }
 @container page (max-width: 900px) {
@@ -291,9 +298,69 @@
 .simulation-toast[hidden] { display: none; }
 .simulation-toast-icon { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); }
 .simulation-toast-icon svg { width: 14px; height: 14px; }
+.simulation-toast-notice, .simulation-toast[data-tone=notice] .simulation-toast-check { display: none; }
+.simulation-toast[data-tone=notice] .simulation-toast-notice { display: block; }
+.simulation-toast[data-tone=notice] .simulation-toast-icon { background: var(--color-warning-soft); color: var(--color-warning); }
+.simulation-toast small { max-width: 520px; word-break: keep-all; }
 .simulation-toast strong, .simulation-toast small { display: block; }
 .simulation-toast strong { font-size: 13px; font-weight: 600; color: #1e293b; }
 .simulation-toast small { font-size: 11px; color: #64748b; }
 @media (max-width: 760px) {
   .simulation-brief-drop { min-height: 220px; }
+}
+
+/* 컨셉원료 코멘트 — 하단 카드 요약 (simulation.md 8장) */
+.simulation-concept-summary { display: grid; align-content: start; gap: var(--space-2); }
+.simulation-requisition-note { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--color-primary-soft); color: var(--color-primary); font-size: 12px; line-height: 1.45; word-break: keep-all; }
+.simulation-requisition-note[hidden], .simulation-concept-overall[hidden], .simulation-concept-empty[hidden] { display: none; }
+.simulation-concept-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.simulation-concept-chips:empty { display: none; }
+.simulation-concept-chip { display: inline-flex; align-items: baseline; gap: 4px; max-width: 100%; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--color-surface-muted); font-size: 12px; }
+.simulation-concept-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-bold); color: var(--color-text-strong); }
+.simulation-concept-chip small { flex: none; font-size: 11px; color: var(--color-text-secondary); }
+.simulation-concept-overall { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 13px; line-height: 1.45; color: var(--color-text-body); white-space: pre-line; word-break: keep-all; }
+
+/* 컨셉원료 코멘트 모달 */
+.simulation-concept-modal .modal-body { display: grid; gap: var(--space-6); max-height: min(68vh, 640px); overflow-y: auto; }
+.simulation-concept-block { display: grid; gap: var(--space-2); }
+.simulation-concept-block h3 { font-size: var(--font-size-label); font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
+.simulation-concept-block h3 small { margin-left: 4px; font-weight: var(--font-weight-regular); color: var(--color-text-secondary); }
+.simulation-concept-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.simulation-concept-modes { justify-self: start; }
+.simulation-concept-search { display: flex; gap: var(--space-2); }
+.simulation-concept-search .form-control { flex: 1; min-width: 0; }
+.simulation-concept-search .btn { flex: none; }
+.simulation-concept-results { display: grid; gap: var(--space-2); }
+.simulation-concept-results:empty { display: none; }
+.simulation-concept-result, .simulation-concept-item { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); background: var(--color-surface-muted); }
+.simulation-concept-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.simulation-concept-item-head strong { font-size: 15px; color: var(--color-text-primary); }
+.simulation-concept-item-head > .btn { margin-left: auto; }
+.simulation-concept-info { display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--color-text-body); word-break: keep-all; }
+.simulation-concept-info > .badge { justify-self: start; }
+.simulation-concept-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.simulation-concept-caution { color: var(--color-text-secondary); }
+.simulation-concept-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.simulation-concept-item textarea.form-control { min-height: 64px; background: var(--color-surface); }
+
+/* 저장 · 불러오기 모달 */
+.simulation-save-project { margin-bottom: var(--space-4); font-size: var(--font-size-label); color: var(--color-text-body); word-break: keep-all; }
+.simulation-save-project:empty { display: none; }
+.simulation-load-modal .modal-body { display: grid; gap: var(--space-3); }
+.simulation-load-modal .tabs { justify-self: start; }
+.simulation-load-help { margin-bottom: var(--space-2); }
+.simulation-version-list { display: grid; gap: 6px; max-height: min(46vh, 420px); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.simulation-version-item label { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); cursor: pointer; transition: background var(--transition-base); }
+.simulation-version-item label:hover { background: var(--color-background); }
+.simulation-version-item label:has(input:checked) { background: var(--color-primary-soft); }
+.simulation-version-item input { flex: none; accent-color: var(--color-primary-bright); }
+.simulation-version-main { display: grid; gap: 2px; min-width: 0; }
+.simulation-version-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.simulation-version-head strong { flex: none; font-variant-numeric: tabular-nums; color: var(--color-primary); }
+.simulation-version-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-primary); }
+.simulation-version-head .badge { flex: none; }
+/* 모달은 body 직속이라 본문 폭(container) 대신 화면 폭 기준입니다. */
+@media (max-width: 640px) {
+  .simulation-concept-search { flex-wrap: wrap; }
+  .simulation-concept-search .btn { flex: 1 1 100%; }
 }
