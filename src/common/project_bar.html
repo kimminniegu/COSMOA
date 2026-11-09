@@ -1,0 +1,43 @@
+{# 공통 프로젝트 선택 바 — 고객사 / 프로젝트를 한 줄로 고릅니다. 동작: common/project_bar.js, 표시 페이지: base.html #}
+{% macro bar() %}
+<section class="project-bar" id="project-bar" aria-label="프로젝트 선택">
+  <div class="project-bar__row">
+    <span class="project-bar__label">프로젝트</span>
+    <input class="form-control project-bar__customer" type="search" id="project-bar-customer" list="project-bar-customers" maxlength="200" placeholder="고객사 검색·선택" aria-label="고객사" autocomplete="off">
+    <datalist id="project-bar-customers"></datalist>
+    <span class="project-bar__sep" aria-hidden="true">/</span>
+    <select class="form-control project-bar__project" id="project-bar-project" aria-label="프로젝트(제품)" disabled><option value="">먼저 고객사를 선택하세요</option></select>
+    <button type="button" class="btn btn-soft btn-sm" id="project-bar-customer-new">새 고객사</button>
+    <button type="button" class="btn btn-soft btn-sm" id="project-bar-project-new" disabled>새 프로젝트</button>
+  </div>
+  <p class="form-error" id="project-bar-error" role="alert" hidden></p>
+</section>
+{% endmacro %}
+
+{# 모달은 .container 밖(body 직속)에 두어 항상 화면 가운데에 뜹니다 #}
+{% macro modal() %}
+<div class="modal-backdrop" id="project-bar-modal" role="dialog" aria-modal="true" aria-labelledby="project-bar-modal-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="project-bar-modal-title">새 프로젝트</h3>
+      <button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="project-bar-name" id="project-bar-name-label">이름</label>
+        <input class="form-control" id="project-bar-name" maxlength="200" autocomplete="off">
+      </div>
+      <div class="form-group" id="project-bar-due-group">
+        <label class="form-label" for="project-bar-due">납기일 (선택)</label>
+        <input class="form-control" type="date" id="project-bar-due">
+        <p class="form-help">새 프로젝트는 ‘제안 · 진행’ 상태로 만들어져요.</p>
+      </div>
+      <p class="form-error" id="project-bar-modal-error" role="alert" hidden></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" data-modal-close>취소</button>
+      <button class="btn btn-primary" type="button" id="project-bar-save">만들기</button>
+    </div>
+  </div>
+</div>
+{% endmacro %}

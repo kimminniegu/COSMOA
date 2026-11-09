@@ -28,6 +28,9 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
   {% set ep = request.endpoint %}
+  {% import "common/project_bar.html" as project_bar %}
+  {# 공통 프로젝트 선택 바 — 홈을 제외한 업무 탭에만 표시합니다 #}
+  {% set show_project_bar = ep in ('margin', 'dev_request', 'regulatory', 'simulation') %}
 
   {% macro brand() %}
   <a class="app-brand" href="{{ url_for('home') }}" title="COSMOA 홈">
@@ -107,6 +110,7 @@
 
   <div class="app-main">
     <main class="container">
+      {% if show_project_bar %}{{ project_bar.bar() }}{% endif %}
       {% block content %}{% endblock %}
     </main>
     <footer class="app-footer">© COSTD · COSMOA</footer>
@@ -172,7 +176,10 @@
     </div>
   </div>
 
+  {% if show_project_bar %}{{ project_bar.modal() }}{% endif %}
+
   <script src="{{ url_for('asset', filename='common/common.js') }}"></script>
+  {% if show_project_bar %}<script src="{{ url_for('asset', filename='common/project_bar.js') }}"></script>{% endif %}
   {% block page_js %}{% endblock %}
   {% include "06_chatbot/chatbot_widget.html" ignore missing %}{# [F] AI 챗봇 우하단 위젯 — src/06_chatbot/ #}
 </body>
