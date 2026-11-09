@@ -38,6 +38,7 @@
 | 2.31 | 2026-09-26 | 좌측 입력 Card: Card가 내용보다 길 때 남는 높이를 물류비 ↔ 현재 견적 요약 사이에 몰지 않고 간격에 **고르게 나눔**(`fitAside` → `--margin-aside-flex`, 가중치 합 6.25, 한 단위 최대 40px — 더 남으면 요약 위로). 구분선 위(견적 조건 1행↔2행)와 아래(구분선 위아래·제조원가↔물류비·물류비↔요약)의 큰 간격은 같은 폭(가중치 1), 제목↔내용·라벨↔입력의 작은 간격도 같은 폭(가중치 0.25)으로 맞춤. 요소·순서는 그대로, 브라우저 높이 약 750px 이하는 기존 촘촘한 간격 유지 | C |
 | 2.32 | 2026-09-27 | 물류비를 **ODM 표준 패키징 프리셋**(`ODM_PACKAGING_PRESETS`, 5종: 세럼/앰플 30ml · 토너/에센스 100~150ml · 크림 50ml(단지) · 마스크팩(10매 세트박스) · 클렌징 폼/튜브 100~150ml)으로: 프리셋을 고르면 입수·부피·내륙·통관 단가·LCL 단가를 채우고 계산한 내륙물류비·해상운임을 FOB 물류비 총액·해상운임 칸에 **자동 반영**(주문수량을 바꿔도 즉시 재계산, 칸을 직접 고치면 그 값 우선, `물류비 자동 반영` 버튼으로 다시 연결). ERP 연동은 물류 값을 직접 보내지 않고 프리셋 id(`SERUM_30ML`)만 보내 `handlePackagingPresetChange`로 209카톤 · 3.14 CBM · 470,000원까지 세팅, Toast 문구 변경 | C |
 | 2.33 | 2026-11-09 | 재개발 계획 추가(**17장, 구현 예정**): 탭 값 전체 저장·불러오기, v1 원료 등급 대체 → 개발요청서 전달 기준. 변경 이력을 버전 순으로 정리, 9.1 응답 예시의 데모 계정 교체, 9.4 기준 환율 설명을 현재 동작에 맞춤 | C |
+| 2.34 | 2026-11-09 | 17장 구현 예정 내용 갱신: 저장 필드를 코드와 대조해 확정(17.3), 입력 오류 시 저장 불가, 불러오기 복원 규칙 추가(17.4) | C |
 
 ## 1. 페이지 목적
 
@@ -667,29 +668,84 @@ def margin_erp_cost(): ...                 # service.erp_cost() — 시연용 �
 
 ### 17.3 저장 대상
 
-공통 API `POST /api/projects/<project_id>/tabs/margin/versions`를 사용하며 마진 전용 저장 Route는 만들지 않습니다. 아래 필드 이름은 **제안**이며, 확정 시 `payloads.SCHEMAS`의 `("margin", 1)` 계약에 등록합니다.
+공통 API `POST /api/projects/<project_id>/tabs/margin/versions`를 사용하며 마진 전용 저장 Route는 만들지 않습니다. 아래 필드 구조는 마진 탭 기준으로 정한 값이며, `payloads.SCHEMAS`의 `("margin", 1)` 계약 등록은 공통 파일이라 공통 담당과 조율합니다. 화면 id의 `margin-` 접두사는 생략합니다.
 
-| 칸 | 내용 |
+**저장 조건**: 입력 오류로 계산이 멈춘 상태(`readInputs()`가 `error`를 반환)에서는 저장하지 않습니다. `outputs`가 이전 계산값으로 남기 때문입니다.
+
+**`inputs` — 저장 후 복원**
+
+| 저장 이름 | 화면 항목 | 코드 위치 |
+|---|---|---|
+| `quote.qty` / `quote.incoterm` | 주문수량 / 인코텀즈 | `qty` / `inco` |
+| `quote.margin_mode` | 마진율·마크업 | `st.mMode` |
+| `quote.target_margin` / `quote.min_margin` | 목표 / 최소 영업마진 (%) | `m2` / `m2min` |
+| `quote.base_fx` | 기준 환율 | `fx` |
+| `cost.raw` / `cost.proc` / `cost.pack` | 원가 3종 | 같은 id |
+| `cost.first_margin_mode` | 항목별·일괄 | `st.mInput` |
+| `cost.rate_raw` / `cost.rate_proc` / `cost.rate_pack` | 항목별 1차 마진율 (%) | `r-raw` / `r-proc` / `r-pack` |
+| `cost.rate_all` | 일괄 마진율 (%) | `m1` |
+| `cost.loss` / `cost.sagup` | 로스율 (%) / 부자재 사급 | 같은 id |
+| `cost.erp` | 품목 코드·이름, 동기화 시각, ERP 원본값 (미연동이면 `null`) | `erp` |
+| `logistics.logi_total` / `logistics.logi_rate` | FOB 물류비 / 물류 마진율 (%) | `logi` / `r-logi` |
+| `logistics.freight` / `logistics.insurance` | 해상운임 / 보험요율 (%) | `freight` / `ins` |
+| `logistics.preset` / `logistics.carton_qty` / `logistics.carton_cbm` | 프리셋 / 카톤당 입수 / 카톤 부피 | `cbm-preset` / `cbm-ea` / `cbm-box` |
+| `logistics.inland_per_cbm` / `logistics.lcl_per_cbm` | 내륙·통관 / LCL 단가 | `cbm-inland` / `cbm-lcl` |
+| `logistics.auto_logi` / `logistics.auto_freight` | 물류비 자동 반영 상태 | `logiAuto` |
+| `reverse.target_price` / `reverse.item_floor` | 바이어 목표가 / 양보 한계치 (%) | `target` / `item-floor` |
+| `reverse.adjust` | 직접 조정한 항목의 마진율만 (소수 비율, 예 0.15) | `st.adj` |
+| `reverse.ve.coat` / `reverse.ve.box` / `reverse.ve.raw` | VE 체크 3종 | `ve-coat` / `ve-box` / `ve-raw` |
+| `tier.moq` / `tier.moq_mode` / `tier.moq_surcharge` | MOQ / 정책 / 할증률 (%) | `st.moq` / `st.moqMode` / `st.moqSur` |
+| `tier.discounts` | 할인 구간 | `st.tiers` |
+| `tier.rows` | 가격표 행 (임시 '현재 주문' 행 제외) | `st.qtyRows` |
+| `fx_impact.contract_price` / `fx_impact.use_quote_price` | 계약 단가 / 현재 견적 단가 사용 | `fx-contract` / `fx-use-quote` |
+| `fx_impact.settle_fx` / `fx_impact.settle_touched` | 결제 환율 / 직접 변경 여부 | `st.fxSettle` / `st.fxTouched` |
+| `document.format` | 통합형·분리형·오픈북형 | `st.qMode` |
+| `document.absorb_on` / `document.absorb_cost` / `document.absorb_logi` / `document.absorb_unit` | 마진 흡수 옵션 | `abs-on` / `abs-c` / `abs-l` / `st.absUnit` |
+| `document.contact` | 담당자 이름·이메일 | `q-contact-name` / `q-contact-email` |
+| `document.buyer` | 고객사, 국가, Attn., 주소, 이메일 | `q-buyer-*` 5개 |
+| `document.named_place` / `document.place_touched` / `document.place_custom` | 지정 장소와 직접 선택 상태 | `q-place` / `placeTouched` / `placeCustom` |
+| `document.quote_no` / `document.validity_days` / `document.product` | 견적번호 / 유효기간 / 품목명 | `q-no` / `q-validity` / `q-product` |
+| `document.payment` / `document.lead_time` / `document.remarks` | 결제 조건 / 납기 / 비고 | `q-payment` / `q-lead` / `q-remarks` |
+
+**`outputs` — 저장 당시 기록 (복원에 사용하지 않음)**
+
+| 저장 이름 | 내용 |
 |---|---|
-| `context` | 고객사·프로젝트 id와 이름 사본 |
-| `inputs.quote` | 주문수량, 인코텀즈, 마진 계산 방식, 목표·최소 영업마진, 기준 환율 |
-| `inputs.cost` | 원가 3종, 1차 마진 입력 방식·마진율, 로스율, 사급, ERP 연동 상태(품목·동기화 시각·수정 여부) |
-| `inputs.logistics` | FOB 물류비, 물류 마진율, 해상운임, 보험요율, 포장 프리셋·입수·부피·단가, 자동 반영 상태(`logi`·`freight`) |
-| `inputs.reverse` | 바이어 목표가, 1차 마진 양보 한계치, 항목별 조정 마진율(`st.adj`), VE 체크(`coat`·`box`·`raw`) |
-| `inputs.tier` | MOQ·정책·할증률, 할인 구간(`st.tiers`), 가격표 행(`st.qtyRows`) |
-| `inputs.fx_impact` | 계약 단가, 현재 견적 단가 사용 여부, 결제 환율, 결제 환율 직접 변경 여부(`st.fxTouched`) |
-| `inputs.document` | 견적서 형식, 마진 흡수 옵션·금액·표시 통화, 견적서 팝업 입력값 |
-| `outputs` | 저장 당시 계산·판정 결과 사본(단가, 마진 지표, 역제안 판정 등)과 요청서 전달 문구(17.5) |
-| `meta` | 화면 구조 버전 등 부가 정보 |
+| `quote` | USD·FOB·원화 단가, 원가 합계, 공급가, 개당 물류비, 할인·할증, 1차·영업·총 마진 |
+| `quote_document` | 견적서 품목, 원가 구성, 합계 (`st.quote`) |
+| `reverse` | 판정, 승인 단계, 영업마진 적용 전후, 부족·여유 금액, 기준가 4개, VE 절감액, 조정 합계 |
+| `tier` | 수량별 단가, 영업마진, 주문 가능 여부 |
+| `fx_impact` | 실현 영업마진, 환차손익, 방어 단가, 마지노선 환율 3개 |
+| `cbm` | 카톤 수, CBM |
+| `requisition_ve` | 원료 등급 대체 여부와 요청서 전달 문구 (17.5) |
 
-**저장하지 않는 화면 상태**: 현재 보던 탭, 접이식 펼침, 팝업 열림, 로딩·Toast·입력 오류 표시, 실시간 TTB 조회값.
+`context`에는 고객사·프로젝트 id와 이름 사본, `meta`에는 화면 구조 버전을 넣습니다.
+
+**저장하지 않는 값**
+
+| 항목 | 이유 |
+|---|---|
+| `q-company` | 서버가 항상 `service.COMPANY`를 사용 |
+| `q-inco`, `q-place-sel` | 좌측 인코텀즈와 `q-place`에서 다시 계산 |
+| `fx-settle`, `fx-settle-input`, `adj-*` 입력칸 | `st` 값을 표시만 하는 칸 |
+| `qty-add` | 추가 버튼을 누르기 전의 임시 입력 |
+| 가격표의 임시 '현재 주문' 행 | 화면이 자동으로 만드는 행 |
+| 실시간 TTB 조회값 | 저장 시점의 값이 아닌 조회값 |
+| 현재 탭, 접이식 펼침, 팝업 열림, 로딩·Toast·입력 오류 표시 | 화면 상태 |
 
 ### 17.4 불러오기
 
-- 저장된 `inputs`를 입력 칸과 `st`에 채운 뒤 `render()`로 다시 계산합니다. `outputs`는 저장 당시 기록이며 화면 계산의 원천으로 쓰지 않습니다.
-- 불러온 기준 환율을 첫 TTB 조회가 덮어쓰지 않도록, 불러오기 시 `fxAuto`를 `false`로 둡니다.
-- 물류비 자동 반영 상태(`logiAuto`)를 저장값으로 복원해, 불러온 물류비가 CBM 추정값으로 바뀌지 않게 합니다.
-- 저장 시 불러온 저장본을 `based_on_id`로 보냅니다.
+저장된 `inputs`를 입력 칸과 `st`에 채운 뒤 `render()`로 다시 계산합니다. `outputs`는 저장 당시 기록이며 화면 계산의 원천으로 쓰지 않습니다. 복원은 아래 규칙을 지킵니다.
+
+1. `fxAuto`를 `false`로 둡니다. 그렇지 않으면 첫 TTB 조회가 불러온 기준 환율을 덮어씁니다.
+2. 포장 값은 입력 칸에 직접 넣고 `logiAuto`를 저장값으로 복원합니다. `handlePackagingPresetChange`를 호출하면 입수·단가와 자동 반영 상태가 바뀝니다.
+3. 지정 장소는 인코텀즈를 반영한 `render()` 뒤에 복원합니다. 인코텀즈 그룹이 바뀌면 `syncPlace`가 장소를 기본값으로 되돌리기 때문입니다.
+4. 마진 흡수 금액도 `render()` 뒤에 복원합니다. 슬라이더 최댓값이 정해지기 전에 넣으면 브라우저가 값을 잘라냅니다.
+5. 할인 구간은 `drawTiers()`로 다시 그리고, MOQ·할증률은 `st`와 입력 칸을 함께 채웁니다. 버튼 묶음은 활성 표시와 관련 칸 표시(일괄 마진 행, 계산 방식 안내)까지 갱신합니다.
+6. 저장본의 담당자·견적번호도 그대로 복원합니다. 다른 사용자가 불러온 경우 PDF 발행 전에 견적서 팝업에서 확인·수정합니다.
+7. 저장 시 불러온 저장본을 `based_on_id`로 보냅니다.
+
+구현 시 `outputs` 값은 현재 각 render 함수 안에만 있으므로, 렌더링 중 결과를 한곳에 모으는 구조를 추가합니다.
 
 ### 17.5 개발요청서 전달
 
