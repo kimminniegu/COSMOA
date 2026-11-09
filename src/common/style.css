@@ -1012,3 +1012,21 @@ body.is-modal-open { overflow: hidden; }
 /* 브랜드 로고 이미지 변형 (사이드바 상단·회사소개 모달): 파란 배경 없이 COSTD 클로버 마크 표시 */
 .app-brand__logo--img { background: none; box-shadow: none; }
 .app-brand__logo--img img { display: block; width: 34px; height: 34px; object-fit: contain; }
+
+/* 공통 프로젝트 선택 바 (고객사 / 프로젝트) — project_bar.html */
+.project-bar { margin-bottom: var(--space-6); }
+.project-bar__row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border: var(--border-default); border-radius: var(--radius-lg); background: var(--color-surface); }
+.project-bar__label { flex: none; margin-right: var(--space-2); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); color: var(--color-text-secondary); }
+.project-bar__sep { flex: none; color: var(--color-text-secondary); }
+.project-bar .form-control { min-width: 0; min-height: 40px; height: 40px; padding-top: 8px; padding-bottom: 8px; }
+.project-bar__customer { flex: 2 1 0; }
+.project-bar__project { flex: 3 1 0; text-overflow: ellipsis; }
+.project-bar .btn { flex: none; }
+.project-bar .form-error { margin: var(--space-2) 0 0; }
+@container page (max-width: 880px) {
+  .project-bar__row { flex-wrap: wrap; }
+  .project-bar__label { flex-basis: 100%; }
+  .project-bar__sep { display: none; }
+  .project-bar__customer, .project-bar__project { flex: 1 1 100%; }
+  .project-bar .btn { flex: 1 1 0; }
+}

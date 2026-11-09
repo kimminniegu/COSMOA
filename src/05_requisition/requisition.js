@@ -820,38 +820,9 @@
   window.addEventListener("beforeunload", (event) => {
     if (saved || editing() || state === "loading" || originalFile) { event.preventDefault(); event.returnValue = ""; }
   });
-  /* 프로젝트 선택 (고객사 → 프로젝트) — API: docs/api_contract.md 5장 */
-  const PROJECT_KEY = "cosmoa.requisition.project";
-  const stageNames = { proposal: "제안", development: "개발", order: "발주", production: "생산", shipping: "선적", completed: "완료" };
-  const stateNames = { active: "진행", hold: "홀드", drop: "드롭" };
-  let customers = [], customerNext = null, projects = [], projectNext = null, selectedCustomerId = null;
-  let customerQuery = "", customerRequest = 0, projectRequest = 0, searchTimer = null;
+  /* 프로젝트 연결 — 선택 UI 는 공통 프로젝트 바(common/project_bar.js)가 맡고, 여기서는 요청서 보호 규칙만 처리합니다. */
   const idOf = (item) => item ? item.id : null;
   function projectLabel(item) { return item.customer.name + " › " + item.name; }
-  function projectMeta(item) {
-    return "단계 " + (stageNames[item.stage] || item.stage) + " · 상태 " + (stateNames[item.state] || item.state) + " · " + (item.due_date ? "납기 " + item.due_date : "납기 미정");
-  }
-  function projectError(message = "", focus = null) {
-    $("project-error").textContent = message;
-    $("project-error").hidden = !message;
-    if (focus) focus.focus();
-  }
-  function apiMessage(result) {
-    if (result.status === 401) return "로그인이 만료됐어요. 페이지를 새로 고친 뒤 다시 로그인해 주세요.";
-    return (result.error && result.error.message) || "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
-  }
-  function showPicker(open) {
-    $("project-picker").hidden = !open;
-    $("project-toggle").setAttribute("aria-expanded", String(open));
-    $("project-toggle").textContent = open && project ? "닫기" : project ? "프로젝트 변경" : "프로젝트 선택";
-    $("project-toggle").hidden = open && !project;
-  }
-  function renderProject() {
-    $("project-current").textContent = project ? projectLabel(project) : "프로젝트를 선택하지 않았어요";
-    $("project-meta").textContent = project ? projectMeta(project) : "고객사와 프로젝트를 선택하면 이 요청서가 그 프로젝트에 연결돼요.";
-    $("project").classList.toggle("has-project", Boolean(project));
-    showPicker(!$("project-picker").hidden || !project);
-  }
   // 작성 중인 요청서가 다른 프로젝트로 넘어가지 않도록 바꾸기 전에 확인합니다. (상태는 바꾸지 않음)
   function projectChangeAllowed(next) {
     if (!hasDocument()) return true;
@@ -862,7 +833,7 @@
     return !next || confirm("작성 중인 요청서를 ‘" + projectLabel(next) + "’ 프로젝트에 연결할까요?\n" +
       "고객사 칸은 연결 프로젝트의 고객사(‘" + next.customer.name + "’)로 바뀌어요.");
   }
-  function commitProject(next) {
+  function applyProject(next) {
     if (hasDocument()) {
       if (documentProject && idOf(next) !== documentProject.id) {
         if (controller) controller.abort();
@@ -878,9 +849,7 @@
       }
     }
     project = next;
-    try { next ? sessionStorage.setItem(PROJECT_KEY, String(next.id)) : sessionStorage.removeItem(PROJECT_KEY); } catch { /* 저장 불가 환경 무시 */ }
     syncSettingCustomer();
-    renderProject();
     updateSummary();
   }
   // 변환 설정의 고객사: 프로젝트를 고르면 그 고객사(id 로 연결)로 고정하고, 이름을 따로 입력받지 않습니다.
@@ -896,146 +865,12 @@
       $("setting-customer-help").textContent = "입력한 고객사를 우선 적용해요. 프로젝트를 고르면 그 고객사로 바뀌어요.";
     }
   }
-  function fillSelect(el, items, placeholder, label, selected) {
-    el.innerHTML = '<option value="">' + escape(placeholder) + "</option>" + items.map((item) =>
-      '<option value="' + item.id + '"' + (item.id === selected ? " selected" : "") + ">" + escape(label(item)) + "</option>").join("");
-  }
-  function renderCustomers() {
-    fillSelect($("customer-select"), customers, customers.length ? "고객사를 선택하세요" : "등록된 고객사가 없어요 · 새 고객사를 만들어 주세요", (item) => item.name, selectedCustomerId);
-    $("customer-more").hidden = !customerNext;
-  }
-  function renderProjects() {
-    const el = $("project-select");
-    el.disabled = !selectedCustomerId;
-    $("project-new").disabled = !selectedCustomerId;
-    fillSelect(el, projects, !selectedCustomerId ? "먼저 고객사를 선택하세요" : projects.length ? "프로젝트를 선택하세요" : "프로젝트가 없어요 · 새 프로젝트를 만들어 주세요",
-      (item) => item.name + " · " + (stageNames[item.stage] || item.stage) + "/" + (stateNames[item.state] || item.state) + (item.due_date ? " · 납기 " + item.due_date : ""), idOf(project));
-    $("project-more").hidden = !projectNext;
-  }
-  async function loadCustomers(append = false) {
-    const request = ++customerRequest;
-    const keep = customers.find((item) => item.id === selectedCustomerId) || (project && project.customer);
-    const result = await Common.api("GET", "/api/customers?limit=100" + (customerQuery ? "&q=" + encodeURIComponent(customerQuery) : "") +
-      (append && customerNext ? "&after=" + customerNext : ""));
-    if (request !== customerRequest) return;   // 그 사이 검색어가 바뀜
-    if (!result.ok) return projectError(apiMessage(result));
-    customers = append ? [...customers, ...result.data.items] : result.data.items;
-    customerNext = result.data.next_after;
-    if (keep && keep.id === selectedCustomerId && !customers.some((item) => item.id === keep.id)) customers.unshift(keep);   // 선택한 고객사는 검색과 상관없이 유지
-    renderCustomers();
-  }
-  async function loadProjects(append = false) {
-    const request = ++projectRequest, customerId = selectedCustomerId;
-    if (!append) { projects = []; projectNext = null; }
-    renderProjects();
-    if (!customerId) return;
-    const result = await Common.api("GET", "/api/customers/" + customerId + "/projects?limit=100" + (append && projectNext ? "&before=" + projectNext : ""));
-    if (request !== projectRequest) return;   // 그 사이 다른 고객사를 고름
-    if (!result.ok) return projectError(apiMessage(result));
-    projects = append ? [...projects, ...result.data.items] : result.data.items;
-    projectNext = result.data.next_before;
-    if (project && project.customer.id === customerId && !projects.some((item) => item.id === project.id)) projects.unshift(project);
-    renderProjects();
-  }
-  async function selectCustomer(customerId) {
-    projectError();
-    if (customerId === selectedCustomerId) return true;
-    if (project && !projectChangeAllowed(null)) { renderCustomers(); return false; }
-    selectedCustomerId = customerId;
-    if (project) commitProject(null);
-    toggleCreate("project", false);
-    renderCustomers();
-    await loadProjects();
-    return true;
-  }
-  $("project-toggle").addEventListener("click", () => {
-    showPicker($("project-picker").hidden);
-    if (!$("project-picker").hidden) $("customer-select").focus();
-  });
-  $("customer-select").addEventListener("change", (event) => selectCustomer(Number(event.target.value) || null));
-  $("project-select").addEventListener("change", (event) => {
-    projectError();
-    const next = projects.find((item) => item.id === Number(event.target.value)) || null;
-    if (!projectChangeAllowed(next)) { renderProjects(); return; }
-    commitProject(next);
-    if (next) { showPicker(false); $("project-toggle").focus(); }
-  });
-  $("customer-search").addEventListener("input", () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { customerQuery = $("customer-search").value.trim(); loadCustomers(); }, 250);
-  });
-  $("customer-more").addEventListener("click", () => loadCustomers(true));
-  $("project-more").addEventListener("click", () => loadProjects(true));
-  function toggleCreate(kind, open) {
-    $(kind + "-create").hidden = !open;
-    $(kind + "-new").setAttribute("aria-expanded", String(open));
-    if (open) $(kind + "-name").focus();
-    else { $(kind + "-name").value = ""; if (kind === "project") $("project-due").value = ""; }
-  }
-  $("customer-new").addEventListener("click", () => toggleCreate("customer", $("customer-create").hidden));
-  $("project-new").addEventListener("click", () => toggleCreate("project", $("project-create").hidden));
-  $("customer-cancel").addEventListener("click", () => toggleCreate("customer", false));
-  $("project-cancel").addEventListener("click", () => toggleCreate("project", false));
-  async function busy(button, task) {
-    if (button.disabled) return;
-    button.disabled = true;
-    try { await task(); } finally { button.disabled = false; }
-  }
-  $("customer-save").addEventListener("click", () => busy($("customer-save"), async () => {
-    projectError();
-    const name = $("customer-name").value.trim();
-    if (!name) return projectError("고객사명을 입력해 주세요.", $("customer-name"));
-    const found = await Common.api("GET", "/api/customers?limit=100&q=" + encodeURIComponent(name));
-    const same = found.ok && found.data.items.find((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-    if (same && !confirm("같은 이름의 고객사 ‘" + same.name + "’가 이미 있어요. 그래도 새로 만들까요?")) return;
-    if (project && !projectChangeAllowed(null)) return;
-    const result = await Common.api("POST", "/api/customers", { name });
-    if (!result.ok) return projectError(apiMessage(result), $("customer-name"));
-    toggleCreate("customer", false);
-    await loadCustomers();
-    if (!customers.some((item) => item.id === result.data.customer.id)) customers.push(result.data.customer);
-    await selectCustomer(result.data.customer.id);
-    toggleCreate("project", true);   // 새 고객사에는 프로젝트가 없으므로 바로 만들 수 있게
-  }));
-  $("project-save").addEventListener("click", () => busy($("project-save"), async () => {
-    projectError();
-    const name = $("project-name").value.trim(), due = $("project-due").value;
-    if (!selectedCustomerId) return projectError("먼저 고객사를 선택해 주세요.", $("customer-select"));
-    if (!name) return projectError("프로젝트(제품)명을 입력해 주세요.", $("project-name"));
-    const customer = customers.find((item) => item.id === selectedCustomerId) || { name: "" };
-    if (!projectChangeAllowed({ id: -1, name, customer })) return;
-    const result = await Common.api("POST", "/api/customers/" + selectedCustomerId + "/projects", { name, due_date: due || null });
-    if (!result.ok) return projectError(apiMessage(result), $("project-name"));
-    toggleCreate("project", false);
-    commitProject(result.data.project);
-    await loadProjects();
-    showPicker(false);
-    $("project-toggle").focus();
-  }));
-  ["customer", "project"].forEach((kind) => {
-    $(kind + "-create").addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.isComposing && event.target.tagName === "INPUT") { event.preventDefault(); $(kind + "-save").click(); }
-      if (event.key === "Escape") { event.stopPropagation(); toggleCreate(kind, false); $(kind + "-new").focus(); }
-    });
-  });
-  async function initProject() {
-    let stored = null;
-    try { stored = Number(sessionStorage.getItem(PROJECT_KEY)) || null; } catch { /* 저장 불가 환경 무시 */ }
-    if (stored) {   // 새로 고침 후 같은 탭에서 고른 프로젝트를 다시 확인 (없어졌거나 보관됐으면 선택 해제)
-      const result = await Common.api("GET", "/api/projects/" + stored);
-      if (result.ok && !result.data.project.archived) {
-        selectedCustomerId = result.data.project.customer.id;
-        commitProject(result.data.project);
-      } else if (result.ok || result.status === 404) commitProject(null);
-      else projectError(apiMessage(result));
-    }
-    renderProject();
-    await loadCustomers();
-    await loadProjects();
+  if (window.ProjectBar) {
+    ProjectBar.setGuard(projectChangeAllowed);
+    ProjectBar.onChange(applyProject);
   }
   // 저장용 payload (계약 v1) — 저장 버튼 연결(다음 작업)과 테스트에서 씁니다.
   // 화면에서 지금 고른 프로젝트가 아니라 요청서의 연결 프로젝트(documentProject)로 만듭니다.
   root.buildRequisitionPayload = () => RequisitionPayload.build(current(), documentProject, options);
   render();
-  initProject();
 })();
