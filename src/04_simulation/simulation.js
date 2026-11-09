@@ -1196,13 +1196,36 @@ function renderConceptSummary() {
     const target = [work.requisition.texture && `목표 질감 ${work.requisition.texture}`, work.requisition.viscosity && `점도 ${work.requisition.viscosity}`].filter(Boolean).join(' · ');
     note.textContent = `불러온 개발요청서 · ${work.requisition.title} (v${work.requisition.version_no})${target ? ` — ${target}` : ''}`;
   }
+  // 원료마다 카드 한 장: 이름·출처 / 효능 태그 / 원료 설명 / 내 코멘트. 누르면 편집 모달에서 그 원료로 이동합니다.
   $('concept-chips').replaceChildren(...concepts.map(item => {
-    const chip = el('li', 'simulation-concept-chip');
-    chip.append(el('strong', null, item.name));
-    const tags = item.info?.efficacy_tags?.slice(0, 2) || [];
-    if (tags.length) chip.append(el('small', null, tags.join('·')));
-    chip.title = [item.comment, item.info?.summary].filter(Boolean).join('\n');
-    return chip;
+    const li = el('li');
+    const card = el('button', 'simulation-concept-card');
+    card.type = 'button';
+    card.dataset.source = item.source;
+    card.setAttribute('aria-label', `${item.name} 코멘트 편집`);
+    const head = el('span', 'simulation-concept-card-head');
+    head.append(el('strong', null, item.name), el('span', 'simulation-concept-card-source', SOURCE_LABELS[item.source]));
+    card.append(head);
+    const tags = item.info?.efficacy_tags || [];
+    if (tags.length) {
+      const row = el('span', 'simulation-concept-tags');
+      tags.slice(0, 4).forEach(tag => row.append(el('span', 'badge badge-primary', tag)));
+      card.append(row);
+    }
+    const desc = [item.info?.summary, item.info?.properties].filter(Boolean).join(' ');
+    if (desc) card.append(el('span', 'simulation-concept-card-desc', desc));
+    if (item.info?.caution) card.append(el('span', 'simulation-concept-card-caution', `주의 · ${item.info.caution}`));
+    if (item.comment) card.append(el('span', 'simulation-concept-card-comment', item.comment));
+    card.addEventListener('click', () => {
+      window.Common.openModal('simulation-concept-modal');
+      requestAnimationFrame(() => {
+        const target = $('concept-list').querySelector(`[data-concept-name="${CSS.escape(item.name)}"]`);
+        target?.scrollIntoView({ block: 'center' });
+        target?.querySelector('textarea')?.focus({ preventScroll: true });
+      });
+    });
+    li.append(card);
+    return li;
   }));
   $('concept-overall').textContent = overallComment;
   $('concept-overall').hidden = !overallComment;
