@@ -1196,7 +1196,8 @@ function renderConceptSummary() {
     const target = [work.requisition.texture && `목표 질감 ${work.requisition.texture}`, work.requisition.viscosity && `점도 ${work.requisition.viscosity}`].filter(Boolean).join(' · ');
     note.textContent = `불러온 개발요청서 · ${work.requisition.title} (v${work.requisition.version_no})${target ? ` — ${target}` : ''}`;
   }
-  // 원료마다 카드 한 장: 이름·출처 / 효능 태그 / 원료 설명 / 내 코멘트. 누르면 편집 모달에서 그 원료로 이동합니다.
+  // 원료마다 카드 한 장: 이름·출처 / 효능 태그 / 내 코멘트. 원료 설명·주의는 카드에 펼치지 않고
+  // 마우스를 올리면(title) 보이며, 누르면 편집 모달에서 그 원료(전체 정보)로 이동합니다.
   $('concept-chips').replaceChildren(...concepts.map(item => {
     const li = el('li');
     const card = el('button', 'simulation-concept-card');
@@ -1212,10 +1213,8 @@ function renderConceptSummary() {
       tags.slice(0, 4).forEach(tag => row.append(el('span', 'badge badge-primary', tag)));
       card.append(row);
     }
-    const desc = [item.info?.summary, item.info?.properties].filter(Boolean).join(' ');
-    if (desc) card.append(el('span', 'simulation-concept-card-desc', desc));
-    if (item.info?.caution) card.append(el('span', 'simulation-concept-card-caution', `주의 · ${item.info.caution}`));
     if (item.comment) card.append(el('span', 'simulation-concept-card-comment', item.comment));
+    card.title = [item.info?.summary, item.info?.caution && `주의 · ${item.info.caution}`, '눌러서 코멘트 편집'].filter(Boolean).join('\n');
     card.addEventListener('click', () => {
       window.Common.openModal('simulation-concept-modal');
       requestAnimationFrame(() => {

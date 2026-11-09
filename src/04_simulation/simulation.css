@@ -144,8 +144,9 @@
 @media (min-width: 1200px) and (min-height: 700px) {
   /* 상단 시뮬레이션 8 : 하단 용기·제안 2. 하단 행은 용기 적합성 카드가 필요로 하는 높이 아래로 줄지 않습니다. */
   /* 미리보기 행은 최소 505px. 큰 화면에서는 남는 높이만큼 더 커지고, 낮은 화면에서는 페이지가 조금 길어져 세로 스크롤이 생깁니다.
-     하단 세 칸은 최소 300px — 제안 가이드·컨셉원료 코멘트는 넘치면 칸 안에서 스크롤합니다. (475px ≈ 제목·프로젝트 바·하단 행·간격의 합) */
-  .simulation-page { --simulation-preview-h: max(505px, calc(100dvh - 475px)); --simulation-bottom-h: 300px; display: grid; grid-template-rows: auto auto var(--simulation-preview-h) minmax(var(--simulation-bottom-h), auto); gap: var(--layout-card-gap); }
+     하단 세 칸은 최소 255px(제안 가이드 기본 문구가 딱 들어가는 높이) — 제안 가이드·컨셉원료 코멘트는 넘치면 칸 안에서 스크롤합니다.
+     (475px ≈ 제목·프로젝트 바·하단 행·간격의 합) */
+  .simulation-page { --simulation-preview-h: max(505px, calc(100dvh - 475px)); --simulation-bottom-h: 255px; display: grid; grid-template-rows: auto auto var(--simulation-preview-h) minmax(var(--simulation-bottom-h), auto); gap: var(--layout-card-gap); }
   .simulation-bottom-grid .card-header { padding-top: var(--space-4); }
   .simulation-bottom-grid .card-header + .card-body { padding-top: var(--space-3); padding-bottom: var(--space-4); }
   .simulation-bottom-grid .form-control-sm, .simulation-bottom-grid .btn-sm { height: 32px; }
@@ -327,10 +328,7 @@
 .simulation-concept-card-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
 .simulation-concept-card-source { flex: none; font-size: 11px; color: var(--color-text-secondary); }
 .simulation-concept-card .simulation-concept-tags .badge { height: 22px; padding: 0 8px; font-size: 11px; }
-.simulation-concept-card-desc, .simulation-concept-card-caution, .simulation-concept-card-comment { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.5; word-break: keep-all; }
-.simulation-concept-card-desc { color: var(--color-text-body); }
-.simulation-concept-card-caution { -webkit-line-clamp: 1; color: var(--color-text-secondary); }
-.simulation-concept-card-comment { padding-top: 6px; border-top: 1px dashed var(--color-border-strong); color: var(--color-text-strong); white-space: pre-line; }
+.simulation-concept-card-comment { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.5; word-break: keep-all; padding-top: 6px; border-top: 1px dashed var(--color-border-strong); color: var(--color-text-strong); white-space: pre-line; }
 .simulation-concept-card-comment::before { content: '코멘트 · '; font-weight: var(--font-weight-bold); color: var(--color-primary); }
 .simulation-concept-overall { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--color-primary-soft); font-size: 13px; line-height: 1.5; color: var(--color-text-body); white-space: pre-line; word-break: keep-all; }
 .simulation-concept-overall::before { content: '전체 코멘트\A'; font-size: 11px; font-weight: var(--font-weight-bold); color: var(--color-primary); }
