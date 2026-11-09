@@ -19,7 +19,7 @@ import re
 from src.common.payloads import PayloadError
 
 from .schema import (APPLICATION_TYPES, CONCEPT_KINDS, FIELDS, LEGACY_PRICE_TIERS, PRODUCT_TYPES, REQUEST_SOURCES,
-                     SAMPLE_TYPES, SKINCARE_TYPES, VISCOSITY_LEVELS, blank_inputs)
+                     SAMPLE_TYPES, SKINCARE_TYPES, TEXTURE_TAGS, VISCOSITY_LEVELS, blank_inputs)
 
 TEXT_MAX = 10000          # 서술·한 줄 입력 (화면 maxlength 와 같음)
 LIST_MAX = 50             # 목록 항목 수 (화면·자동변환과 같음)
@@ -100,6 +100,13 @@ def _string_list(value, path):
         seen.add(folded)
 
 
+def _texture_tags(value, path):
+    _string_list(value, path)
+    for i, item in enumerate(value):
+        if item not in TEXTURE_TAGS:
+            _fail(f"허용하지 않는 값입니다. ({', '.join(TEXTURE_TAGS)})", f"{path}[{i}]", "invalid_value")
+
+
 def _prices(value, path):
     if not isinstance(value, list):
         _fail("목록이어야 합니다.", path)
@@ -157,7 +164,7 @@ def _concept(value, path):
 
 _KIND_RULES = {
     "text": _text, "textarea": _text, "list": _string_list, "prices": _prices, "concept": _concept,
-    "viscosity": _text,
+    "viscosity": _text, "texture": _text, "texture_tags": _texture_tags,
     "request_source": _string_enum(REQUEST_SOURCES), "sample_type": _string_enum(SAMPLE_TYPES),
     "type": _string_enum(PRODUCT_TYPES), "skincare_type": _string_enum(SKINCARE_TYPES),
     "application": _string_enum(APPLICATION_TYPES), "viscosity_level": _string_enum(VISCOSITY_LEVELS),

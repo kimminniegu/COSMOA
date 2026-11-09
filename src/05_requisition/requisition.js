@@ -15,7 +15,7 @@
   const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.concept_notes", "ingredients.other_notes", "rnd_check_requests"]);
   const wideFields = new Set(["target_prices", "ingredients.concept", "product_development.container_reference"]);
   // 입력 칸 하나로 끝나지 않는 항목 (목록 편집·선택값+서술)
-  const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity"]);
+  const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity", "product_development.texture"]);
   const inputPaths = RequisitionPayload.inputPaths(options);
   const chipFields = definitions.filter(([, , kind]) => kind === "list").map(([key]) => key);
   const requiredFields = ["customer", "request_source", "product_name", "sample_request_type", "product_type", "export_countries", "quality.tests"];
@@ -58,6 +58,16 @@
         (item.efficacy_tags.length ? " (효능: " + item.efficacy_tags.join(", ") + ")" : "")).join(", ") : "";
     }).filter(Boolean).join(separator);
   }
+  const bandText = (key) => {
+    const band = options.viscosity_bands.find((item) => item.key === key);
+    return band ? band.label + " – " + band.example : "";
+  };
+  const withBuyerText = (value, text) => [value, filled(text) ? "바이어 원문: " + text : ""].filter(filled).join("\n");
+  const provenanceNeedsReview = (data, key) => (data.field_provenance || []).some((item) => item.field_key === key && item.review_status === "needs_review");
+  // 구간 없이 원문만 있거나(예전 자유 서술 포함), AI 가 추정한 값을 아직 확인하지 않은 경우
+  const viscosityNeedsReview = (data) => (filled(data.product_development.viscosity) && !data.product_development.viscosity_level) ||
+    provenanceNeedsReview(data, "product_development.viscosity_level");
+  const textureNeedsReview = (data) => provenanceNeedsReview(data, "product_development.texture_tags");
   function legacyNote(data) {
     const tier = data.legacy && data.legacy.target_price_tier;
     return tier ? '<p class="form-help requisition-legacy-note">원문 가격대 표기: ' + escape(options.legacy_price_tiers[tier] || tier) +
@@ -77,6 +87,8 @@
     (data.field_provenance || []).filter((item) => item.review_status === "needs_review").forEach((item) => {
       if (labels[item.field_key]) result.push(labels[item.field_key]);
     });
+    if (viscosityNeedsReview(data)) result.push(labels["product_development.viscosity"]);
+    if (textureNeedsReview(data)) result.push(labels["product_development.texture"]);
     return [...new Set(result)];
   }
   function fieldValue(data, key) {
@@ -87,7 +99,10 @@
     if (key === "target_prices") return priceText(data.target_prices);
     if (key === "ingredients.concept") return conceptText(data.ingredients.concept);
     if (key === "product_development.viscosity") {
-      return [data.product_development.viscosity_level, data.product_development.viscosity].filter(filled).join(" · ");
+      return withBuyerText(bandText(data.product_development.viscosity_level), data.product_development.viscosity);
+    }
+    if (key === "product_development.texture") {
+      return withBuyerText(data.product_development.texture_tags.join(", "), data.product_development.texture);
     }
     if (key === "buyer_prohibited_ingredients") return [...data[key], ...data.regulatory_restricted_ingredients].join(", ");
     const value = get(data, key);
@@ -128,6 +143,8 @@
       control = conceptEditor(data);
     } else if (key === "product_development.viscosity") {
       control = viscosityEditor(data);
+    } else if (key === "product_development.texture") {
+      control = textureEditor(data);
     } else if (key === "product_type") {
       control = '<select class="form-control" id="requisition-input-product_type" data-field="product_type" aria-required="true"><option value="">선택하세요</option>' +
         types.map((value) => '<option value="' + value + '"' + (data[key] === value ? " selected" : "") + ">" + (value === "기타" ? "기타 / 직접 입력" : value) + "</option>").join("") +
@@ -164,6 +181,7 @@
     }
     const provenance = (data.field_provenance || []).find((item) => item.field_key === key);
     let reviewStatus = provenance ? provenance.review_status : "";
+    if ((key === "product_development.viscosity" && viscosityNeedsReview(data)) || (key === "product_development.texture" && textureNeedsReview(data))) reviewStatus = "needs_review";
     if (requiredMissing) reviewStatus = "missing";
     else if (!editing() && !required && !filled(fieldValue(data, key)) && reviewStatus !== "not_applicable") reviewStatus = "needs_review";
     if (!editing() && reviewStatus) {
@@ -208,12 +226,17 @@
     }).join("") + '<p class="form-help">함유 필수 여부를 모르면 ‘미확인’으로 두세요. 효능 태그는 쉼표로 구분해 자유롭게 입력해요.</p>';
   }
   function viscosityEditor(data) {
-    const levels = options.viscosity_levels, level = data.product_development.viscosity_level;
-    return '<select class="form-control" id="requisition-input-product_development.viscosity_level" data-field="product_development.viscosity_level" aria-label="점도 선택값"' + (levels.length ? "" : " disabled") + ">" +
-      (levels.length ? '<option value="">선택 안 함</option>' + levels.map((value) => '<option value="' + escape(value) + '"' + (level === value ? " selected" : "") + ">" + escape(value) + "</option>").join("")
-        : '<option value="">선택값 확정 전</option>') + "</select>" +
-      '<input class="form-control mt-3" id="requisition-input-product_development.viscosity" data-field="product_development.viscosity" maxlength="10000" value="' + escape(data.product_development.viscosity) + '" placeholder="점도를 서술형으로 입력" aria-label="점도 서술">' +
-      (levels.length ? "" : '<p class="form-help">점도 드롭다운 값 목록은 아직 확정 전이에요. 지금은 서술형으로 입력해 주세요.</p>');
+    const level = data.product_development.viscosity_level;
+    return '<select class="form-control" id="requisition-input-product_development.viscosity_level" data-field="product_development.viscosity_level" aria-label="점도 구간"><option value="">선택 안 함</option>' +
+      options.viscosity_bands.map((band) => '<option value="' + escape(band.key) + '"' + (level === band.key ? " selected" : "") + ">" + escape(bandText(band.key)) + "</option>").join("") + "</select>" +
+      '<input class="form-control mt-3" id="requisition-input-product_development.viscosity" data-field="product_development.viscosity" maxlength="10000" value="' + escape(data.product_development.viscosity) + '" placeholder="바이어 원문 (표현 그대로)" aria-label="점도 바이어 원문">' +
+      '<p class="form-help">구간을 고르고, 바이어가 쓴 표현은 원문 칸에 그대로 남겨요.</p>';
+  }
+  function textureEditor(data) {
+    const selected = data.product_development.texture_tags;
+    return '<div class="requisition-options" role="group" aria-label="텍스처 태그">' + options.texture_tags.map((tag) =>
+      '<label class="form-check"><input type="checkbox" data-texture-tag="' + escape(tag) + '"' + (selected.includes(tag) ? " checked" : "") + "> " + escape(tag) + "</label>").join("") + "</div>" +
+      '<textarea class="form-control mt-3" rows="3" maxlength="10000" id="requisition-input-product_development.texture" data-field="product_development.texture" placeholder="바이어 원문 (표현 그대로)" aria-label="텍스처 바이어 원문">' + escape(data.product_development.texture) + "</textarea>";
   }
   $("section-tabs").innerHTML = sectionTitles.map((title, index) =>
     '<button type="button" class="tab" id="requisition-section-tab-' + index + '" role="tab" aria-controls="requisition-section-' + index + '" aria-selected="false" tabindex="-1" data-section="' + index + '">' + escape(title) + '</button>').join("");
@@ -437,6 +460,14 @@
       item[prop] = prop === "must_contain" ? (el.value === "" ? null : el.value === "true")
         : prop === "efficacy_tags" ? [...new Set(el.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))] : el.value;
       markEdited("ingredients.concept");
+      updateSummary();
+      return;
+    }
+    if (editing() && el.dataset.textureTag !== undefined) {
+      const checked = new Set(draft.product_development.texture_tags);
+      if (el.checked) checked.add(el.dataset.textureTag); else checked.delete(el.dataset.textureTag);
+      draft.product_development.texture_tags = options.texture_tags.filter((tag) => checked.has(tag));
+      markEdited("product_development.texture_tags");
       updateSummary();
       return;
     }

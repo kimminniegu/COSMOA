@@ -113,6 +113,9 @@
     doc.buyer_prohibited_ingredients = strings(doc.buyer_prohibited_ingredients);
     doc.regulatory_restricted_ingredients = strings(doc.regulatory_restricted_ingredients);
     doc.quality.tests = strings(doc.quality.tests);
+    var bandKeys = options.viscosity_bands.map(function (band) { return band.key; });
+    if (bandKeys.indexOf(doc.product_development.viscosity_level) < 0) doc.product_development.viscosity_level = "";   // 예전 자유 서술은 원문 칸에 그대로
+    doc.product_development.texture_tags = strings(doc.product_development.texture_tags).filter(function (tag) { return options.texture_tags.indexOf(tag) >= 0; });
     doc.target_prices = doc.target_prices.filter(function (item) {
       return isObject(item) && typeof item.amount === "number" && typeof item.currency === "string";
     }).map(function (item) { return { amount: item.amount, currency: item.currency }; });

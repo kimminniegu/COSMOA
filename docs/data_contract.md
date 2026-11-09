@@ -223,7 +223,10 @@
       "coverage": "",
       "color_shade_reference": "",
       "other_requirements": "",
-      "viscosity_level": ""
+      "viscosity_level": "medium",
+      "texture_tags": [
+        "산뜻함"
+      ]
     },
     "buyer_prohibited_ingredients": [
       "Parabens"

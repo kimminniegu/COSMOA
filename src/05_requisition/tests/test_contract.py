@@ -92,7 +92,8 @@ class ContractTest(unittest.TestCase):
             ("inputs.export_countries", ["미국", " "], "invalid_payload"), ("inputs.export_countries", ["미국", "미국 "], "duplicate_value"),
             ("inputs.product_type", "마스크", "invalid_value"), ("inputs.request_source", "기타", "invalid_value"),
             ("inputs.product_type_detail", "에센스", "invalid_value"), ("inputs.product_development.application_type", "Spray", "invalid_value"),
-            ("inputs.product_development.viscosity_level", "중간", "invalid_value"),     # 선택값 미정 — 빈 값만
+            ("inputs.product_development.viscosity_level", "중간", "invalid_value"),     # 구간 key 만 허용
+            ("inputs.product_development.texture_tags", ["부드러움"], "invalid_value"), ("inputs.product_development.texture_tags", "산뜻함", "invalid_payload"),
             ("inputs.product_development.spf", "S" * 51, "invalid_payload"), ("inputs.product_name", "가" * 10001, "invalid_payload"),
             ("context.customer_id", "7", "invalid_value"), ("context.project_id", 0, "invalid_value"), ("context.project_id", True, "invalid_value"),
             ("context.creation_method", "copy", "invalid_value"), ("context.target_language", "xx", "invalid_value"),
@@ -282,12 +283,20 @@ class ScreenPayloadTest(unittest.TestCase):
         old["inputs"]["export_countries"] = "미국"
         old["inputs"]["ingredients"]["concept"] = [{"name": "Retinol"}, "x"]
         doc = self.restore(old)
+        self.assertEqual(doc["product_development"]["texture_tags"], [])
         self.assertEqual(doc["ingredients"]["concept_notes"], "")
         self.assertEqual(doc["product_development"]["viscosity"], "")
         self.assertEqual((doc["target_prices"], doc["export_countries"]), ([], []))
         self.assertEqual(doc["ingredients"]["concept"], [{"name": "Retinol", "kind": "necessary", "must_contain": None, "efficacy_tags": []}])
         empty = self.restore({"inputs": {}})
         self.assertEqual((empty["creation_method"], empty["target_language"], empty["reference_files"]), ("manual", "ko", []))
+
+    def test_old_free_text_viscosity_moves_to_buyer_text_only(self):
+        old = copy.deepcopy(EXAMPLE)
+        old["inputs"]["product_development"].update(viscosity="되직한 크림", viscosity_level="꽤 되직함")
+        del old["inputs"]["product_development"]["texture_tags"]
+        development = self.restore(old)["product_development"]
+        self.assertEqual((development["viscosity"], development["viscosity_level"], development["texture_tags"]), ("되직한 크림", "", []))
 
     def test_unlinked_document_cannot_build_payload(self):
         doc = self.converted_and_edited()
