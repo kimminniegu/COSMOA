@@ -2,6 +2,7 @@
 
 > **상태: 1·2단계 구현됨** — 1단계 테이블(0001·0002, 2-4)과 2단계 `tab_versions`·`final_history`·`version_links`(0003, 2-5)를 test·dev 에 적용했다. 공통 저장 API 는 [API 계약](api_contract.md).
 > 4단계 이후 테이블·화면 저장 연결은 **아직 구현되지 않았다. (구현 예정)** 로그인은 업무 DB `users` 를 쓴다 (`development.md` 2-1). production 은 미적용.
+> **임시저장 `tab_drafts`(2-6·3-7·8-9)는 설계만 확정했다 — 마이그레이션 없음, test·dev·production 어디에도 적용하지 않았다.**
 > 전체 범위·환경·실행 절차는 [개발 안내](development.md), 필드·payload 구조는 [데이터 계약](data_contract.md)을 따른다.
 > 표기(확정(FIX) / 확정(개발기준) / 기본설계 / 제안 / 미정)는 `development.md` 0-2 와 같다.
 
@@ -23,7 +24,7 @@
 
 ## 2. 테이블 목록과 구현 단계
 
-기본설계 18개 테이블을 유지한다. 단계 번호는 `development.md` 2장과 같다.
+기본설계 18개 테이블을 유지하고, 임시저장용 `tab_drafts` 1개를 더한다 (확정(개발기준), 2026-11 채택 — 2-6). 단계 번호는 `development.md` 2장과 같다.
 
 | 영역 | 테이블 | 한 행의 뜻 | 기록 방식 | 단계 |
 |---|---|---|---|---|
@@ -35,6 +36,7 @@
 | 저장본 | `tab_versions` | 네 탭 중 하나의 저장본 1개 | **추가만** | 2 ✅ |
 | 저장본 | `final_history` | 최종본 지정·해제 1번 | **추가만** | 2 ✅ |
 | 저장본 | `version_links` | 다른 탭 저장본 또는 규제 메모 내용을 실제 반영한 1건 | **추가만** | 2 (구조) ✅ / 4 (메모 출처 열) / 6 (사용) |
+| 임시저장 | `tab_drafts` | 한 사용자의 한 프로젝트·탭 임시저장 1개 (정식 저장본 아님) | **갱신·삭제 가능, 본인만** (3-7) | 3 (설계 확정, 미구현) |
 | 저장본 보조 | `requisition_ingredients` | 요청서 저장본의 원료 항목 1개 | **추가만** | 4 이후 |
 | 저장본 보조 | `cost_spec_changes` | 원가 저장본의 사양 변경(VE) 1개 | **추가만** | 4 |
 | 인허가 | `regulatory_notes` | 프로젝트별 규제 확인사항 메모 1건 | 수정 가능 (반영된 요청서·기록에는 영향 없음, 5-1) | 4 |
@@ -48,7 +50,7 @@
 
 넣지 않는 것 (기본설계): 탭별 전용 저장본 테이블, 최종본 포인터 테이블, 다형 연결 테이블, 첨부파일 테이블(파일 미저장), 사용자 설정 테이블(`users.home_widgets` 로 대체).
 `project_events` 는 **미정** — 이번 주 일정 위젯이 납기일 외 직접 등록 일정을 다룰지에 따라 판단한다.
-✅ = 마이그레이션 적용됨 (test·dev).
+✅ = 마이그레이션 적용됨 (test·dev). `tab_drafts` 는 기본설계 밖에서 추가한 테이블이며 아직 마이그레이션이 없다.
 
 ### 2-1. 공통 이름·타입 — 기본설계
 
@@ -123,6 +125,25 @@
 - `regulatory_notes` 와 `version_links.source_note_id`·"출처는 정확히 하나" CHECK 는 4단계 새 마이그레이션에서 추가한다 (2-2). 0003 은 없는 테이블을 참조하지 않는다.
 - 현재 최종본 판단·409 처리·검증 수준은 [API 계약](api_contract.md) 2-3·3장.
 
+### 2-6. 임시저장 테이블 `tab_drafts` — 확정(개발기준), **미구현·DB 미적용**
+
+작성 중인 탭 내용을 정식 저장 전에 보관하는 테이블이다. 정식 저장본(`tab_versions`)과 **별개**이며, 저장 규칙은 3-7, 데이터 구조는 [데이터 계약](data_contract.md) 8장, API 는 [API 계약](api_contract.md) 6장.
+
+| 구분 | 내용 | 상태 |
+|---|---|---|
+| 한 행 | **사용자·프로젝트·탭 조합**마다 임시저장 1개. UNIQUE (소유자, `project_id`, `tab`) | 확정(개발기준) |
+| 소유자 | `users.id` 를 참조하는 소유자 열 — 서버 로그인 사용자로만 정함 (3-5) | 확정(개발기준). 열 이름(`user_id` 또는 `created_by` 를 소유자로 사용)은 제안 |
+| 프로젝트·탭 | `project_id` → projects (NOT NULL, `ON DELETE RESTRICT`), `tab` CHECK 4개 (`tab_versions` 와 같은 값) | 확정(개발기준) — 프로젝트를 선택해야 임시저장 가능 |
+| 내용 | `schema_version`(≥1), `payload` jsonb (네 칸 객체 — `tab_versions` 와 같은 CHECK) | 확정(개발기준) |
+| 시각 | `created_at`, `updated_at` (UPDATE 시 트리거로 갱신, 2-4 와 같은 방식) | 확정(개발기준) |
+| 버전 번호·최종본 | `version_no` 없음. `final_history`·`version_links`·`based_on_id` 는 `tab_drafts` 를 참조하지 않는다 | 확정(개발기준) |
+| 저장 번호 `revision` | 같은 사용자·프로젝트·탭 임시저장의 **충돌 방지용 번호**. 정식 저장본의 버전 번호(`version_no`)와 다르며 화면에 버전으로 보이지 않는다 ([API 계약](api_contract.md) 6-4) | 확정(개발기준). 시작값·증가 방식 등 세부는 구현 설계에서 정함 |
+| 편집 시작 저장본 | 임시저장에는 `based_on_id` 를 **두지 않는다** | **이번 범위에서 제외**. 정식 저장본의 `based_on_id`(3-3)와 `version_links` 는 그대로 |
+| 보관된 프로젝트 | 보관 상태만을 이유로 임시저장 조회·저장·갱신·복원·삭제를 막지 않는다 | 확정(개발기준). 정식 저장의 `project_archived` 거부(API 계약 2-1)와 프로젝트 상태 정책은 바뀌지 않는다 |
+| 오래된 임시저장 | 오래되었다는 이유로 자동 삭제하지 않는다. 만료 기간·TTL·정기 청소 작업 없음 | 확정(개발기준) |
+
+- 마이그레이션은 새 파일로 추가한다 (제안: `0005_tab_drafts.sql`). 같은 파일에 앱 역할 권한(8-9)을 함께 적는다. 이미 적용한 0001~0004 는 고치지 않는다 (7-1).
+
 ---
 
 ## 3. 저장 규칙
@@ -170,11 +191,51 @@
   - **일반 사용자 작업**(웹 요청 처리)은 항상 세션 사용자를 기록한다. 로그인 사용자가 없으면 거부하며 NULL 로 저장하지 않는다.
   - 시스템 작업은 웹 요청이 아닌 별도 관리 명령으로만 수행한다. 첫 계정 명령: `python -m src.common.db_admin create-first-user` (계정이 하나도 없을 때만, 비밀번호는 숨김 입력). DB 도 `created_by` NULL 인 계정을 하나만 허용한다. (`development.md` 5-2)
 - 로그인한 팀 사용자 전체가 프로젝트·저장본을 공유하는 것은 **개발용 기본 정책**이다. 운영 권한은 별도 확정 항목.
+  - 예외: 임시저장(`tab_drafts`)은 공유하지 않고 **본인만** 쓴다 (3-7).
 
 ### 3-6. payload 크기
 
 - **초기값** payload 256 KiB·반영 기록 32 KiB·출처 20개, 환경변수로 바꾼다. 근거·측정값은 `api_contract.md` 4장. 마진·모델링 대표 데이터가 나오면 다시 정한다.
 - 상한을 넘으면 내용을 **몰래 잘라 저장하지 않고 오류를 반환**한다. — 확정(개발기준)
+
+### 3-7. 임시저장 (`tab_drafts`) — 확정(개발기준), **미구현·DB 미적용**
+
+임시저장은 3-1~3-6 의 정식 저장과 **다른 규칙**을 따른다. 정식 저장 규칙은 바뀌지 않는다.
+
+| | 정식 저장 (`tab_versions`) | 임시저장 (`tab_drafts`) |
+|---|---|---|
+| 저장할 때 | 항상 **새 행 추가** (불변) | 사용자·프로젝트·탭별 1개 — 있으면 **같은 행을 갱신** |
+| 수정·삭제 | DB 트리거가 거부 (3-1) | 갱신·삭제 가능 — **본인 것만** |
+| 조회 범위 | 로그인한 팀 사용자 전체 (3-5) | **본인만** |
+| 번호 | 서버가 `version_no` 부여 (버전) | 충돌 방지용 `revision` 만 (버전 아님) |
+| 최종본·출처 | 최종본 지정·반영 출처·`based_on_id` 대상 | 어느 것의 대상도 아님 |
+| 필수값 | 탭 계약대로 검사 (개발요청서 v1 은 필수값 필요) | 비어 있어도 저장. 구조·자료형·크기는 임시저장용 기준으로 검사 ([데이터 계약](data_contract.md) 8-3) |
+| 크기·파일 본문 | 상한 3-6, 파일 본문 저장 제외 (6장) | **같은 상한**, 파일 본문 저장 제외. 임시저장 전용 크기 환경변수 없음 |
+| 보관된 프로젝트 | 저장 거부 (`project_archived`) | 제한하지 않음 |
+| 삭제되는 경우 | 없음 | ① 정식 저장 성공 + `revision` 일치 ② 사용자가 직접 삭제 (자동 만료 없음) |
+
+**확정(개발기준)**
+1. **소유자·보호 범위**: 개인 임시저장은 **웹사이트와 API 에서** 본인만 조회·수정·삭제할 수 있다. 서버가 로그인 세션(`auth.current_user()["id"]`)으로 사용자를 식별하고 소유권을 검사한다. 클라이언트가 보낸 사용자 id(요청 본문·주소)는 그대로 믿지 않는다 — 받지 않는다. 서버는 항상 세션 사용자 조건으로 찾는다. 서로 다른 사용자의 임시저장은 별개다.
+2. **프로젝트 선택 후에만** 저장한다. 프로젝트가 없는 임시저장은 만들지 않는다 (`project_id` NOT NULL).
+3. **다시 저장하면 갱신**한다. 같은 조합에 두 번째 행을 만들지 않는다 (UNIQUE 가 최종 보장).
+4. **여러 창의 동시 수정**: 저장 요청의 기준 `revision` 이 서버의 현재 `revision` 과 다르면 409 로 거부해 오래된 화면이 덮어쓰지 못하게 한다. 화면의 입력은 유지한다 ([API 계약](api_contract.md) 6-4).
+5. **정식 저장 후 정리**: 정식 저장 요청에 담긴 `draft_revision` 으로, 정식 저장과 **같은 트랜잭션**에서 "같은 사용자·프로젝트·탭 + `revision` 일치" 인 임시저장만 지운다.
+   - 번호가 다르면 더 최신 임시저장이므로 **남긴다.**
+   - 정식 저장이 실패하면 임시저장은 **남는다** (트랜잭션 전체 취소).
+   - 비교할 번호가 없는 요청으로는 임시저장을 지우지 않는다.
+   - API 형식: [API 계약](api_contract.md) 6-5.
+6. **사용자가 직접 삭제**: 사용자가 삭제를 고르고 확인하면 지운다. 호환되지 않는 임시저장도 사용자가 동의할 때만 지운다 — 자동 삭제·자동 변환 없음 ([데이터 계약](data_contract.md) 8-4).
+7. **보관된 프로젝트**: 보관 상태만을 이유로 임시저장 조회·저장·갱신·복원·삭제를 막지 않는다. 로그인·본인 확인 등 기존 사용자 검사는 그대로다. 정식 저장·프로젝트 상태 정책은 바꾸지 않는다.
+8. **자동 정리 없음**: 오래된 임시저장을 자동 삭제하지 않는다. 만료 기간·TTL·정기 청소 작업을 두지 않는다. 지워지는 경우는 5·6 뿐이다.
+9. 정식 저장 테이블 3개(`tab_versions`·`final_history`·`version_links`)의 구조와 수정·삭제 금지 트리거는 그대로 둔다. 임시저장 내용을 정식 저장본으로 옮겨 적거나 정식 저장본을 고치지 않는다 — 정식 저장은 항상 새 저장본 추가다.
+10. 크기 상한·파일 본문 제외(3-6, 6장)는 정식 저장과 같다. 넘으면 잘라 저장하지 않고 오류를 반환한다.
+
+**이번 범위에서 제외**
+- 임시저장의 편집 시작 저장본 기록(`based_on_id`). 정식 저장본의 `based_on_id`·`version_links` 기록은 바뀌지 않는다.
+- 개발자가 **DB 에 직접 접속**할 때 사용자별 임시저장을 막는 것. 이를 위한 행 보안 정책(RLS)이나 DB 안의 사용자 식별 체계는 추가하지 않는다 (8-7·8-9).
+
+**구현 설계에서 검토** (확정 아님)
+- 같은 조합의 임시저장을 두 창에서 동시에 처음 만들 때의 충돌 처리, 삭제 후 다시 만들 때 오래된 요청(이전 `revision` 기준) 처리 등 `revision` 의 세부 기술 방식.
 
 ---
 
@@ -357,7 +418,7 @@ GRANT UPDATE (updated_at) ON customers, projects TO cosmoa_app; -- 행 잠금(FO
 - 기준 상수: `src/common/db_admin.py` 의 `APP_TABLE_PRIVILEGES`·`APP_UPDATE_COLUMNS`. `app-role check` 가 실제 유효 권한(직접 GRANT·PUBLIC·상속 포함)과 비교해 **적어도 많아도** 문제로 보고한다.
 - `updated_at` 은 `BEFORE UPDATE` 트리거가 `now()` 로 다시 덮어써서 업무 값을 바꿀 수 없다.
 - 시퀀스: 모든 id 가 `GENERATED ALWAYS AS IDENTITY` 라 시퀀스 권한 없이 추가된다 (test 에서 시퀀스 권한 0개로 확인).
-- **주지 않는 것**: DELETE·TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 전부, `users` INSERT(계정 추가는 관리 명령), `project_history` INSERT·`projects` 단계·상태·납기·보관 열 UPDATE(단계 변경 API 미연결), `customers.name` 등 업무 열 UPDATE, `customer_contacts` 쓰기, yoyo 표 4개 전부, 스키마·DB CREATE.
+- **주지 않는 것**: DELETE·TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 전부 (예외 설계: 임시저장 `tab_drafts` 의 DELETE 만 — 8-9, 미적용), `users` INSERT(계정 추가는 관리 명령), `project_history` INSERT·`projects` 단계·상태·납기·보관 열 UPDATE(단계 변경 API 미연결), `customers.name` 등 업무 열 UPDATE, `customer_contacts` 쓰기, yoyo 표 4개 전부, 스키마·DB CREATE.
 - 되돌리기 `0004_app_role_grants.rollback.sql`: `cosmoa_app` 의 권한만 회수한다 (역할은 남김, 데이터 변화 없음).
 
 ### 8-5. 실행 순서와 명령 (Windows CMD, 공통 DB 담당)
@@ -424,6 +485,7 @@ python -m src.common.db_admin app-role whoami --target test
 - **모든 행의 `password_hash` 수정** — 열 권한은 행을 구분하지 않는다. "본인만" 은 서버 세션이 막는다 (행 보안 정책 RLS 는 쓰지 않음).
 - 고객사·프로젝트·저장본 추가 시 `created_by` 에 **다른 사용자 id** 를 넣을 수 있다 (DB 는 작성자를 확인하지 않음, 서버가 세션 사용자로 정함).
 - 추가만 표에 행을 계속 추가할 수 있다 (수정·삭제는 불가).
+- (임시저장 적용 후, 8-9) `tab_drafts` 의 **다른 사용자 행 조회·수정·삭제**. "본인만" 은 웹·API 에서 서버가 막는다. DB 직접 접속까지 막는 것은 이번 범위에서 제외했다 (3-7, 8-9). 정식 저장본에는 영향이 없다 (DELETE 권한은 `tab_drafts` 에만).
 - 임시 테이블 생성 (PUBLIC 기본 `TEMP`).
 - 자기 DB 비밀번호 변경 (`ALTER ROLE <자기> PASSWORD` 는 PostgreSQL 이 본인에게 허용 — 주소만 바뀌고 권한은 늘지 않음. 검증에서 실행하지 않음).
 
@@ -474,6 +536,21 @@ python -m src.common.db_admin app-role whoami --target test
   - 고객사 수정·보관: `UPDATE (name, archived_at) ON customers` (프로젝트 보관도 같은 방식)
   - 고객사 담당자: `INSERT`, 필요한 열 `UPDATE` ON `customer_contacts`
   - 규제 메모(`regulatory_notes`, 수정 가능 표): 그 표 설계에 맞춘 INSERT·열 UPDATE (DELETE 여부는 미정)
+
+**임시저장 `tab_drafts` 권한 — 확정(개발기준), 미적용** (마이그레이션 PR 에서 추가)
+
+```sql
+-- 0005 (제안 파일명) 안에 함께 적는다
+GRANT SELECT, INSERT, DELETE ON tab_drafts TO cosmoa_app;
+GRANT UPDATE (<내용 열>) ON tab_drafts TO cosmoa_app;   -- payload·schema_version·revision·updated_at 등, 열 목록은 테이블 확정 때 정함
+```
+
+- **DELETE 는 `tab_drafts` 에만 주는 제한된 예외**다. 앱 역할은 지금까지 어떤 표에도 DELETE 가 없었다 (8-4). 임시저장은 정식 저장 성공 시(`revision` 일치)·사용자가 직접 삭제할 때 지워야 하므로 이 표에만 준다 (3-7). 자동 만료·정기 청소용 권한이나 작업은 두지 않는다.
+- 기존 표(`tab_versions`·`final_history`·`version_links`·`customers`·`projects` 등)에는 DELETE 를 **넓히지 않는다.** TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 은 `tab_drafts` 에도 주지 않는다.
+- 소유자 열·`project_id`·`tab`·`created_at` 은 UPDATE 권한에서 뺀다 (갱신은 내용만).
+- 같은 PR 에서 `db_admin.APP_TABLE_PRIVILEGES` 에 `tab_drafts` 를, `APP_UPDATE_COLUMNS` 에 허용 열을 넣는다. `app-role check` 는 DELETE 를 `tab_drafts` 에서만 허용하는 기준으로 바뀐다.
+- 열 권한은 행을 구분하지 않는다. 위 권한만으로는 "본인 행만" 을 **웹·API(서버)** 가 보장하고, 앱 역할 주소로 DB 에 직접 접속하면 다른 사용자 행도 다룰 수 있다 (8-7).
+- 보호 범위는 **웹·API** 로 확정했다 (확정(개발기준), 3-7). DB 직접 접속에서의 사용자별 차단은 **이번 범위에서 제외** — RLS·DB 사용자 식별 체계를 추가하지 않고, 모든 개발자 역할이 같은 `cosmoa_app` 권한을 받는 지금 구조를 유지한다.
 
 ### 8-10. 개발자 이탈 시 로그인 역할 정리 절차 (문서만 — 아직 실행한 적 없음)
 
