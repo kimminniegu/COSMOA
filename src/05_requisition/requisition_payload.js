@@ -68,7 +68,30 @@
     };
   }
 
-  var api = { build: build, schemaVersion: SCHEMA_VERSION, inputPaths: function (options) { return leafPaths(options.input_defaults); } };
+  function text(value) { return String(value == null ? "" : value).trim(); }
+
+  // 누락 경고 — previous 에 있던 핵심 사양이 current 에서 빠졌는지 안내 문구 목록으로 돌려줍니다.
+  // 임시 기준: previous 는 수정을 시작한 문서입니다. 차수 기능(5단계) 후 이전 차수 요청서를 넘기면 됩니다.
+  function carryoverGaps(previous, current) {
+    if (!previous || !current) return [];
+    var gaps = [];
+    [["spf", "SPF"], ["pa", "PA"]].forEach(function (field) {
+      var before = text((previous.product_development || {})[field[0]]);
+      if (before && !text((current.product_development || {})[field[0]])) gaps.push(field[1] + " (" + before + ")");
+    });
+    var currentConcepts = ((current.ingredients || {}).concept || []);
+    ((previous.ingredients || {}).concept || []).forEach(function (item) {
+      var name = text(item.name), match = currentConcepts.filter(function (other) {
+        return text(other.name).toLowerCase() === name.toLowerCase();
+      })[0];
+      if (!name) return;
+      if (!match) gaps.push("컨셉 원료 " + name);
+      else if (item.must_contain === true && match.must_contain !== true) gaps.push("컨셉 원료 " + name + "의 함유 필수");
+    });
+    return gaps;
+  }
+
+  var api = { build: build, carryoverGaps: carryoverGaps, schemaVersion: SCHEMA_VERSION, inputPaths: function (options) { return leafPaths(options.input_defaults); } };
   root.RequisitionPayload = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -46,6 +46,7 @@ SECTIONS = [
     ("03 원료 요구사항", [
         ("buyer_prohibited_ingredients", "수출 금지 원료", "list"),
         ("ingredients.concept", "컨셉 원료", "concept"),
+        ("ingredients.concept_notes", "컨셉원료 코멘트", "textarea"),
         ("ingredients.other_notes", "기타사항", "textarea"),
         ("rnd_check_requests", "R&D 확인 요청사항", "textarea"),
     ]),
@@ -67,8 +68,9 @@ LABELS.update(product_type_custom="제품 유형 직접 입력", product_type_de
 #   target_prices: 바이어 Target Cost 는 원문 보존 데이터로만 두고 금액 칸은 사용자가 직접 입력 (이전 low/mid/high 는 참고 표시)
 #   viscosity_level: 값 목록 미정 / container_reference: 모델링 용기 적합성 반영 칸 / rnd_check_requests: 규제 메모 반영 칸
 #   ingredients.concept: 아래 이전 형식 목록(necessary·ideal)으로 추출한 뒤 kind 만 채워 옮김 (함유 필수·효능 태그는 비움)
+#   ingredients.concept_notes: 직접 입력 또는 AI 제형 모델링 컨셉원료 코멘트 반영 칸
 NOT_EXTRACTED = {"target_prices", "product_development.viscosity_level", "product_development.container_reference",
-                 "rnd_check_requests", "ingredients.concept"}
+                 "rnd_check_requests", "ingredients.concept", "ingredients.concept_notes"}
 LEGACY_EXTRACTED = {"target_price_tier": "tier", "ingredients.necessary": "list", "ingredients.ideal": "list"}
 EXTRACTED_FIELDS = {key: kind for key, kind in FIELDS.items() if key not in NOT_EXTRACTED}
 EXTRACTED_FIELDS.update(LEGACY_EXTRACTED)

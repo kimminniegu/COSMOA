@@ -12,7 +12,7 @@
   const kinds = Object.fromEntries(definitions.map(([key, , kind]) => [key, kind]));
   labels.reference_notes = "기타사항";
   kinds.reference_notes = "textarea";
-  const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.other_notes", "rnd_check_requests"]);
+  const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.concept_notes", "ingredients.other_notes", "rnd_check_requests"]);
   const wideFields = new Set(["target_prices", "ingredients.concept", "product_development.container_reference"]);
   // 입력 칸 하나로 끝나지 않는 항목 (목록 편집·선택값+서술)
   const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity"]);
@@ -154,6 +154,9 @@
     if (editing() && key === "product_development.container_reference") {
       control += '<p class="form-help">용기 관련 참고값이에요. AI 제형 모델링의 용기 적합성(대체 권장 용기)은 이후 단계에서 이 칸에 참고값으로 반영돼요.</p>';
     }
+    if (editing() && key === "ingredients.concept_notes") {
+      control += '<p class="form-help">컨셉 원료에 대한 코멘트예요. AI 제형 모델링의 컨셉원료 코멘트는 이후 단계에서 이 칸에 반영돼요.</p>';
+    }
     if (editing() && key === "rnd_check_requests") {
       control += '<p class="form-help">연구소에 확인을 요청할 사항이에요. 인허가 규제 확인사항 반영은 이후 단계에서 연결돼요.</p>';
     }
@@ -288,6 +291,9 @@
     $("export-review").textContent = data.export_countries.length ? data.export_countries.join(", ") + " · ⚠ 규제 확인 필요" : "";
     $("missing-wrap").hidden = !editing() || !required.length;
     $("missing").textContent = required.map((key) => labels[key]).join(", ");
+    const gaps = state === "edit" ? RequisitionPayload.carryoverGaps(saved, data) : [];   // 임시 기준: 수정 시작 시점 문서
+    $("carryover-wrap").hidden = !gaps.length;
+    $("carryover").textContent = gaps.join(", ");
     $("review").textContent = checks.length ? checks.length + "건 · " + checks.join(", ") : "없음";
     data.review_status = required.length || checks.length || data.export_countries.length ? "needs_review" : "complete";
   }

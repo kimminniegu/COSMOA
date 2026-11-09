@@ -71,11 +71,11 @@ class ContractTest(unittest.TestCase):
     def test_every_key_is_required(self):
         for path in ["context.project_id", "context.source_file_name", "inputs.target_prices", "inputs.rnd_check_requests",
                      "inputs.product_development.spf", "inputs.product_development.viscosity_level", "inputs.ingredients.concept",
-                     "inputs.quality.additional_notes", "meta.reference_files", "meta.field_provenance",
+                     "inputs.ingredients.concept_notes", "inputs.quality.additional_notes", "meta.reference_files", "meta.field_provenance",
                      "inputs.ingredients.concept.0.must_contain", "inputs.target_prices.0.currency"]:
             with self.subTest(path=path):
                 self.assertRejected(changed(path, delete=True), "missing_field")
-        self.assertRejected(changed("inputs.ingredients", {"concept": []}), "missing_field", "inputs.ingredients.other_notes")
+        self.assertRejected(changed("inputs.ingredients", {"concept": [], "concept_notes": ""}), "missing_field", "inputs.ingredients.other_notes")
 
     def test_unknown_keys_rejected(self):
         for path in ("inputs.customer", "inputs.target_price_tier", "inputs.product_development.color", "context.recipients",
@@ -233,6 +233,28 @@ class ScreenPayloadTest(unittest.TestCase):
         payload = self.build(doc)["payload"]
         self.assertNotIn("legacy_fields", payload["meta"])
         self.assertTrue(validate(payload).validation()["fully_validated"])
+
+    def gaps(self, previous, current):
+        script = ("const b = require(process.argv[1]); const [p, c] = JSON.parse(process.argv[2]);"
+                  "console.log(JSON.stringify(b.carryoverGaps(p, c)));")
+        run = subprocess.run(["node", "-e", script, str(ROOT / "src/05_requisition/requisition_payload.js"),
+                              json.dumps([previous, current], ensure_ascii=False)],
+                             capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return json.loads(run.stdout)
+
+    def test_carryover_gaps(self):
+        previous = copy.deepcopy(EXAMPLE["inputs"])
+        self.assertEqual(self.gaps(previous, copy.deepcopy(previous)), [])
+        current = copy.deepcopy(previous)
+        current["product_development"]["spf"] = " "
+        current["ingredients"]["concept"] = [dict(previous["ingredients"]["concept"][0], must_contain=None)]
+        self.assertEqual(self.gaps(previous, current),
+                         ["SPF (SPF50+)", "컨셉 원료 Ascorbic Acid의 함유 필수", "컨셉 원료 Niacinamide"])
+        renamed_case = copy.deepcopy(previous)                    # 대소문자만 달라도 같은 원료
+        renamed_case["ingredients"]["concept"][1]["name"] = "NIACINAMIDE"
+        self.assertEqual(self.gaps(previous, renamed_case), [])
+        self.assertEqual(self.gaps(current, previous), [])        # 새로 추가된 값은 경고 대상이 아님
 
     def test_unlinked_document_cannot_build_payload(self):
         doc = self.converted_and_edited()
