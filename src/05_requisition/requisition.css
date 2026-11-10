@@ -207,3 +207,7 @@
 .requisition-load-item span { min-width: 0; overflow-wrap: anywhere; }
 .requisition-load-item strong, .requisition-load-item small { display: block; }
 .requisition-load-item small { color: var(--color-text-secondary); }
+
+/* 모달은 body 로 옮겨지므로 숨김 규칙을 따로 둡니다. */
+#requisition-load-modal [hidden] { display: none !important; }
+#requisition-export-review { margin: 0; }

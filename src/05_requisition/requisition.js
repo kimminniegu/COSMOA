@@ -30,6 +30,11 @@
       ["전달 메모", ["ingredients.other_notes", "rnd_check_requests"]]],
     [["", ["quality.tests", "quality.additional_notes"]]],
   ];
+  const placeholders = {
+    product_name: "예: 비타민 C 세럼", benchmark_product_name: "예: 브랜드명 + 제품명",
+    "product_development.fragrance_flavor": "예: 무향, 시트러스", "product_development.finish": "예: 매트, 글로우",
+    "product_development.coverage": "예: 중간 커버", buyer_prohibited_ingredients: "원료명 입력", "quality.tests": "예: 안정도 시험",
+  };
   const conceptKinds = ["necessary", "ideal"].map((kind) => [kind, options.concept_kinds[kind]]);   // JSON 키 정렬과 무관하게 필수 먼저
   // 입력 칸 하나로 끝나지 않는 항목 (목록 편집·선택값+서술)
   const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity", "product_development.texture"]);
@@ -153,7 +158,7 @@
       if (key === "target_prices") control += legacyNote(data);
     } else if (key === "customer" && documentProject) {
       control = '<p class="requisition-field-value" id="requisition-input-customer">' + escape(documentProject.customer.name) + '</p>' +
-        '<p class="form-help">연결 프로젝트의 고객사예요 (고객사 id 로 연결). 바꾸려면 위에서 프로젝트를 변경해 주세요.</p>';
+        '<p class="form-help">연결된 프로젝트의 고객사예요. 바꾸려면 위에서 프로젝트를 변경해 주세요.</p>';
     } else if (key === "target_prices") {
       control = pricesEditor(data);
     } else if (key === "ingredients.concept") {
@@ -181,20 +186,20 @@
     } else if (kinds[key] === "textarea") {
       control = '<textarea class="form-control" rows="' + (compactTextFields.has(key) ? 2 : 4) + '" maxlength="10000" id="requisition-input-' + key + '" data-field="' + key + '">' + escape(get(data, key)) + '</textarea>';
     } else if (chipFields.includes(key)) {
-      control = chips(key, key === "export_countries" ? "국가 선택 또는 입력" : labels[key] + " 입력");
-      if (key === "buyer_prohibited_ingredients") control += '<p class="form-help">바이어가 사용하지 말라고 지정한 원료를 입력해요.</p>' +
+      control = chips(key, key === "export_countries" ? "국가 선택 또는 입력" : placeholders[key] || labels[key] + " 입력");
+      if (key === "buyer_prohibited_ingredients") control += '<p class="form-help">바이어가 사용하지 말라고 지정한 원료를 하나씩 입력해요.</p>' +
         (data.regulatory_restricted_ingredients.length ? '<p class="form-help">규제 검토 대상: ' + escape(data.regulatory_restricted_ingredients.join(", ")) + " · 규제 확인 필요</p>" : "");
     } else if (key === "product_development.spf" || key === "product_development.pa") {
       control = input(key, key.endsWith("spf") ? "예: SPF50+ (원문 표기 그대로)" : "예: PA++++ (원문 표기 그대로)");
-    } else control = input(key, labels[key] + " 입력");
+    } else control = input(key, placeholders[key] || "");
     if (editing() && key === "product_development.container_reference") {
-      control += '<p class="form-help">용기 관련 참고값이에요. AI 제형 모델링의 용기 적합성(대체 권장 용기)은 이후 단계에서 이 칸에 참고값으로 반영돼요.</p>';
+      control += '<p class="form-help">바이어가 원하는 용기나 검토 중인 용기를 참고용으로 적어요. 예: 에어리스 펌프 30mL</p>';
     }
     if (editing() && key === "ingredients.concept_notes") {
-      control += '<p class="form-help">컨셉 원료에 대한 코멘트예요. AI 제형 모델링의 컨셉원료 코멘트는 이후 단계에서 이 칸에 반영돼요.</p>';
+      control += '<p class="form-help">컨셉 원료의 함량, 원산지, 대체 가능 여부처럼 연구소가 알아야 할 내용을 적어요.</p>';
     }
     if (editing() && key === "rnd_check_requests") {
-      control += '<p class="form-help">연구소에 확인을 요청할 사항이에요. 인허가 규제 확인사항 반영은 이후 단계에서 연결돼요.</p>';
+      control += '<p class="form-help">연구소에 확인을 요청할 사항을 적어요. 예: 할랄 인증 가능 여부, 수출국 규제 성분 포함 여부</p>';
     }
     const provenance = (data.field_provenance || []).find((item) => item.field_key === key);
     let reviewStatus = provenance ? provenance.review_status : "";
@@ -223,7 +228,7 @@
       '<select class="form-control" data-price="' + index + '" data-prop="currency" aria-label="목표 가격 ' + (index + 1) + ' 통화">' + currencyOptions(item.currency) + "</select>" +
       '<button type="button" class="btn btn-secondary btn-sm" data-remove-price="' + index + '" aria-label="목표 가격 ' + (index + 1) + ' 삭제">삭제</button></div>').join("") + "</div>" +
       '<button type="button" class="btn btn-soft btn-sm" id="requisition-add-price" data-add-price>+ 가격대 추가</button>' + legacyNote(data) +
-      '<p class="form-help">가격대마다 금액과 통화를 입력해요. 여러 가격대의 샘플을 함께 요청할 수 있어요.</p>';
+      '<p class="form-help">샘플을 받고 싶은 가격대를 모두 추가해요. 예: 1,300원 · 1,500원 · 1,800원</p>';
   }
   function conceptRow(item, index) {
     const label = escape(item.name || "원료 " + (index + 1));
@@ -241,14 +246,14 @@
       return '<div class="requisition-concept-group"><p class="requisition-concept-title">' + escape(title) + "</p>" +
         (rows.length ? '<div class="requisition-rows">' + rows.map(([item, index]) => conceptRow(item, index)).join("") + "</div>" : '<p class="form-help">아직 없어요.</p>') +
         '<button type="button" class="btn btn-soft btn-sm" id="requisition-add-concept-' + kind + '" data-add-concept="' + kind + '">+ ' + escape(title) + " 추가</button></div>";
-    }).join("") + '<p class="form-help">함유 필수 여부를 모르면 ‘미확인’으로 두세요. 효능 태그는 쉼표로 구분해 자유롭게 입력해요.</p>';
+    }).join("") + '<p class="form-help">필수 원료는 꼭 들어가야 하는 원료, 선호 원료는 가능하면 넣고 싶은 원료예요. 효능 태그는 쉼표로 구분해요. 예: 미백, 보습</p>';
   }
   function viscosityEditor(data) {
     const level = data.product_development.viscosity_level;
     return '<div class="requisition-composite"><select class="form-control" id="requisition-input-product_development.viscosity_level" data-field="product_development.viscosity_level" aria-label="점도 구간"><option value="">구간 선택 안 함</option>' +
       options.viscosity_bands.map((band) => '<option value="' + escape(band.key) + '"' + (level === band.key ? " selected" : "") + ">" + escape(bandText(band.key)) + "</option>").join("") + "</select>" +
       '<input class="form-control" id="requisition-input-product_development.viscosity" data-field="product_development.viscosity" maxlength="10000" value="' + escape(data.product_development.viscosity) + '" placeholder="바이어 원문 (표현 그대로)" aria-label="점도 바이어 원문"></div>' +
-      '<p class="form-help">구간을 고르고, 바이어가 쓴 표현은 원문 칸에 그대로 남겨요.</p>';
+      '<p class="form-help">가장 가까운 구간을 고르고, 바이어가 쓴 표현은 오른쪽 칸에 그대로 적어요.</p>';
   }
   function textureEditor(data) {
     const selected = data.product_development.texture_tags;
@@ -339,14 +344,15 @@
     const headings = { upload: "개발요청서 분석", loading: "개발요청서 분석", result: "개발요청서", edit: "개발요청서 수정", manual: "개발요청서 직접 작성" };
     $("title").textContent = headings[state];
     $("description").textContent = state === "upload" || state === "loading" ? "바이어 요청서를 변환하거나 직접 작성하여 개발팀에 전달해요." :
-      editing() ? "필수 항목을 입력하고 개발팀에 전달할 요청서를 완성해요." : "내용을 확인하고 필요하면 수정한 뒤 PDF로 저장해요.";
+      editing() ? "필수 항목을 입력하고 개발팀에 전달할 요청서를 완성해요." : "내용을 확인한 뒤 저장하거나 PDF로 내보내요.";
     if (state === "upload" || state === "loading") return;
     const data = current();
     $("fields").innerHTML = sections.map(([title, fields], index) => '<section class="requisition-section" id="requisition-section-' + index + '" role="tabpanel" aria-labelledby="requisition-section-tab-' + index + '" tabindex="0"><h2 class="card-title">' + escape(title) + '</h2>' + groupedFields(data, fields, index) + emptyFieldsNote(data, fields) + '</section>').join("");
     selectSection(activeSection);
     renderReferences();
     $("panel-title").textContent = editing() ? "작성 상태" : "문서 정보";
-    $("form-help").textContent = editing() ? "* 표시된 항목은 필수 입력이에요." : "개발에 필요한 핵심 정보를 확인해요.";
+    $("form-help").textContent = "* 표시된 항목은 필수 입력이에요.";
+    $("form-help").hidden = !editing();
     $("secondary").textContent = state === "result" ? "수정" : state === "edit" ? "수정 취소" : "작성 취소";
     $("primary").textContent = state === "result" ? "인쇄 / PDF 저장" : state === "edit" ? "수정 완료" : "작성 완료";
     $("primary").hidden = false;
@@ -361,8 +367,9 @@
     $("document-project").textContent = documentProject ? projectLabel(documentProject) : "미연결 (프로젝트 선택 전 작성)";
     $("method").textContent = methods[data.creation_method];
     $("count-label").textContent = editing() ? "채운 항목" : "입력 완료";
-    $("count").textContent = Object.keys(labels).filter((key) => filled(get(data, key)) && !(key === "product_type" && required.includes(key))).length + " / " + definitions.length;
-    $("export-review").textContent = data.export_countries.length ? data.export_countries.join(", ") + " · ⚠ 규제 확인 필요" : "";
+    $("count").textContent = definitions.filter(([key]) => filled(fieldValue(data, key))).length + " / " + definitions.length;
+    $("export-review-wrap").hidden = !data.export_countries.length;
+    $("export-review").textContent = data.export_countries.join(", ") + " — 국가별 규제는 인허가 규제 탭에서 확인해 주세요.";
     const gaps = state === "edit" ? RequisitionPayload.carryoverGaps(saved, data) : [];   // 임시 기준: 수정 시작 시점 문서
     $("carryover-wrap").hidden = !gaps.length;
     $("carryover").textContent = gaps.join(", ");
@@ -430,8 +437,8 @@
     $("references").innerHTML = '<div class="requisition-reference-grid">' + referenceMarkup(current()) + '</div>' +
       (originalFile ? '<button type="button" class="btn btn-secondary" data-original-file>원본 RFP 다운로드</button>' : '') +
       (editing() ? '<div class="requisition-reference-upload"><div><p class="form-label">참고자료 추가</p><p class="form-help">PNG, JPG, WEBP, PDF, DOCX, XLSX · 파일당 5MB · 전체 20MB</p></div><input class="requisition-file-input" type="file" id="requisition-reference-input" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.docx,.xlsx"><label class="btn btn-soft" for="requisition-reference-input"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/></svg>파일 선택</label></div><p class="form-help requisition-reference-help">선택한 이미지는 PDF에 함께 표시되고, 문서는 파일명으로 표시돼요.</p>' : !(current().reference_files || []).length ? '<div class="requisition-reference-empty"><p>등록된 참고자료가 없어요.</p></div>' : '') +
-      '<div class="form-group requisition-reference-notes requisition-field-note"><label class="form-label" for="requisition-input-reference_notes">기타사항</label><div class="requisition-field-content">' +
-      (editing() ? '<textarea class="form-control" rows="4" maxlength="10000" id="requisition-input-reference_notes" data-field="reference_notes">' + escape(current().reference_notes || "") + '</textarea>' : '<p class="requisition-field-value">' + escape(current().reference_notes || "") + '</p>' + (!current().reference_notes ? '<small class="text-caption requisition-review-status requisition-review-status--needs_review">⚠ 확인필요</small>' : '')) + '</div></div>';
+      (!editing() && !filled(current().reference_notes) ? "" : '<div class="form-group requisition-reference-notes requisition-field-note"><label class="form-label" for="requisition-input-reference_notes">기타사항</label><div class="requisition-field-content">' +
+      (editing() ? '<textarea class="form-control" rows="4" maxlength="10000" id="requisition-input-reference_notes" data-field="reference_notes">' + escape(current().reference_notes || "") + '</textarea>' : '<p class="requisition-field-value">' + escape(current().reference_notes || "") + '</p>') + '</div></div>');
   }
   $("document").addEventListener("change", async (event) => {
     if (!editing()) return;
@@ -668,7 +675,7 @@
   $("secondary").addEventListener("click", () => {
     if (state === "result") { draft = clone(saved); transition("edit"); }
     else if (state === "edit") { draft = null; transition("result"); }
-    else if (confirm("작성 중인 내용을 취소할까요?")) { draft = null; transition("upload"); }
+    else if (confirm("작성 중인 내용이 지워져요. 작성을 취소할까요?")) { draft = null; transition("upload"); }
   });
   $("new").addEventListener("click", () => {
     if (!confirm("새 요청서를 시작하면 현재 요청서가 지워져요. 계속할까요?")) return;
@@ -743,7 +750,7 @@
     if (files.length !== 1) return notice("파일을 한 개씩 업로드해 주세요.");
     const file = files[0];
     if (!/\.(pdf|docx|xlsx|png|jpe?g|webp)$/i.test(file.name)) return notice("지원하지 않는 파일 형식이에요. PDF, DOCX, XLSX 또는 이미지를 선택해 주세요.");
-    if (!file.size || file.size > 20 * 1024 * 1024) return notice("0바이트 파일은 사용할 수 없으며, 최대 용량은 20MB예요.");
+    if (!file.size || file.size > 20 * 1024 * 1024) return notice("빈 파일은 올릴 수 없고, 파일은 20MB까지 올릴 수 있어요.");
     const selectedSourceLanguage = $("source-language").value;
     const sourceLanguage = selectedSourceLanguage === "other" ? $("source-language-other").value.trim() : selectedSourceLanguage;
     if (!sourceLanguage) {
