@@ -12,8 +12,25 @@
   const kinds = Object.fromEntries(definitions.map(([key, , kind]) => [key, kind]));
   labels.reference_notes = "기타사항";
   kinds.reference_notes = "textarea";
-  const wideNoteFields = new Set(["company_description", "basic_notes", "ingredients.concept_notes", "ingredients.other_notes", "rnd_check_requests"]);
-  const wideFields = new Set(["target_prices", "ingredients.concept", "product_development.container_reference", "product_development.viscosity", "product_development.texture", "product_development.appearance_sensory"]);
+  const noteFields = new Set(["company_description", "basic_notes", "ingredients.concept_notes", "ingredients.other_notes", "rnd_check_requests"]);
+  const wideFields = new Set(["product_type", "ingredients.concept", "ingredients.concept_notes", "buyer_prohibited_ingredients", "product_development.container_reference",
+    "product_development.viscosity", "product_development.texture", "product_development.appearance_sensory", "product_development.other_requirements"]);
+  const compactTextFields = new Set(["product_development.container_reference", "product_development.appearance_sensory", "product_development.color_shade_reference"]);
+  // 탭 안 화면 묶음 (화면 전용 — PDF·저장 순서는 schema.py 그대로). 제목이 ""이면 소제목 없이 표시합니다.
+  const fieldGroups = [
+    [["요청 정보", ["customer", "product_name", "request_source", "sample_request_type"]],
+      ["제품·시장", ["product_type", "target_prices", "export_countries"]],
+      ["메모", ["company_description", "basic_notes"]]],
+    [["제품 개요", ["benchmark_product_name", "product_development.application_type", "product_development.product_description", "product_development.formula_guidelines"]],
+      ["제형·사용감", ["product_development.texture", "product_development.viscosity", "product_development.appearance_sensory"]],
+      ["기능·용기", ["product_development.spf", "product_development.pa", "product_development.container_reference"]],
+      ["향·마무리", ["product_development.fragrance_flavor", "product_development.finish", "product_development.coverage", "product_development.color_shade_reference"]],
+      ["기타", ["product_development.other_requirements"]]],
+    [["원료 지정", ["buyer_prohibited_ingredients", "ingredients.concept", "ingredients.concept_notes"]],
+      ["전달 메모", ["ingredients.other_notes", "rnd_check_requests"]]],
+    [["", ["quality.tests", "quality.additional_notes"]]],
+  ];
+  const conceptKinds = ["necessary", "ideal"].map((kind) => [kind, options.concept_kinds[kind]]);   // JSON 키 정렬과 무관하게 필수 먼저
   // 입력 칸 하나로 끝나지 않는 항목 (목록 편집·선택값+서술)
   const compositeFields = new Set(["target_prices", "ingredients.concept", "product_development.viscosity", "product_development.texture"]);
   const inputPaths = RequisitionPayload.inputPaths(options);
@@ -51,7 +68,7 @@
   const amountText = (value) => Number(value).toLocaleString("ko-KR", { maximumFractionDigits: 4 });
   const priceText = (prices) => (prices || []).map((item) => amountText(item.amount) + " " + item.currency).join(", ");
   function conceptText(items, separator = "\n") {
-    return Object.entries(options.concept_kinds).map(([kind, title]) => {
+    return conceptKinds.map(([kind, title]) => {
       const rows = (items || []).filter((item) => item.kind === kind);
       return rows.length ? title + ": " + rows.map((item) => item.name +
         (item.must_contain === true ? " [함유 필수]" : item.must_contain === false ? " [함유 필수 아님]" : "") +
@@ -162,7 +179,7 @@
       const options = kinds[key] === "required" ? [["", "선택하세요"], ["true", "필요"], ["false", "불필요"]] : [["", "선택하세요"], ...["Leave-on", "Rinse-off", "기타", "확인 필요"].map((v) => [v, v])];
       control = '<select class="form-control" id="requisition-input-' + key + '" data-field="' + key + '">' + options.map(([value, label]) => '<option value="' + value + '"' + (String(get(data, key) ?? "") === value ? " selected" : "") + '>' + label + '</option>').join("") + '</select>';
     } else if (kinds[key] === "textarea") {
-      control = '<textarea class="form-control" rows="4" maxlength="10000" id="requisition-input-' + key + '" data-field="' + key + '">' + escape(get(data, key)) + '</textarea>';
+      control = '<textarea class="form-control" rows="' + (compactTextFields.has(key) ? 2 : 4) + '" maxlength="10000" id="requisition-input-' + key + '" data-field="' + key + '">' + escape(get(data, key)) + '</textarea>';
     } else if (chipFields.includes(key)) {
       control = chips(key, key === "export_countries" ? "국가 선택 또는 입력" : labels[key] + " 입력");
       if (key === "buyer_prohibited_ingredients") control += '<p class="form-help">바이어가 사용하지 말라고 지정한 원료를 입력해요.</p>' +
@@ -190,7 +207,7 @@
       }
     }
     const labelled = editing() && !compositeFields.has(key) && !(key === "customer" && documentProject);
-    return '<div class="form-group' + (wideNoteFields.has(key) ? ' requisition-field-wide requisition-field-note' : wideFields.has(key) ? ' requisition-field-wide' : '') + '" id="requisition-field-' + key + '">' +
+    return '<div class="form-group' + (wideFields.has(key) ? ' requisition-field-wide' : '') + (noteFields.has(key) ? ' requisition-field-note' : '') + '" id="requisition-field-' + key + '">' +
       (labelled ? '<label class="form-label" for="requisition-input-' + key + '">' : '<p class="form-label">') +
       labels[key] + (required ? ' <span class="is-required" aria-label="필수">*</span>' : "") +
       (labelled ? "</label>" : "</p>") + '<div class="requisition-field-content">' + control +
@@ -219,7 +236,7 @@
       '<button type="button" class="btn btn-secondary btn-sm" data-remove-concept="' + index + '" aria-label="' + label + ' 삭제">삭제</button></div>';
   }
   function conceptEditor(data) {
-    return Object.entries(options.concept_kinds).map(([kind, title]) => {
+    return conceptKinds.map(([kind, title]) => {
       const rows = data.ingredients.concept.map((item, index) => [item, index]).filter(([item]) => item.kind === kind);
       return '<div class="requisition-concept-group"><p class="requisition-concept-title">' + escape(title) + "</p>" +
         (rows.length ? '<div class="requisition-rows">' + rows.map(([item, index]) => conceptRow(item, index)).join("") + "</div>" : '<p class="form-help">아직 없어요.</p>') +
@@ -279,6 +296,17 @@
     return !(data.field_provenance || []).some((item) => item.field_key === key && item.review_status === "not_applicable");
   }
   const visibleFields = (data, fields) => fields.filter(([key]) => !isHiddenEmpty(data, key));
+  function groupedFields(data, fields, index) {
+    const groups = fieldGroups[index].map(([title, keys]) => [title, [...keys]]);
+    const listed = new Set(groups.flatMap(([, keys]) => keys));
+    groups.at(-1)[1].push(...fields.map(([key]) => key).filter((key) => !listed.has(key)));   // 묶음에 없는 새 칸도 빠지지 않게
+    const visible = new Set(visibleFields(data, fields).map(([key]) => key));
+    return groups.map(([title, keys]) => {
+      const shown = keys.filter((key) => visible.has(key));
+      return shown.length ? '<div class="requisition-group">' + (title ? '<h3 class="requisition-group-title">' + escape(title) + "</h3>" : "") +
+        '<div class="requisition-fields">' + shown.map(field).join("") + "</div></div>" : "";
+    }).join("");
+  }
   function emptyFieldsNote(data, fields) {
     const hidden = fields.filter(([key]) => isHiddenEmpty(data, key)).map(([, label]) => label);
     return hidden.length ? '<p class="text-caption requisition-empty-note">입력하지 않은 항목: ' + escape(hidden.join(", ")) + "</p>" : "";
@@ -314,7 +342,7 @@
       editing() ? "필수 항목을 입력하고 개발팀에 전달할 요청서를 완성해요." : "내용을 확인하고 필요하면 수정한 뒤 PDF로 저장해요.";
     if (state === "upload" || state === "loading") return;
     const data = current();
-    $("fields").innerHTML = sections.map(([title, fields], index) => '<section class="requisition-section" id="requisition-section-' + index + '" role="tabpanel" aria-labelledby="requisition-section-tab-' + index + '" tabindex="0"><h2 class="card-title">' + escape(title) + '</h2><div class="requisition-fields">' + visibleFields(data, fields).map(([key]) => field(key)).join("") + '</div>' + emptyFieldsNote(data, fields) + '</section>').join("");
+    $("fields").innerHTML = sections.map(([title, fields], index) => '<section class="requisition-section" id="requisition-section-' + index + '" role="tabpanel" aria-labelledby="requisition-section-tab-' + index + '" tabindex="0"><h2 class="card-title">' + escape(title) + '</h2>' + groupedFields(data, fields, index) + emptyFieldsNote(data, fields) + '</section>').join("");
     selectSection(activeSection);
     renderReferences();
     $("panel-title").textContent = editing() ? "작성 상태" : "문서 정보";

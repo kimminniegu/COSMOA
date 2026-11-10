@@ -179,6 +179,24 @@
 .requisition-section-nav > #requisition-section-next { margin-left: auto; }
 @container page (max-width: 560px) { .requisition-composite { grid-template-columns: minmax(0, 1fr); } }
 
+/* 탭 안 묶음 배치 */
+.requisition-group + .requisition-group { margin-top: var(--space-6); padding-top: var(--space-6); border-top: var(--border-default); }
+#requisition-app .requisition-group-title { margin: 0 0 var(--space-4); color: var(--color-text-primary); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.requisition-chips:empty + .requisition-chip-entry { margin-top: 0; }
+.requisition-reference-grid:empty + .requisition-reference-upload { margin-top: 0; }
+.requisition-price-row > input.form-control { flex: 1 1 110px; }
+.requisition-concept-group { padding: var(--space-4); border: var(--border-default); border-radius: var(--radius-lg); }
+.requisition-concept-group > .form-help { margin: 0 0 var(--space-2); }
+#requisition-field-product_type .requisition-field-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3) var(--space-5); align-items: end; }
+#requisition-field-product_type .requisition-field-content > .form-help,
+#requisition-field-product_type .requisition-field-content > .form-error,
+#requisition-field-product_type .requisition-field-content > small { grid-column: 1 / -1; }
+#requisition-field-product_type .requisition-field-content > div { margin-top: 0; }
+@container page (min-width: 700px) {   /* 2열일 때 세부 유형 라벨을 제품 유형 라벨과 같은 줄에 */
+  #requisition-detail-wrap, #requisition-custom-wrap { position: relative; }
+  #requisition-detail-wrap > .form-label, #requisition-custom-wrap > .form-label { position: absolute; bottom: 100%; left: 0; margin-bottom: var(--space-2); }
+}
+
 /* 저장·불러오기·최종본 */
 .requisition-save-box { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: var(--border-default); }
 .requisition-save-box .form-group { margin: 0; }
