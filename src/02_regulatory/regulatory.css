@@ -277,6 +277,10 @@
 .regulatory-review-reason { margin: var(--space-1) 0 0; font-size: var(--font-size-caption); color: var(--color-text-secondary); }
 .regulatory-match__name { margin: var(--space-1) 0 0; font-size: var(--font-size-caption); color: var(--color-text-secondary); overflow-wrap: anywhere; }
 .regulatory-match select.form-control-sm { width: 100%; min-width: 0; }
+/* 파일 행 후보: 이름 + 출처 배지(성분정보·규제정보) + 일치 근거, 추천·선택 버튼 */
+.regulatory-match__name strong { color: var(--color-text-primary); }
+.regulatory-match__basis { display: block; margin-top: var(--space-1); font-size: var(--font-size-caption); color: var(--color-text-secondary); }
+.regulatory-match .btn { margin-top: var(--space-2); }
 .regulatory-result-table .regulatory-result__sub { margin: var(--space-1) 0 0; font-size: var(--font-size-caption); color: var(--color-text-secondary); }
 .regulatory-notes { margin: var(--space-2) 0 0; padding-left: var(--space-5); }
 .regulatory-notes li + li { margin-top: var(--space-1); }
@@ -442,6 +446,7 @@
 .regulatory-result-table { table-layout: fixed; }
 .regulatory-result-table td { vertical-align: top; }
 .regulatory-result-table td:nth-child(1),
+.regulatory-result-table td:nth-child(2),   /* 선택 시장 아래 '규제정보 수집 시각'(3단계)이 옆 열로 넘치지 않게 */
 .regulatory-result-table td:nth-child(3),
 .regulatory-result-table td:nth-child(4) { white-space: normal; overflow-wrap: anywhere; }
 .regulatory-result-table th:nth-child(1) { width: 34%; }

@@ -11,8 +11,8 @@
 
 브라우저는 아래 Route만 호출한다. 외부 API Key는 서버 환경변수(`RAPIDAPI_KEY`, `RAPIDAPI_HOST`)에서만 읽고 응답·로그에 넣지 않는다.
 
-> **직접 검색은 2단계(2026-11-09)부터 `/api/regulatory/search` · `/api/regulatory/lookup` 만 쓴다** (식약처 수집 DB 두 개, 외부 API·API 키 없음).
-> 아래 `/ingredients` · `/regulations` 는 **파일 매칭 전용**으로 남아 있으며 3단계에서 전환·정리한다.
+> **화면(직접 검색 2단계 · 파일 탭 3단계, 2026-11-09)은 `/api/regulatory/search` · `/api/regulatory/lookup` · `/api/regulatory/extract` 만 쓴다** (식약처 수집 DB 두 개, 외부 API·API 키 없음).
+> 아래 `/ingredients` · `/regulations` 는 **화면에서 더 이상 호출하지 않는 이전 경로**다. 챗봇(`src/06_chatbot/tools.py`)이 `regulatory_service`·`regulatory_mfds_lookup.lookup()` 을 직접 쓰므로 4단계 삭제는 챗봇 담당과 함께 진행한다 (3장 9항).
 
 ### GET `/api/regulatory/search?q=<검색어>` — 직접 검색 후보 (로그인 필요)
 
@@ -33,7 +33,7 @@
 - 응답은 `/regulations?source=mfds` 와 같은 필드(entries·related·markets_listed·collection_run·출처·날짜)에 더해 `selection`(고른 후보) · `link`{status·basis·identity·candidates·conflict} · `ingredient_source` / `regulation_source`(출처별 수집 시각 따로) · `regulation_ingredient`. `ingredient` 는 사용자가 고른 후보 이름이다. `related` 는 확정 규제와 분리된 포함 일치 항목.
 - 오류: `validation` 400 (key·국가 누락·형식) · `stale_key` 409 (key 의 수집본이 현재와 다름 → 다시 검색·선택) · `not_found` 404 · `db_missing` / `db_incomplete` / `db_error` 503.
 
-### GET `/api/regulatory/ingredients?q=<성분명>` — 파일 매칭 전용 (3단계에서 전환)
+### GET `/api/regulatory/ingredients?q=<성분명>` — 이전 경로 (화면 미사용, 4단계 삭제 대상)
 
 한글명·영문 INCI명 후보 검색. **규제 조회를 하지 않는다.** 자동완성(입력 멈춤 300ms 후)과 검색 버튼 모두 이 Route를 사용한다.
 
@@ -77,7 +77,7 @@
 - `search_field`는 실제 호출한 엔드포인트(`kr` | `inci`), `match_mode`는 API 일치 방식(`starts_with`). 두 엔드포인트 모두 **시작 일치**라 중간 포함 입력(예: `티놀`)은 후보가 없다.
 - 한글 엔드포인트에 영문을 넣으면 0건(`test_data/search_kr_english_retinol.json`)이므로 언어별로 엔드포인트를 고른다. 혼합 입력(한글+영문)은 한글 엔드포인트로 보낸다.
 
-### GET `/api/regulatory/regulations?code=<성분코드>&country=<시장코드>&source=mfds|api`
+### GET `/api/regulatory/regulations?code=<성분코드>&country=<시장코드>&source=mfds|api` — 이전 경로 (화면 미사용, 4단계 삭제 대상)
 
 규제 조회. 화면에서 성분이 확정된 뒤 검색 버튼(직접 검색) 또는 ‘확정 성분 규제 조회’(일괄)에서 호출한다. **`source` 기본값 `mfds`.** 선택한 출처만 조회하며 실패해도 다른 출처로 바꾸지 않는다.
 
@@ -250,9 +250,23 @@
    - 블록 하나라도 `라벨 : 값` 으로 읽을 수 없으면 나누지 않고 원문 전체를 `pre-wrap` 으로 표시하고 "원문 구분이 확실하지 않아 그대로 표시했어요"를 붙인다.
    - 규제 항목(`entries`)이 여러 건이면 항목별 제목(순번·유형·국가)으로 구분하고, `proviso` 가 있으면 '단서 조항 (원문)' 블록으로 붙인다.
    - 문장은 재배치만 하며 번역·요약·환산·재해석을 하지 않고, 성분별 규칙을 두지 않는다. 원문 전체·출처·고시 성분명·응답 상태값은 상세 Modal 에 그대로 둔다.
-5. '이전 조건의 결과' 안내는 표시 중인 결과의 조건 키(직접 검색: 후보 key·시장 / 파일: 성분 code·시장)와 현재 입력이 다를 때만 보이고, 같은 조건으로 돌아오면 사라진다. 검색어를 수정하면 선택한 성분은 해제된다. 조회 중 시장을 바꾸면 늦게 온 응답은 '이전 조건의 결과'로 표시된다.
+5. '이전 조건의 결과' 안내는 표시 중인 결과의 조건 키(직접 검색: 후보 key·시장 / 파일: 시장 + 행별 검색어·선택 key)와 현재 입력이 다를 때만 보이고, 같은 조건으로 돌아오면 사라진다. 검색어를 수정하면 선택한 성분은 해제된다. 조회 중 시장을 바꾸면 늦게 온 응답은 '이전 조건의 결과'로 표시된다.
 6. **파일 탭 (현재 구현)**: 파일·시장 선택 → ‘파일 분석’ → 화면에서 확장자·용량을 먼저 확인(이미지 등은 업로드 없이 미지원 안내) → `POST /api/regulatory/extract` → `sheet_required` 면 시트 선택 블록 → 선택 후 재전송 → 추출값 확인·수정 표(조회 포함 체크 · 원문 성분명→수정 · 함량 원문→수정(미기재 표시) · 원문 위치 · 상태(추출됨/확인 필요/수정됨/직접 입력) · 삭제, ‘행 추가’). 처리 중·실패(사유·종류)·추출 결과 없음을 한 블록씩만 표시한다. 편집값은 `fileState.items` 에만 있고 서버로 보내지 않는다.
-7. **성분 확인·규제 일괄 조회 (현재 구현, 새 Route 없음)**: ‘성분 확인’ → 조회 포함 행마다 `GET /api/regulatory/ingredients?q=<성분명>` 을 순차 호출(같은 이름은 1회). 정확 일치 하나 → 확정(`정확 일치 자동 확정`), 그 외 후보 있음 → 행에서 선택(`후보 선택`), 없음 → 성분 확인 필요, 오류 → 확인 실패. ‘확정 성분 규제 조회’ → 확정 행만 `GET /api/regulatory/regulations?code=&country=` 를 (code, country)당 1회 순차 호출. `error.kind = rate_limit` 이면 남은 호출을 중단하고 실패로 표시(자동 재시도 없음). ‘실패 항목 재시도’는 `api_error` 행만 다시 호출한다. 결과 표: 성분명·선택 시장·조회 상태·규제 유형·상세. 조회 상태는 `lookup_status`(found/no_data/hold) + 화면 상태(성분 확인 필요·성분 매칭 실패·API 오류·미조회). 시장·목록·매칭이 바뀌면 ‘이전 조건의 결과’ 안내, 늦은 응답은 순번(`fileState.batchSeq`)으로 무시. 상세 Modal 은 직접 검색과 공유하며 `input-amount`(문서 함량 참고값)·`input-location` 을 추가로 채운다. 검토 상태·기준 비교는 미구현.
-8. **3단계(파일 매칭 전환) 정리 대상** — 2단계에서 직접 검색만 바꾸고 아래는 남겨 두었다: 파일 탭 출처 radio(`regulatory-file-source`, K뷰티 선택지) · `fileSource()`·`SOURCE_LABEL.api` · `regulationsUrl()` · `findExactMatch()`/`confirmMatch(…, "정확 일치 자동 확정")` · 성분 확인의 `/api/regulatory/ingredients` 호출과 `code` 기반 매칭·캐시 키(`x.match.code`) · 일괄 조회의 `/api/regulatory/regulations` 호출 · app.py `regulatory_ingredients`·`regulatory_regulations`(source=api) Route · `regulatory_service.py` K뷰티 호출 · 상세 Modal 의 code 표시 분기.
+7. **성분 확인·규제 일괄 조회 (3단계, 식약처 수집 DB 전용 · 새 Route 없음)** — 파일 탭 출처 선택지는 없고 '조회 자료' 안내(`regulatory-file-datasource`)만 있다.
+   - 행 상태는 따로 보관한다: `name_raw`(추출 원문, 덮어쓰지 않음) · `name`(사용자가 고친 검색어) · `match`(마지막 후보 검색 결과) · `selected`{candidate·method·from}(사용자가 고른 후보) · `result`(규제 조회 결과).
+   - **‘성분 확인’** → 조회 포함·미선택 행마다 `GET /api/regulatory/search?q=` 순차 호출. 같은 검색어(공백·대소문자 무시)는 한 작업 안에서 1회만 요청하고 결과를 공유하되 선택은 행별. 2글자 미만은 요청 없이 '검색 오류'. 검색 DB 이용 불가면 남은 행은 같은 이유의 검색 오류로 두고 중단.
+   - 행 표시: 후보마다 한글명·영문명·출처 배지(성분정보·규제정보)·일치 근거. 잘렸으면 'N건 중 10건만 표시 — 성분명을 구체적으로'. key·내부 id·해시는 표시하지 않는다(select option 값은 목록 순번).
+   - **추천 기준**: 제한 전 `exact_total === 1` 이고 그 후보가 한글명·표준명·영문명에서 정확 일치했을 때만 '추천 · 선택 전'. 이명·고시원료명·CAS 만 일치, 정확 일치 여러 개(Water: 정제수·탄산수 / 레티놀처럼 양쪽 DB) → '후보 선택 필요'. **추천은 선택이 아니다** — 행의 '추천 후보 선택' 또는 '추천 N건 선택 완료'(지금 추천 조건인 행만)를 눌러야 조회 대상. 후보 없음 '검색 결과 없음', 실패 '검색 오류'로 따로 남긴다.
+   - **‘선택 성분 규제 조회’** → 선택 완료 행만 `GET /api/regulatory/lookup?key=&country=` 를 (key, 시장)당 1회 순차 호출 (이름·CAS 를 보내지 않음, 서버 `lookup_candidate`·연결 규칙 그대로). 같은 이름이라도 key 가 다르면 따로. 결과는 '아직 표에 있고 조회 포함이며 같은 key 를 선택한 행'에만 쓴다 → 조회 중 수정·삭제·제외·후보 변경된 행과 새 파일·시트(순번 `batchSeq`·`matchSeq`)를 덮어쓰지 않는다. 진행 중에는 확인·조회·추천 버튼이 중복 실행되지 않는다.
+   - 오류: `stale_key`·`not_found` → 그 행 선택 해제 + 이전 후보 목록 폐기('후보 다시 검색 필요'), 재시도 대상 아님, '조회 중 수집본이 바뀌었어요' 안내. `db_*` → 그 자리에서 중단, 남은 행은 '조회 오류 · 출처 이용 불가 (이유)'로 미조회 표시(호출 한도 초과로 표시하지 않음). 네트워크 등 일시 오류 → '조회 오류', **‘실패 항목 재시도’는 현재 시장·같은 key 가 유지되는 재시도 가능 행만**. 규제정보 수집본이 결과마다 다르면 같은 기준으로 보이지 않게 안내.
+   - 결과 표: 성분명(추출 원문·선택 원료·조회한 규제 성분·연결 근거·문서 함량) · 선택 시장(규제정보 수집 시각) · 조회 상태(직접 검색과 같은 문구: 규제 정보 조회됨 / 선택 국가 기록 없음 / 성분 연결 확인 필요 / 규제 성분 연결 미확인 / 조회 오류, 그리고 미조회 상태: 추천 · 선택 전 / 후보 선택 필요 / 검색 결과 없음 / 검색 오류 / 후보 다시 선택 필요) · 규제 유형 · 상세. 성분 연결 확인 필요 행은 직접 검색과 같은 연결 후보 목록 + '이 규제 성분으로 조회' — 그 행의 선택·결과만 바뀌고(처음 고른 원료는 `selected.from` 으로 보존) 직접 검색 탭·다른 행은 그대로. 관련 항목은 건수만 따로(상세에서).
+   - 집계(KPI): 조회 포함 / 조회됨 / 선택 국가 기록 없음 / 규제 성분 연결 확인(필요+미확인) / 조회 오류 / 미조회. 미조회 행이 있으면 '일부 성분만 규제를 조회했어요 — 전체 성분 검토가 끝난 것이 아니에요' 안내. 출처·시각은 성분정보(고른 성분정보 후보의 수집본)와 규제정보(조회 결과)를 따로 표시. 함량은 문서·사용자 입력값만, 적합 판정 없음. 상세 Modal 은 직접 검색과 공유(`input-amount`·`input-location` 추가).
+8. **3단계에서 제거한 것**: 파일 탭 출처 radio(`regulatory-file-source`) · `fileSource()`·`groupSource()`·`syncSourceCards()` · `regulationsUrl()` · `findExactMatch()`·`confirmMatch()`·'정확 일치 자동 확정' · `candidateLabel()`·`confirmedRows()`·`BATCH_LABEL` · code 기반 선택·요청 묶기·캐시·`batchKey` · 'API 매칭'·'확정 성분' 문구 · KPI '접근 제한'·'API 오류'(→ 조회 오류) · rate_limit 기준 중단.
+9. **4단계 삭제 대상 (화면은 이미 호출하지 않음)**
+   - app.py: `regulatory_ingredients`(`/api/regulatory/ingredients`) · `regulatory_regulations`(`/api/regulatory/regulations`, source=mfds·api) · `_regulatory_error` · `regulatory_service` 로드. 단 `/api/regulatory/lookup` 의 국가 검증이 `regulatory_service.MARKET_CODES` 를 쓰므로 `regulatory_search`/`regulatory_mfds_lookup.MARKET_CODES` 로 바꾼 뒤 삭제.
+   - `regulatory_service.py`(K뷰티 호출 전체) · `tests/test_regulatory_service.py` 의 K뷰티 검색·규제·HTTP 분류·Route 테스트(추출·OCR 테스트는 남김) · `test_data/*.json`(K뷰티 응답 기록) · `regulatory_mfds_lookup.lookup()`(이름·CAS 재매칭, `/regulations?source=mfds` 전용)과 그 테스트.
+   - **챗봇 의존**: `src/06_chatbot/tools.py` 가 `regulatory_service.search_ingredients`·`get_regulations`·`MARKET_CODES`·`MIN_QUERY_LENGTH` 와 `regulatory_mfds_lookup.lookup()` 을, `server.py` 가 `RAPIDAPI_*` 확인을 쓴다 — 챗봇 담당과 `regulatory_search` 로 전환을 합의한 뒤 삭제한다 (다른 담당 파일은 임의로 수정하지 않음).
+   - regulatory.js: `SOURCE_LABEL.api` · `LOOKUP_LABEL` 의 K뷰티 상태(`no_data`·`not_listed`·`hold`·`api_error`·`access`) · `ACCESS_KINDS`·`errorCategory` 의 access 분기 · `statusLabel`·`noDataReason`·`acquiredText`·`refreshText`·`scopeText`·`sourceText` 의 api 분기(`note_mentions_plan` 등) · `fillModal` 의 `sel.code`·`record_updated_at`·'K뷰티 API 는 성분 code 로 조회' 분기 · `ingredientKr` 의 code 대체 표시.
+   - 문서·설정: 이 문서 2장(외부 K뷰티 API) · `regulatory.md`·`demo_verification.md` 의 K뷰티 설명 · README·`docs/deploy_render.md`·`docs/team_onboarding.md` 의 `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 안내(공통 문서 — 담당 범위 확인 후) · 배포 환경변수.
 
 **공통 CSS 관련 PM 협의 사항**: `src/common/style.css`에 `[hidden] { display: none }` 규칙이 없어 `.loading`, `.state`, `.badge`, `.alert`처럼 class로 `display`를 지정하는 요소는 `hidden` 속성이 무시된다(로딩·오류·후보 상태가 동시에 보이던 원인). 공통 파일은 수정하지 않고 `regulatory.css`에서 이 페이지 영역(`#regulatory-panel-search`, `#regulatory-panel-file`, `#regulatory-results`, `#regulatory-detail-modal`)에만 `[hidden] { display: none !important }`를 적용했다. 공통 CSS에 같은 규칙을 추가하면 페이지 규칙은 제거해도 된다.

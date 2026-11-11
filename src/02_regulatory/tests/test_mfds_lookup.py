@@ -213,19 +213,15 @@ class RouteSourceTest(unittest.TestCase):
         res = self.client().get("/api/regulatory/regulations?code=5489&country=EU")
         self.assertEqual(res.status_code, 400)
 
-    def test_page_has_source_radio_cards(self):
-        """출처 선택 radio 카드는 파일 탭에만 남는다 (기본 checked mfds, 드롭다운 아님).
-        직접 검색은 2단계에서 식약처 수집 DB 고정으로 바뀌어 출처 선택지가 없다 (test_regulatory_direct_search 참고)"""
+    def test_page_has_no_kbeauty_source_choice(self):
+        """출처 선택 radio 는 없다 — 직접 검색(2단계)·파일 탭(3단계) 모두 식약처 수집 DB 고정 안내로 바뀌었다"""
         html = self.client().get("/regulatory").get_data(as_text=True)
-        p = "file"
-        self.assertIn('<fieldset class="form-group regulatory-source" id="regulatory-%s-source"' % p, html)
-        self.assertRegex(html, r'<input type="radio" id="regulatory-%s-source-mfds" name="regulatory-%s-source" value="mfds" checked>' % (p, p))
-        self.assertRegex(html, r'<input type="radio" id="regulatory-%s-source-api" name="regulatory-%s-source" value="api">' % (p, p))
-        self.assertIn('for="regulatory-%s-source-mfds"' % p, html); self.assertIn('for="regulatory-%s-source-api"' % p, html)
-        self.assertNotIn('id="regulatory-search-source"', html)
-        self.assertNotRegex(html, r'<select[^>]*id="regulatory-(search|file)-source"')
-        self.assertIn("K뷰티 API (RapidAPI)", html); self.assertNotIn("기존 API", html)
-        self.assertEqual(html.count('value="mfds" checked'), 1); self.assertEqual(html.count('value="api" checked'), 0)
+        for p in ("search", "file"):
+            self.assertNotIn('id="regulatory-%s-source"' % p, html)
+            self.assertIn('id="regulatory-%s-datasource"' % p, html)
+        self.assertNotIn('name="regulatory-file-source"', html)
+        self.assertNotIn("K뷰티 API (RapidAPI)", html)
+        self.assertNotIn("API 매칭", html)
 
 
 @unittest.skipUnless(REAL_DB.is_file(), "수집 DB 가 있을 때만")

@@ -26,7 +26,9 @@ RS = flask_app.regulatory_search
 SVC = flask_app.regulatory_service
 
 
-class DirectSearchRouteTest(unittest.TestCase):
+class _RouteBase(unittest.TestCase):
+    """임시 DB + K뷰티 호출 차단 + API 키 비움 + 테스트 로그인 (공통 준비만, 테스트 없음)"""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         d = Path(self.tmp.name)
@@ -67,6 +69,8 @@ class DirectSearchRouteTest(unittest.TestCase):
                 return c["key"]
         self.fail("후보 없음 %s" % q)
 
+
+class DirectSearchRouteTest(_RouteBase):
     def test_search_returns_both_sources_without_auto_confirm(self):
         st, body = self.get("/api/regulatory/search?q=Water")
         self.assertEqual(st, 200)
@@ -139,11 +143,73 @@ class DirectSearchRouteTest(unittest.TestCase):
         html = self.client.get("/regulatory").get_data(as_text=True)
         self.assertNotIn('id="regulatory-search-source"', html)
         self.assertIn('id="regulatory-search-datasource"', html)
-        self.assertIn('id="regulatory-file-source"', html)                                 # 파일 탭 전환은 3단계
+        self.assertIn('id="regulatory-file-datasource"', html)                             # 파일 탭도 3단계에서 식약처 DB 고정
         self.assertIn('id="regulatory-single-ingredient-source"', html)
         js = self.client.get("/assets/02_regulatory/regulatory.js").get_data(as_text=True)
         self.assertIn("/api/regulatory/search?q=", js)
         self.assertIn("/api/regulatory/lookup?key=", js)
+
+
+class FileFlowRouteTest(_RouteBase):
+    """3단계: 실제 샘플 파일 업로드(/extract) → 추출 성분명으로 /search → 선택 key 로 /lookup.
+    K뷰티 호출 차단·키 없음 상태에서 파일 흐름 전체가 식약처 DB 만으로 동작하는지 (화면 JS 는 브라우저 확인에서)"""
+
+    SAMPLE_PDF = HERE.parent / "samples" / "eu_ser_041_development_brief_regulatory.pdf"
+
+    def upload(self, path):
+        with open(path, "rb") as f:
+            res = self.client.post("/api/regulatory/extract", data={"file": (f, path.name)}, content_type="multipart/form-data")
+        return res.status_code, res.get_json()
+
+    def test_pdf_upload_search_select_lookup_without_kbeauty(self):
+        st, body = self.upload(self.SAMPLE_PDF)
+        self.assertEqual((st, body["status"]), (200, "extracted"))
+        names = [it["name_raw"] for it in body["items"]]
+        for n in ("Glycerin", "Retinol", "Phenoxyethanol", "Aqua"):
+            self.assertIn(n, names)
+        found = {}
+        for n in names:
+            st, s = self.get("/api/regulatory/search?q=" + n.replace(" ", "%20"))
+            self.assertEqual(st, 200, n)
+            found[n] = s
+        # Aqua: 정확 일치 1건(성분정보 정제수, 영문명 나열 항목) → 화면 추천 조건 충족. 자동 선택은 서버가 하지 않는다
+        aqua = found["Aqua"]
+        self.assertEqual(aqua["exact_total"], 1)
+        self.assertFalse(aqua["auto_confirmed"])
+        self.assertEqual(aqua["candidates"][0]["kr_name"], "정제수")
+        self.assertEqual(aqua["candidates"][0]["matched"][0]["field"], "INGR_ENG_NAME")
+        # Retinol: 정확 일치가 여러 출처·이명(레티닐팔미테이트)에 있어 추천 조건 아님
+        self.assertGreater(found["Retinol"]["exact_total"], 1)
+        # 레티놀(성분정보) 선택 → EU 조회: 레티놀 규제만
+        k = [c["key"] for c in found["Retinol"]["candidates"] if c["source"] == RS.SRC_INGR and c["kr_name"] == "레티놀"][0]
+        st, r = self.get("/api/regulatory/lookup?key=%s&country=EU" % k)
+        self.assertEqual((st, r["lookup_status"], r["matched_identity"]["std_name"]), (200, "found", "레티놀"))
+        self.assertTrue(all(e["std_name"] == "레티놀" for e in r["entries"]))
+        # 같은 key 는 같은 결과 (화면은 (key, 시장)당 1회만 요청해 공유)
+        st, r2 = self.get("/api/regulatory/lookup?key=%s&country=EU" % k)
+        self.assertEqual(r2["entries"], r["entries"])
+
+    def test_xlsx_sheet_selection_then_search(self):
+        path = HERE / "fixtures" / "sample_multisheet_en.xlsx"
+        st, body = self.upload(path)
+        self.assertEqual((st, body["status"]), (200, "sheet_required"))
+        with open(path, "rb") as f:
+            res = self.client.post("/api/regulatory/extract", data={"file": (f, path.name), "sheet": "Ingredients"}, content_type="multipart/form-data")
+        body = res.get_json()
+        self.assertEqual((res.status_code, body["status"]), (200, "extracted"))
+        st, s = self.get("/api/regulatory/search?q=" + body["items"][0]["name_raw"].replace(" ", "%20"))
+        self.assertEqual(st, 200)
+
+    def test_page_file_tab_uses_new_routes_only(self):
+        js = self.client.get("/assets/02_regulatory/regulatory.js").get_data(as_text=True)
+        self.assertNotIn("/api/regulatory/ingredients", js)
+        self.assertNotIn("/api/regulatory/regulations", js)
+        self.assertNotIn("findExactMatch", js)
+        self.assertNotIn("fileSource", js)
+        html = self.client.get("/regulatory").get_data(as_text=True)
+        for marker in ("regulatory-review-accept", "regulatory-kpi-nomarket", "regulatory-kpi-link", "regulatory-kpi-pending",
+                       "regulatory-batch-incomplete", "regulatory-batch-snapshot", "regulatory-file-datasource"):
+            self.assertIn(marker, html, marker)
 
 
 if __name__ == "__main__":
