@@ -1,6 +1,8 @@
 """국가별 인허가 규제 — 식약처 '화장품 사용제한 원료정보' 수집 DB 읽기 전용 조회 모듈 (담당자 B).
 
-app.py [B] 영역의 /api/regulatory/regulations?source=mfds 에서만 사용한다. 직접 검색과 파일 일괄 조회가 같은 함수를 쓴다.
+- lookup_by_identity(): 규제 화면(app.py [B] /api/regulatory/lookup → regulatory_search.lookup_candidate)이 직접 검색·파일 일괄 조회에 쓴다.
+- lookup(): 이름·CAS 재매칭 조회. 규제 화면에서는 쓰지 않고 챗봇(src/06_chatbot/tools.py)만 쓴다 (챗봇 전환 4-2단계에서 정리).
+- MARKET_CODES: 화면·/lookup 국가 검증 기준 (KR · EU · US · CN · JP · ASEAN).
 수집·재수집은 mfds_use_restriction.py(별도 실행)이며, 이 모듈은 DB 를 만들거나 쓰지 않는다(mode=ro). 외부 API 호출 없음.
 
 성분 연결 (기존 API 성분 코드는 식약처 식별자로 쓰지 않는다)

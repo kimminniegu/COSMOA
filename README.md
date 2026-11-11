@@ -44,7 +44,7 @@
 |---|---|---|
 | 로그인 | 업무 DB(Neon PostgreSQL) `users` 계정, 로그인·로그아웃, 세션 유지, 본인 비밀번호 변경 | 계정은 공통 DB 담당(유정현)이 관리 명령으로 생성. 서버가 계정·데모 계정을 자동 생성하지 않음 |
 | 홈 | 환율·수출입 통계, 바이어 현지 시각, 뉴스·규제 소식 및 더보기 | 외부 데이터 수집·캐시 사용, 알림 버튼 미구현 |
-| 국가별 인허가 규제 | 성분 검색, 식약처 DB/외부 API 조회, PDF·Excel·이미지 성분 추출과 OCR | 함량 기준 비교·시장 자동 선택 등은 미구현. 조회 결과와 최종 규제 판단을 구분 |
+| 국가별 인허가 규제 | 식약처 성분 DB·규제 DB 후보 검색 → 사용자 선택 → 국가별 규제 조회 (직접 검색·파일 일괄 조회), PDF·Excel·이미지 성분 추출과 OCR | 식약처 수집 DB 읽기 전용, **K-Beauty API 키 불필요**. 함량 기준 비교·시장 자동 선택 등은 미구현. 조회 결과와 최종 규제 판단을 구분 |
 | 원가·마진 | 견적·역제안·수량별 단가·환율 영향 계산, 견적서 PDF·영문 메일 본문 | ERP는 예시 품목 1개의 시연 데이터. 견적 입력값은 영구 저장하지 않음 |
 | AI 제형/샘플 | 배합·점도·용기 호환도 시뮬레이션, 개발요청서 AI 분석·적용 | 점수는 브라우저 계산식, Canvas는 시연용 표현. 실측 유체 해석이 아님 |
 | 개발요청서 | 파일 자동변환·다국어 처리, 직접작성·수정, 브라우저 인쇄로 PDF 저장 | 현재 페이지 메모리에 보관. 전달 대상은 문서 정보이며 실제 발송 기능은 없음 |
@@ -91,11 +91,13 @@ COSMOA/
     │   └── news.html / regulations.html
     ├── 02_regulatory/      # [B] 규제 조회·파일 추출·식약처 DB
     │   ├── regulatory.html / regulatory.css / regulatory.js / regulatory.md
-    │   ├── regulatory_service.py / regulatory_extract.py / regulatory_ocr.py
-    │   ├── regulatory_mfds_lookup.py / mfds_use_restriction.py
+    │   ├── regulatory_search.py / regulatory_mfds_lookup.py   # 식약처 성분·규제 DB 검색·조회 (읽기 전용)
+    │   ├── regulatory_extract.py / regulatory_ocr.py
+    │   ├── mfds_use_restriction.py / mfds_ingredients.py      # 별도 수집 스크립트 (규제 DB · 성분 DB)
+    │   ├── regulatory_service.py   # K-Beauty API — 규제 화면 미사용, 챗봇 이전 도구만 사용 (챗봇 전환 후 정리)
     │   ├── api_reference.md / demo_verification.md
     │   ├── samples/        # 시연용 PDF·Excel·이미지
-    │   ├── test_data/      # API 응답 기록
+    │   ├── test_data/      # K-Beauty API 응답 기록 (regulatory_service 테스트용)
     │   └── tests/          # 단위·Route 테스트, fixtures/ 추출 자료
     ├── 03_margin/          # [C] 마진 계산·견적서
     │   ├── margin.html / margin.css / margin.js / margin.md
@@ -153,9 +155,9 @@ Bash에서는 `cp .env.example .env`를 사용합니다. 전체 항목은 [`.env
 | 로그인 | `DATABASE_URL` (+ 아래 업무 DB 변수) | 로그인 계정은 업무 DB `users`. `COSMOA_DEMO_*` 는 더 이상 쓰지 않음 (데모 계정 자동 생성 없음) |
 | 홈·환율 | `EXIM_API_KEY`, `DATA_GO_KR_KEY` | 수출입은행 환율, 관세청 수출입·KOTRA 데이터 |
 | 홈 선택 설정 | `KOTRA_NEWS_URL`, `COSMETIC_HS_CODES` | KOTRA 요청 주소, 화장품 HS 코드(기본 3304) |
-| 성분 검색·규제 API | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | 성분 후보 검색 및 외부 규제 API. 식약처 DB 조회를 선택해도 API를 통한 성분 검색에는 필요 |
-| 식약처 DB | `MFDS_DB_PATH` | 읽을 DB 경로. 아래 로컬 설정 참고 |
-| 식약처 수집 | `MFDS_API_KEY` | 별도 수집 스크립트용 Decoding 인증키. 포함된 DB 조회만 할 때는 불필요 |
+| K-Beauty API (챗봇 이전 도구) | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | **챗봇 서버**의 이전 성분 검색·규제 도구에서만 사용. 규제 화면(메인 서버)은 식약처 수집 DB 만 읽으므로 필요 없음. 챗봇 전환 후 정리 예정 |
+| 식약처 DB | `MFDS_DB_PATH`, `MFDS_INGREDIENT_DB_PATH` | 읽을 규제 DB(사용제한 원료정보)·성분 DB(원료성분정보) 경로. 아래 로컬 설정 참고 |
+| 식약처 수집 | `MFDS_API_KEY` | 별도 수집 스크립트(규제 DB·성분 DB)용 Decoding 인증키. 서버 실행·화면 조회에는 불필요 (서버는 자동 수집하지 않음) |
 | 규제 OCR | `TESSERACT_CMD`, `TESSDATA_PREFIX` | Tesseract 실행 파일·언어 데이터 경로. 자동 탐색으로 찾을 수 있으면 생략 |
 | AI 공통 | `OPENAI_API_KEY` | **메인의 제형 문서 분석·개발요청서 자동변환과 챗봇 서버 모두 사용** |
 | AI 모델 선택 | `SIMULATION_OPENAI_MODEL`, `REQUISITION_OPENAI_MODEL`, `CHATBOT_OPENAI_MODEL` | 각 기능의 모델. 기본 gpt-4.1 |
@@ -180,6 +182,10 @@ MFDS_DB_PATH=data/regulatory/mfds_use_restriction.sqlite
 ```
 
 다른 작업 디렉터리에서 실행한다면 절대 경로를 사용합니다. 변수를 생략할 경우 코드의 기본 경로는 `instance/regulatory/mfds_use_restriction.sqlite`이므로 그 위치에 DB가 있어야 합니다. 서버는 DB를 읽기 전용으로 조회하며 시작·검색 시 자동 수집하지 않습니다.
+
+규제 화면의 성분 검색은 규제 DB와 함께 **성분 DB**(식약처 화장품 원료성분정보)도 읽습니다. 성분 DB는 저장소에 포함되어 있지 않으므로 `mfds_ingredients.py` 수집 스크립트(`MFDS_API_KEY` 필요)로 준비합니다. 기본 경로는 `instance/regulatory/mfds_ingredients.sqlite`이고, 다른 위치라면 `MFDS_INGREDIENT_DB_PATH`로 지정합니다. 성분 DB가 없으면 화면은 '검색 결과 없음'이 아니라 'DB 미설치' 오류를 표시합니다. 수집 명령·옵션은 `src/02_regulatory/mfds_ingredients.py` 상단 사용법을 따릅니다 (예: `python -u src/02_regulatory/mfds_ingredients.py collect`).
+
+> 배포 환경(Docker 이미지·Render)에는 현재 규제 DB만 포함되어 있습니다. 배포용 성분 DB 준비는 별도 후속 작업입니다.
 
 DB 갱신은 별도 `mfds_use_restriction.py` 수집 작업입니다. 수집기도 `MFDS_DB_PATH`를 사용하므로 **갱신할 때는 로컬 수집 경로를 지정**하고, 검증 후 배포용 사본을 교체합니다. 출처·수집 정보·갱신 절차는 [DB 안내](data/regulatory/README.md)를 따릅니다.
 
@@ -259,7 +265,7 @@ python src/06_chatbot/server.py
 |---|---|---|
 | `/api/home/data`, `/api/home/regulations` | 홈 데이터·규제 소식 | A |
 | `/api/home/rates/<code>`, `/api/home/trade`, `/api/home/validation` | 환율·수출입 상세, 데이터 교차검증 | A |
-| `/api/regulatory/ingredients`, `/api/regulatory/regulations` | 성분 검색·규제 조회 | B |
+| `/api/regulatory/search`, `/api/regulatory/lookup` | 식약처 성분·규제 DB 후보 검색, 선택 후보의 국가별 규제 조회 | B |
 | `/api/regulatory/extract` (POST) | 문서·이미지 성분 추출 | B |
 | `/api/margin-calculator/quote-profile`, `/api/margin-calculator/fx-rate`, `/api/margin-calculator/erp-cost` | 견적 기본정보·환율·시연용 원가 | C |
 | `/api/margin-calculator/quote-pdf` (POST) | 견적서 PDF 생성 | C |
@@ -329,7 +335,7 @@ render_template("02_regulatory/regulatory.html")
 - **개발요청서(E) 담당은 현재 미정**입니다. 공통 기반 PR(#1)에 포함된 개발요청서 변경도 김민 PM·유정현이 검토하고, 담당자가 정해지면 그 범위([개발 안내 10-3](docs/development.md))를 다시 확인합니다.
 
 - 각 담당자는 `app.py` 하단의 **자신의 영역**(`# [B] …` 주석 아래)에 Backend Route와 필요한 모듈 연결 코드를 추가합니다. 개발요청서는 기존 Blueprint 구조를 유지합니다.
-- Python 처리 로직은 자신의 폴더 모듈(예: `src/02_regulatory/regulatory_service.py`)에 둡니다.
+- Python 처리 로직은 자신의 폴더 모듈(예: `src/02_regulatory/regulatory_search.py`)에 둡니다.
 - 홈 콘텐츠·데이터는 A, 공통 사이드바·Navigation·로그인은 공통 담당(김민 PM·유정현)이 관리합니다.
 - 공통 파일·배포 설정 변경은 김민 PM·유정현 및 영향받는 담당자와 조율하고, 기능 담당자는 기존 인터페이스와 다른 기능의 동작을 유지합니다.
 

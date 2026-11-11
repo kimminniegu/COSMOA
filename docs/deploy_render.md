@@ -93,6 +93,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | | `COSMOA_DEMO_NAME`, `COSMOA_DEMO_TEAM` | 권장. 화면·챗봇 메일 서명에 쓰임 |
 | | `CHATBOT_URL` | `https://<챗봇 서비스 이름>.onrender.com` (끝 `/` 없이) |
 | | `MFDS_DB_PATH` | `/app/data/regulatory/mfds_use_restriction.sqlite` (Dockerfile 기본값과 같음) |
+| | `MFDS_INGREDIENT_DB_PATH` | **아직 준비 안 됨** — 규제 화면 성분 검색용 성분 DB 는 이미지에 포함되어 있지 않아 배포 화면 검색은 'DB 미설치' 오류가 난다. 배포용 성분 DB 준비는 별도 후속 작업 |
 | | `REQUISITION_OPENAI_MODEL` | 선택 |
 | **챗봇** | `PYTHON_VERSION` | `3.10.21` |
 | | `MFDS_DB_PATH` | `/opt/render/project/src/data/regulatory/mfds_use_restriction.sqlite` |
@@ -100,7 +101,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | **양쪽** | `OPENAI_API_KEY` | 메인은 개발요청서 자동변환, 챗봇은 답변 생성. **메인에서 빼지 않는다** |
 | | `CHATBOT_SECRET` | 두 서비스에 **같은 값**. 운영 전용으로 새로 만든 긴 임의 문자열 (로컬 값·주소·예시 값 재사용 금지) |
 | | `EXIM_API_KEY`, `DATA_GO_KR_KEY` | 홈 데이터 (두 서비스가 각자 수집) |
-| | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | 성분 검색·규제 API |
+| | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | 챗봇의 이전 성분 검색·규제 도구가 사용. 메인 규제 화면은 2026-11-11(4-1단계)부터 쓰지 않음 — 메인 값 정리는 챗봇 전환·배포 점검 때 함께 |
 | | `COSMETIC_HS_CODES`, `KOTRA_NEWS_URL` | 선택 |
 | **넣지 않음** | `TESSERACT_CMD`, `TESSDATA_PREFIX` | 로컬 Windows 경로. Docker 는 PATH·기본 tessdata 사용 |
 | | `FLASK_DEBUG`, `FLASK_PORT`, `CHATBOT_PORT` | Gunicorn 에서 쓰지 않음 (포트는 Render `PORT`). `FLASK_DEBUG` 는 챗봇 debug 를 켜므로 넣지 않는다 |

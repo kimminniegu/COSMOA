@@ -347,17 +347,12 @@ def home_api_validation():
     return jsonify(home_data.get_validation())
 
 
-# [B] 국가별 인허가 규제 — 접두사: /api/regulatory/...
-#     처리 로직은 src/02_regulatory/regulatory_service.py 에 있고 여기에는 Route만 둡니다.
+# [B] 국가별 인허가 규제 — 접두사: /api/regulatory/...  (search · lookup · extract)
+#     처리 로직은 src/02_regulatory/ 의 모듈(식약처 성분 DB·규제 DB 읽기 전용 검색·조회, 파일 추출)에 있고 여기에는 Route만 둡니다.
+#     규제 화면은 K-Beauty API(regulatory_service.py)를 쓰지 않습니다 — 그 모듈은 챗봇(src/06_chatbot/tools.py)이 직접 로드합니다.
 #     계약: src/02_regulatory/api_reference.md
 import importlib.util as _regulatory_importlib
 from flask import jsonify as _regulatory_jsonify, request as _regulatory_request
-
-_regulatory_spec = _regulatory_importlib.spec_from_file_location(
-    "regulatory_service", SRC_DIR / "02_regulatory" / "regulatory_service.py"
-)
-regulatory_service = _regulatory_importlib.module_from_spec(_regulatory_spec)
-_regulatory_spec.loader.exec_module(regulatory_service)
 
 # 파일 추출(텍스트 PDF · .xlsx) 모듈. 규제 API 는 호출하지 않는다.
 _regulatory_extract_spec = _regulatory_importlib.spec_from_file_location(
@@ -366,78 +361,19 @@ _regulatory_extract_spec = _regulatory_importlib.spec_from_file_location(
 regulatory_extract = _regulatory_importlib.module_from_spec(_regulatory_extract_spec)
 _regulatory_extract_spec.loader.exec_module(regulatory_extract)
 
-# 식약처 수집 DB 읽기 전용 조회 모듈 (수집은 별도 스크립트. 서버 시작·조회 때 수집하지 않는다)
+# 식약처 규제 DB 읽기 전용 조회 모듈 — /lookup 의 시장 코드(MARKET_CODES) 기준. 수집은 별도 스크립트이며 서버 시작·조회 때 수집하지 않는다
 _regulatory_mfds_spec = _regulatory_importlib.spec_from_file_location(
     "regulatory_mfds_lookup", SRC_DIR / "02_regulatory" / "regulatory_mfds_lookup.py"
 )
 regulatory_mfds = _regulatory_importlib.module_from_spec(_regulatory_mfds_spec)
 _regulatory_mfds_spec.loader.exec_module(regulatory_mfds)
 
-# 식약처 성분 DB + 규제 DB 통합 검색 (읽기 전용, 외부 API·API 키 없음). 직접 검색 화면 전용 — 파일 매칭은 아직 /ingredients·/regulations 사용
+# 식약처 성분 DB + 규제 DB 통합 검색·조회 (읽기 전용, 외부 API·API 키 없음). 직접 검색·파일 일괄 조회 공통
 _regulatory_search_spec = _regulatory_importlib.spec_from_file_location(
     "regulatory_search", SRC_DIR / "02_regulatory" / "regulatory_search.py"
 )
 regulatory_search = _regulatory_importlib.module_from_spec(_regulatory_search_spec)
 _regulatory_search_spec.loader.exec_module(regulatory_search)
-
-
-def _regulatory_error(exc):
-    """RegulatoryApiError → JSON 오류 응답. 설정 오류 503, 그 외 외부 API 오류 502."""
-    status = 503 if exc.kind == "config" else 502
-    return _regulatory_jsonify({"ok": False, "error": exc.to_dict()}), status
-
-
-@app.route("/api/regulatory/ingredients")
-@login_required
-def regulatory_ingredients():
-    """한글명·영문 INCI명 후보 검색. ?q=성분명 → 후보 최대 10개 (규제 조회는 하지 않음). 자동완성도 같은 Route 사용."""
-    q = (_regulatory_request.args.get("q") or "").strip()
-    if not q:
-        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "성분명을 입력해 주세요."}}), 400
-    if len(q) < regulatory_service.MIN_QUERY_LENGTH:
-        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "성분명을 2글자 이상 입력해 주세요."}}), 400
-    try:
-        result = regulatory_service.search_ingredients(q)
-    except regulatory_service.RegulatoryApiError as exc:
-        return _regulatory_error(exc)
-    result["ok"] = True
-    return _regulatory_jsonify(result)
-
-
-@app.route("/api/regulatory/regulations")
-@login_required
-def regulatory_regulations():
-    """규제 조회. ?code=5489&country=EU&source=mfds|api (기본 mfds)
-    - source=mfds : 식약처 수집 DB (읽기 전용). 성분 식별은 kr_name / inci_name / cas 로 하며 code 는 표시용으로만 전달한다.
-    - source=api  : 기존 RapidAPI. 선택한 출처만 조회하고 실패해도 다른 출처로 바꾸지 않는다."""
-    args = _regulatory_request.args
-    code = (args.get("code") or "").strip()
-    country = (args.get("country") or "").strip().upper()
-    source = (args.get("source") or "mfds").strip().lower()
-    if source not in ("mfds", "api"):
-        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "규제 정보 출처는 mfds 또는 api 여야 해요."}}), 400
-    if country not in regulatory_service.MARKET_CODES:
-        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "국가/시장을 선택해 주세요."}}), 400
-    if source == "mfds":
-        kr_name = (args.get("kr_name") or "").strip()
-        inci_name = (args.get("inci_name") or "").strip()
-        cas = (args.get("cas") or "").strip()
-        try:
-            result = regulatory_mfds.lookup(kr_name=kr_name, inci_name=inci_name, cas=cas, market=country, api_code=code or None)
-        except regulatory_mfds.MfdsLookupError as exc:
-            return _regulatory_jsonify({"ok": False, "error": exc.to_dict()}), exc.http_status
-        result["ok"] = True
-        return _regulatory_jsonify(result)
-    if not code.isdigit():
-        return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "성분을 먼저 선택해 주세요."}}), 400
-    try:
-        result = regulatory_service.get_regulations(code, country)
-    except regulatory_service.RegulatoryApiError as exc:
-        return _regulatory_error(exc)
-    result["ok"] = True
-    result["source"] = "api"
-    result["source_label"] = "기존 API (RapidAPI K-Beauty Cosmetic Ingredients)"
-    return _regulatory_jsonify(result)
 
 
 def _regulatory_search_error(exc):
@@ -467,7 +403,7 @@ def regulatory_lookup_route():
     country = (_regulatory_request.args.get("country") or "").strip().upper()
     if not key:
         return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "성분 후보를 먼저 선택해 주세요.", "source": None}}), 400
-    if country not in regulatory_service.MARKET_CODES:
+    if country not in regulatory_mfds.MARKET_CODES:
         return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "국가/시장을 선택해 주세요.", "source": None}}), 400
     try:
         result = regulatory_search.lookup_candidate(key, country)
@@ -482,7 +418,7 @@ def regulatory_lookup_route():
 def regulatory_extract_route():
     """업로드 문서에서 성분명·함량 추출. multipart: file (PDF·.xlsx), sheet (Excel 시트명, 선택).
     여러 시트면 status="sheet_required" 와 시트 목록을 돌려주고, 같은 파일을 sheet 와 함께 다시 보내면 추출한다.
-    임시 파일은 요청 안에서 삭제되며 규제 API 는 호출하지 않는다. 계약: src/02_regulatory/api_reference.md"""
+    임시 파일은 요청 안에서 삭제되며 규제 조회·외부 API 는 호출하지 않는다. 계약: src/02_regulatory/api_reference.md"""
     upload = _regulatory_request.files.get("file")
     if upload is None or not (upload.filename or "").strip():
         return _regulatory_jsonify({"ok": False, "error": {"kind": "validation", "message": "파일을 선택해 주세요."}}), 400

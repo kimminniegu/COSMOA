@@ -113,8 +113,8 @@ python app.py
 |---|---|
 | 로그인 화면 표시, (계정이 있으면) 로그인·로그아웃 | 개발요청서 **파일 자동변환**, 제형 문서 AI 분석 (`OPENAI_API_KEY`) |
 | 개발요청서 프로젝트 선택·고객사·프로젝트 생성 (dev 에 실제로 생성됨 — 7장) | AI 챗봇 답변 (챗봇 서버 + `OPENAI_API_KEY`, `CHATBOT_URL`·`CHATBOT_SECRET`) |
-| 개발요청서 **직접 작성**·수정·결과·인쇄/PDF, FIX 칸 | 성분 검색 등 외부 규제 API (`RAPIDAPI_*`) |
-| 식약처 규제 DB 조회 (`MFDS_DB_PATH` 설정 시) | 홈 환율·수출입·뉴스 등 외부 데이터 (`EXIM_API_KEY`, `DATA_GO_KR_KEY` 등) |
+| 개발요청서 **직접 작성**·수정·결과·인쇄/PDF, FIX 칸 | 챗봇의 이전 성분 검색·규제 도구 (`RAPIDAPI_*`) — 규제 화면은 키 없이 동작 |
+| 규제 화면 성분 검색·규제 조회 (식약처 규제 DB `MFDS_DB_PATH` + 성분 DB `MFDS_INGREDIENT_DB_PATH` 준비 시 — README 4장) | 홈 환율·수출입·뉴스 등 외부 데이터 (`EXIM_API_KEY`, `DATA_GO_KR_KEY` 등) |
 | 기능별 자동 테스트 (외부 API 는 모의 응답, 업무 DB 대신 메모리 사용자) | |
 
 기능별 자동 테스트 (DB·외부 API 키 불필요):

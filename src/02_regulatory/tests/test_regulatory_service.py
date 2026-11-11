@@ -1,12 +1,17 @@
 """국가별 인허가 규제 — 처리 로직·Route 테스트 (담당자 B).
 
-실행 (프로젝트 루트 COSTD/ 에서):
+실행 (프로젝트 루트에서):
     python -m unittest discover -s src/02_regulatory/tests -v
 
 - 외부 API를 호출하지 않는다. test_data/ 의 실제 응답 기록과 가상 응답으로 검증한다.
+- regulatory_service.py(K-Beauty API) 는 규제 화면·app.py 에서 더 이상 쓰지 않고 챗봇(src/06_chatbot/tools.py)만 쓴다.
+  그래서 이 파일의 K-Beauty 정규화·HTTP 오류 분류 테스트는 모듈을 파일 경로로 직접 로드해 검증한다 (챗봇 전환 4-2단계까지 유지).
+  이전 Route /api/regulatory/ingredients · /regulations 는 4-1단계에서 삭제했다 (삭제 확인 테스트만 남김).
 - RAPIDAPI_KEY / RAPIDAPI_HOST 값이 응답·오류 메시지에 섞이지 않는지도 확인한다.
+- 파일 추출(/api/regulatory/extract)·OCR 테스트도 이 파일에 있다.
 """
 
+import importlib.util
 import json
 import os
 import sys
@@ -20,9 +25,12 @@ BASE_DIR = REG_DIR.parent.parent
 TEST_DATA = REG_DIR / "test_data"
 
 sys.path.insert(0, str(BASE_DIR))
-import app as flask_app  # noqa: E402  (app.py 가 regulatory_service 를 로드한다)
+import app as flask_app  # noqa: E402  (Route·추출 테스트용. app.py 는 regulatory_service 를 로드하지 않는다)
 
-svc = flask_app.regulatory_service
+# 챗봇이 쓰는 K-Beauty 모듈 — app.py 와 무관하게 파일 경로로 직접 로드 (src/06_chatbot/tools.py 와 같은 방식)
+_svc_spec = importlib.util.spec_from_file_location("regulatory_service", REG_DIR / "regulatory_service.py")
+svc = importlib.util.module_from_spec(_svc_spec)
+_svc_spec.loader.exec_module(svc)
 
 FAKE_ENV = {"RAPIDAPI_KEY": "test-key-not-real-0000000000", "RAPIDAPI_HOST": "example.invalid"}
 
@@ -230,52 +238,19 @@ class RouteTest(unittest.TestCase):
     def test_service_file_not_served_as_asset(self):
         self.assertEqual(self.client.get("/assets/02_regulatory/regulatory_service.py").status_code, 404)
 
-    def test_ingredients_requires_q(self):
-        res = self.client.get("/api/regulatory/ingredients?q=%20%20")
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.get_json()["error"]["kind"], "validation")
-
-    def test_ingredients_ok(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("search_kr_retinol.json")) as get:
-            res = self.client.get("/api/regulatory/ingredients?q=%20레티놀%20")
-            get.assert_called_once_with("/v1/ingredient/kr", {"q": "레티놀"})
-        body = res.get_json()
-        self.assertEqual(res.status_code, 200)
-        self.assertTrue(body["ok"])
-        self.assertEqual(body["candidates"][0]["code"], 5489)
-
-    def test_regulations_validation(self):
-        self.assertEqual(self.client.get("/api/regulatory/regulations?code=&country=EU&source=api").status_code, 400)
-        self.assertEqual(self.client.get("/api/regulatory/regulations?code=5489&country=XX&source=api").status_code, 400)
-        self.assertEqual(self.client.get("/api/regulatory/regulations?code=5489&source=api").status_code, 400)
-
-    def test_regulations_eu_found(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_eu.json")) as get:
-            res = self.client.get("/api/regulatory/regulations?code=5489&country=eu&source=api")
-            get.assert_called_once_with("/v1/ingredient/5489/regulations", {"country": "EU"})
-        body = res.get_json()
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(body["lookup_status"], "found")
-        self.assertIn("【Restrictions】", body["entries"][0]["limit_condition"])
-
-    def test_regulations_us_no_data(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_5489_us.json")):
-            res = self.client.get("/api/regulatory/regulations?code=5489&country=US&source=api")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.get_json()["lookup_status"], "no_data")
-
-    def test_config_error_is_503_without_key(self):
-        with mock.patch.dict(os.environ, {"RAPIDAPI_KEY": "", "RAPIDAPI_HOST": ""}):
-            res = self.client.get("/api/regulatory/ingredients?q=레티놀")
-        self.assertEqual(res.status_code, 503)
-        self.assertEqual(res.get_json()["error"]["kind"], "config")
-
-    def test_api_error_is_502(self):
-        err = svc.RegulatoryApiError("timeout", "규제 API 응답이 지연되고 있어요.")
-        with mock.patch.object(svc, "_get", side_effect=err):
-            res = self.client.get("/api/regulatory/regulations?code=5489&country=EU&source=api")
-        self.assertEqual(res.status_code, 502)
-        self.assertEqual(res.get_json()["error"]["kind"], "timeout")
+    def test_legacy_kbeauty_routes_removed(self):
+        """4-1단계: 이전 K-Beauty 경로는 삭제됐다 — 외부 호출 없이 404, app.py 는 regulatory_service 를 로드하지 않는다"""
+        self.assertFalse(hasattr(flask_app, "regulatory_service"))
+        with mock.patch("requests.sessions.Session.request", side_effect=AssertionError("external HTTP must not be called")) as req:
+            for url in ("/api/regulatory/ingredients?q=%EB%A0%88%ED%8B%B0%EB%86%80",
+                        "/api/regulatory/regulations?code=5489&country=EU&source=api",
+                        "/api/regulatory/regulations?code=5489&country=EU&inci_name=Retinol"):
+                res = self.client.get(url)
+                self.assertEqual(res.status_code, 404, url)
+                self.assertNotIn("RAPIDAPI", res.get_data(as_text=True))
+            req.assert_not_called()
+        rules = {r.rule for r in flask_app.app.url_map.iter_rules() if r.rule.startswith("/api/regulatory/")}
+        self.assertEqual(rules, {"/api/regulatory/search", "/api/regulatory/lookup", "/api/regulatory/extract"})
 
 
 if __name__ == "__main__":
@@ -353,31 +328,6 @@ class BilingualRouteTest(unittest.TestCase):
         flask_app.app.config["TESTING"] = True
         self.client = flask_app.app.test_client()
         _login(self.client)
-
-    def test_route_rejects_single_char_without_external_call(self):
-        with mock.patch.object(svc, "_get") as get:
-            res = self.client.get("/api/regulatory/ingredients?q=%EB%A0%88")   # '레'
-            get.assert_not_called()
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.get_json()["error"]["kind"], "validation")
-        self.assertNotIn("RAPIDAPI", res.get_data(as_text=True))
-
-    def test_route_english_query(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("search_inci_partial_retin.json")) as get:
-            res = self.client.get("/api/regulatory/ingredients?q=Retin")
-            get.assert_called_once_with("/v1/ingredient/inci", {"q": "Retin"})
-        body = res.get_json()
-        self.assertEqual(res.status_code, 200)
-        self.assertTrue(body["ok"])
-        self.assertEqual(body["search_field"], "inci")
-        self.assertLessEqual(len(body["candidates"]), 10)
-        self.assertNotIn("x-rapidapi", res.get_data(as_text=True).lower())
-
-    def test_route_korean_query_single_call(self):
-        with mock.patch.object(svc, "_get", return_value=load_body("search_kr_partial_reti.json")) as get:
-            res = self.client.get("/api/regulatory/ingredients?q=%EB%A0%88%ED%8B%B0")   # '레티'
-            self.assertEqual(get.call_count, 1)
-        self.assertEqual(res.get_json()["search_field"], "kr")
 
     def test_page_copy_mentions_bilingual_autocomplete(self):
         html = self.client.get("/regulatory").get_data(as_text=True)
@@ -604,9 +554,9 @@ class ExtractRouteTest(unittest.TestCase):
     def test_pdf_route_ok_and_no_regulation_api_call(self):
         with open(FIXTURES / "eu_ser_041_development_brief.pdf", "rb") as f:
             data = f.read()
-        with mock.patch.object(svc, "_get") as get:
+        with mock.patch("requests.sessions.Session.request", side_effect=AssertionError("external HTTP must not be called")) as req:
             res = self._post("brief.pdf", data)
-            get.assert_not_called()
+            req.assert_not_called()
         self.assertEqual(res.status_code, 200)
         body = res.get_json()
         self.assertTrue(body["ok"])
@@ -638,6 +588,7 @@ class ExtractRouteTest(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # 조회 상태 보완 (2026-09-23 진단): not_listed / 요금제 안내문 / 403 접근 제한 — 저장된 실제 응답으로 검증
+# (K-Beauty 응답 정규화 — 챗봇이 쓰는 regulatory_service 기준. Route 테스트는 4-1단계에서 경로와 함께 삭제)
 # ---------------------------------------------------------------------------
 
 class LookupStatusDiagnosisTest(unittest.TestCase):
@@ -658,26 +609,6 @@ class LookupStatusDiagnosisTest(unittest.TestCase):
         r2 = svc.normalize_regulation_response(load_body("regulations_5489_us.json"), 5489, "US")
         self.assertEqual(r2["lookup_status"], "no_data")
         self.assertFalse(r2["note_mentions_plan"])
-
-    def test_route_passes_status_fields(self):
-        flask_app.app.config["TESTING"] = True
-        client = flask_app.app.test_client(); _login(client)
-        with mock.patch.object(svc, "_get", return_value=load_body("regulations_1941_eu_not_listed.json")) as get:
-            res = client.get("/api/regulatory/regulations?code=1941&country=EU&source=api")
-            get.assert_called_once_with("/v1/ingredient/1941/regulations", {"country": "EU"})
-        body = res.get_json()
-        self.assertEqual(body["lookup_status"], "not_listed")
-        self.assertEqual(body["result_status"], "not_listed")
-        self.assertIn("note_mentions_plan", body)
-
-    def test_route_403_is_access_502(self):
-        flask_app.app.config["TESTING"] = True
-        client = flask_app.app.test_client(); _login(client)
-        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(svc.requests, "get", return_value=FakeResponse(403, {"message": "not subscribed"})):
-            res = client.get("/api/regulatory/regulations?code=5489&country=EU&source=api")
-        self.assertEqual(res.status_code, 502)
-        self.assertEqual(res.get_json()["error"]["kind"], "access")
-        self.assertNotIn("RAPIDAPI", res.get_data(as_text=True))
 
 
 # ---------------------------------------------------------------------------

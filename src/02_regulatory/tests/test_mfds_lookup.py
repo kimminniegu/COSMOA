@@ -11,7 +11,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 REG_DIR = HERE.parent
@@ -168,6 +167,9 @@ class LookupFixtureTest(unittest.TestCase):
 
 
 class RouteSourceTest(unittest.TestCase):
+    """규제 화면 출처 표시. 이전 /api/regulatory/regulations(source=mfds|api) Route 테스트는 4-1단계에서 경로와 함께 삭제했다.
+    lookup() 자체는 챗봇이 쓰므로 위 LookupFixtureTest 로 계속 검증하고, 화면 조회(/lookup)는 test_regulatory_direct_search.py 가 검증한다."""
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp(); cls.db = Path(cls.tmp) / "fixture.sqlite"; build_db(cls.db)
@@ -182,36 +184,6 @@ class RouteSourceTest(unittest.TestCase):
         from src.common.testing import login_as   # 업무 DB 대신 메모리 사용자 (세션 형식 v2)
         login_as(c, {"id": 0, "email": "t@example.invalid", "name": "t", "team": "B"}, self.app)
         return c
-
-    def test_default_source_is_mfds_and_no_api_call(self):
-        svc = self.app.regulatory_service
-        with mock.patch.object(svc, "_get") as get:
-            res = self.client().get("/api/regulatory/regulations?code=5489&country=EU&kr_name=%EB%A0%88%ED%8B%B0%EB%86%80&inci_name=Retinol&cas=11103-57-4")
-            get.assert_not_called()
-        body = res.get_json()
-        self.assertEqual(res.status_code, 200); self.assertEqual(body["source"], "mfds"); self.assertEqual(body["lookup_status"], "found")
-        self.assertNotIn("MFDS_API_KEY", res.get_data(as_text=True))
-
-    def test_api_source_keeps_old_behaviour_no_fallback(self):
-        svc = self.app.regulatory_service
-        with mock.patch.object(svc, "_get", return_value=json.load(open(REG_DIR / "test_data" / "regulations_5489_eu.json", encoding="utf-8"))["body"]) as get:
-            res = self.client().get("/api/regulatory/regulations?code=5489&country=EU&source=api")
-            get.assert_called_once_with("/v1/ingredient/5489/regulations", {"country": "EU"})
-        self.assertEqual(res.get_json()["source"], "api")
-        # api 실패 시 mfds 로 바꾸지 않는다
-        with mock.patch.object(svc, "_get", side_effect=svc.RegulatoryApiError("http", "boom", 500)):
-            res2 = self.client().get("/api/regulatory/regulations?code=5489&country=EU&source=api")
-        self.assertEqual(res2.status_code, 502); self.assertEqual(res2.get_json()["error"]["kind"], "http")
-
-    def test_mfds_db_missing_is_503_not_not_listed(self):
-        with mock.patch.dict(os.environ, {"MFDS_DB_PATH": str(Path(self.tmp) / "missing.sqlite")}):
-            res = self.client().get("/api/regulatory/regulations?code=1&country=EU&inci_name=Retinol")
-        self.assertEqual(res.status_code, 503)
-        self.assertEqual(res.get_json()["error"]["kind"], "db_missing")
-
-    def test_mfds_requires_name(self):
-        res = self.client().get("/api/regulatory/regulations?code=5489&country=EU")
-        self.assertEqual(res.status_code, 400)
 
     def test_page_has_no_kbeauty_source_choice(self):
         """출처 선택 radio 는 없다 — 직접 검색(2단계)·파일 탭(3단계) 모두 식약처 수집 DB 고정 안내로 바뀌었다"""

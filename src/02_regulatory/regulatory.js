@@ -77,13 +77,11 @@
   /* 출처별 날짜·갱신 안내 (직접 검색·일괄 조회·상세가 공유). 시각을 만들어내지 않는다 */
   function acquiredText(res) {
     if (!res) return "—";
-    if (res.source === "mfds") return res.acquired_at ? formatKst(res.acquired_at) + " (수집 완료 시각, DB 기록)" : "수집 시각 미기록";
-    return res.acquired_at || res.queried_at ? formatKst(res.acquired_at || res.queried_at) + " (API 응답 확보 시각)" : "—";
+    return res.acquired_at ? formatKst(res.acquired_at) + " (수집 완료 시각, DB 기록)" : "수집 시각 미기록";
   }
   function refreshText(res) {
     if (!res) return "—";
-    if (res.source === "mfds") return res.refresh_policy || "수동 재수집 (자동 갱신 없음)";
-    return res.refresh_policy || "갱신 주기 확인 필요";
+    return res.refresh_policy || "수동 재수집 (자동 갱신 없음)";
   }
 
   /* 준비 중 안내 (파일 탭 등 미구현 기능) ----------------------------------- */
@@ -203,9 +201,8 @@
     lastSingle: null,     // 마지막 직접 검색 결과 {res, ctx, err} — '규제 원문·출처 보기' 를 누를 때 Modal 을 다시 채운다
   };
 
-  /* 조회 출처 표시 이름. 직접 검색·파일 일괄 조회 모두 식약처 수집 DB(mfds)만 쓴다 (3단계, 출처 선택 radio 제거).
-     api 항목은 상세 Modal 의 이전 K뷰티 응답 표시 분기용으로만 남아 있다 — 4단계에서 삭제 */
-  var SOURCE_LABEL = { mfds: "식약처 수집 DB", api: "K뷰티 API (RapidAPI)" };
+  /* 조회 출처 표시 이름. 직접 검색·파일 일괄 조회 모두 식약처 수집 DB(mfds)만 쓴다 */
+  var SOURCE_LABEL = { mfds: "식약처 수집 DB" };
 
   /* 후보 출처·일치 근거 표시 — 직접 검색·파일 성분 확인 공통 (key·내부 id·해시는 표시하지 않는다) */
   var CANDIDATE_SOURCE_LABEL = { mfds_ingredients: "성분정보", mfds_restriction: "규제정보" };
@@ -721,28 +718,22 @@
   // 조회됨은 허용·안전처럼 보이지 않도록 중립(기본) 배지. 미확인·보류는 warning, 오류는 danger.
   var LOOKUP_LABEL = {
     found: { text: "규제 정보 조회됨", variant: "" },
-    no_data: { text: "규제 데이터 미확인", variant: "warning" },
-    not_listed: { text: "규제 목록 미등재", variant: "warning" },
+    not_listed: { text: "출처에서 일치 항목 없음", variant: "warning" },      // 식약처 DB 에서 이름·CAS 일치 항목 없음
     link_required: { text: "성분 연결 확인 필요", variant: "warning" },
     no_market_record: { text: "선택 국가 기록 없음", variant: "warning" },     // 직접 검색: 규제 성분은 연결됐지만 선택 시장 레코드 없음
     not_linked: { text: "규제 성분 연결 미확인", variant: "warning" },        // 직접 검색: 성분정보 후보와 이름이 정확히 일치하는 규제 성분 없음
     reselect: { text: "후보 다시 선택 필요", variant: "warning" },            // 직접 검색: 수집본이 바뀐 후보 key (stale_key·not_found)
     hold: { text: "판단 보류 (미확인 응답)", variant: "warning" },
-    api_error: { text: "API 오류", variant: "danger" },
-    access: { text: "접근 제한", variant: "danger" },
+    api_error: { text: "API 오류", variant: "danger" },                      // 연결 실패·응답 해석 실패 등 DB 이용 불가 외 오류
     source_unavailable: { text: "출처 이용 불가", variant: "danger" },
   };
-  /* 식약처 DB 응답의 not_listed 는 '해당 출처에서 일치 항목 없음' — K뷰티 API 의 '규제 목록 미등재' 와 문구를 구분한다 */
-  function statusLabel(status, res) {
-    var m = LOOKUP_LABEL[status] || { text: "미조회", variant: "" };
-    if (res && res.source === "mfds" && status === "not_listed") return { text: "출처에서 일치 항목 없음", variant: "warning" };
-    return m;
+  function statusLabel(status) {
+    return LOOKUP_LABEL[status] || { text: "미조회", variant: "" };
   }
   var DB_KINDS = { db_missing: "DB 미설치 (수집 DB 없음)", db_incomplete: "수집 미완료 (완료된 수집 없음)", db_error: "DB 읽기 오류" };
   function sourceText(res) {
     if (!res) return "—";
-    if (res.source === "mfds") return res.regulation_source ? "규제정보 — " + res.regulation_source.label : "식약처 수집 DB";
-    return SOURCE_LABEL.api;
+    return res.regulation_source ? "규제정보 — " + res.regulation_source.label : SOURCE_LABEL.mfds;
   }
   /* 직접 검색: 사용자가 고른 후보의 출처·수집 시각 (규제 조회 출처·시각과 따로 표시) */
   function ingredientSourceText(res) {
@@ -759,42 +750,32 @@
     return (LINK_BASIS_TEXT[l.status] || l.status) + basis + target + (l.conflict ? " · " + l.conflict : "");
   }
 
-  /* 오류 종류 → 화면 분류. access/auth/rate_limit 은 '접근 제한', 나머지는 'API 오류' */
-  var ACCESS_KINDS = { access: "요금제(구독)·인증 확인 필요", auth: "인증 실패", rate_limit: "호출 한도 초과" };
+  /* 오류 종류 → 화면 분류. DB 이용 불가 / 후보 다시 선택 / 그 외(연결 실패·응답 오류 등) */
   function errorCategory(err) {
     if (err && DB_KINDS[err.kind]) return "source_unavailable";     // DB 미설치·미완료·읽기 오류 — 미등재로 표시하지 않는다
-    if (err && RESELECT_KINDS[err.kind]) return "reselect";          // 직접 검색: 수집본이 바뀐 후보 — 다시 검색·선택
-    return err && ACCESS_KINDS[err.kind] ? "access" : "api_error";
+    if (err && RESELECT_KINDS[err.kind]) return "reselect";          // 수집본이 바뀐 후보(stale_key·not_found) — 다시 검색·선택
+    return "api_error";
   }
   function errorBadge(err) {
     var cat = errorCategory(err);
     if (cat === "source_unavailable") return badge("출처 이용 불가 · " + DB_KINDS[err.kind], "danger");
     if (cat === "reselect") return badge(LOOKUP_LABEL.reselect.text, "warning");
-    return badge(cat === "access" ? "접근 제한 · " + ACCESS_KINDS[err.kind] : "API 오류", "danger");
+    return badge(LOOKUP_LABEL.api_error.text, "danger");
   }
 
   /* 데이터 없음 응답의 이유를 쉬운 한국어로. 확인된 문구만 근거로 쓰고 의미를 단정하지 않는다 */
   function noDataReason(res) {
     if (!res) return "";
-    if (res.source === "mfds") {
-      if (res.lookup_status === "no_market_record") return "규제정보에 이 성분 기록은 있지만 선택한 시장의 기록은 없어요" + (res.markets_listed && res.markets_listed.length ? " (기록이 있는 국가: " + res.markets_listed.join(", ") + ")" : "") + ". 허용·안전·규제 없음을 뜻하지 않아요.";
-      if (res.lookup_status === "not_linked") return "성분정보에서 고른 성분과 이름이 정확히 일치하는 규제정보 항목을 찾지 못했어요. 허용·안전·규제 없음을 뜻하지 않아요. 이명·포함 일치·유사한 이름으로는 연결하지 않았어요." + (res.related && res.related.length ? " 관련 항목 " + res.related.length + "건은 적용 여부 확인이 필요해요." : "");
-      if (res.lookup_status === "link_required" && res.link) return "성분정보에서 고른 성분을 규제정보의 성분 하나로 연결할 수 없어요. " + (res.link_conflict || "") + " 아래 후보 중 맞는 규제 성분을 직접 선택하거나 다시 검색해 주세요.";
-      if (res.lookup_status === "not_listed") return "식약처 수집 DB 에서 이름·CAS 가 정확히 일치하는 항목을 찾지 못했어요. 허용·안전·규제 없음을 뜻하지 않아요." + (res.related && res.related.length ? " 관련 항목 " + res.related.length + "건은 적용 여부 확인이 필요해요." : "");
-      if (res.lookup_status === "link_required") return "이름·CAS 로 하나의 항목으로 확정할 수 없어요. " + (res.link_conflict || "") + " 후보를 확인해 주세요.";
-      return "";
-    }
-    if (res.lookup_status === "not_listed") return "API 소스에 이 성분의 제한·금지 항목이 없다고 안내했어요. 허용·안전을 뜻하지 않아요.";
-    if (res.lookup_status === "no_data") {
-      return res.note_mentions_plan
-        ? "선택한 시장의 항목이 없어요. API 안내문에 ‘현재 요금제 밖 시장에만 항목이 있다’는 문구가 있어요 (요금제 범위는 관리자 확인 필요)."
-        : "선택한 시장의 항목이 API 소스에 없어요. 다른 시장 항목 유무는 아래 API 안내를 참고하세요.";
-    }
+    if (res.lookup_status === "no_market_record") return "규제정보에 이 성분 기록은 있지만 선택한 시장의 기록은 없어요" + (res.markets_listed && res.markets_listed.length ? " (기록이 있는 국가: " + res.markets_listed.join(", ") + ")" : "") + ". 허용·안전·규제 없음을 뜻하지 않아요.";
+    if (res.lookup_status === "not_linked") return "성분정보에서 고른 성분과 이름이 정확히 일치하는 규제정보 항목을 찾지 못했어요. 허용·안전·규제 없음을 뜻하지 않아요. 이명·포함 일치·유사한 이름으로는 연결하지 않았어요." + (res.related && res.related.length ? " 관련 항목 " + res.related.length + "건은 적용 여부 확인이 필요해요." : "");
+    if (res.lookup_status === "link_required" && res.link) return "성분정보에서 고른 성분을 규제정보의 성분 하나로 연결할 수 없어요. " + (res.link_conflict || "") + " 아래 후보 중 맞는 규제 성분을 직접 선택하거나 다시 검색해 주세요.";
+    if (res.lookup_status === "not_listed") return "식약처 수집 DB 에서 이름·CAS 가 정확히 일치하는 항목을 찾지 못했어요. 허용·안전·규제 없음을 뜻하지 않아요." + (res.related && res.related.length ? " 관련 항목 " + res.related.length + "건은 적용 여부 확인이 필요해요." : "");
+    if (res.lookup_status === "link_required") return "이름·CAS 로 하나의 항목으로 확정할 수 없어요. " + (res.link_conflict || "") + " 후보를 확인해 주세요.";
     return "";
   }
 
-  function lookupBadge(status, res) {
-    var m = statusLabel(status, res);
+  function lookupBadge(status) {
+    var m = statusLabel(status);
     return badge(m.text, m.variant);
   }
 
@@ -849,7 +830,7 @@
   function ingredientKr(res, ctx) {
     var ing = (res && res.ingredient) || ctx.selected || {};
     var eng = ing.inci_name || ing.eng_name;
-    return ing.kr_name || eng || (ing.code != null ? "code " + ing.code : "이름 미제공");
+    return ing.kr_name || eng || "이름 미제공";
   }
 
   function ingredientInci(res, ctx) {
@@ -868,9 +849,9 @@
     var code = (res.country && res.country.code) || ctx.marketCode;
     var resolved = res.country && res.country.resolved;
     var listed = res.markets_listed && res.markets_listed.length ? res.markets_listed.join(", ") : "";
-    // 등재 시장 목록은 응답을 준 출처의 성분 기준 정보다. K뷰티 API 목록을 식약처 DB 의 제공 범위처럼 보이지 않게 출처를 함께 적는다
+    // 레코드가 있는 국가 목록은 식약처 규제 DB 의 이 성분 기준 정보다 (제공 범위 전체가 아님)
     return "시장 코드 " + code + (resolved ? " (" + resolved + ")" : "") +
-      (listed ? (res.source === "mfds" ? " · 식약처 DB 에 이 성분 레코드가 있는 국가: " : " · K뷰티 API 에 이 성분이 등재된 시장: ") + listed : "");
+      (listed ? " · 식약처 DB 에 이 성분 레코드가 있는 국가: " + listed : "");
   }
 
   function joinEntries(res, key) {
@@ -886,7 +867,7 @@
     var node = el("span");
     if (!res || !res.data_source) { node.textContent = "미제공"; return node; }
     var text = String(res.data_source);
-    if (res.source === "mfds" && res.source_page) {
+    if (res.source_page) {
       var cut = text.indexOf("안내 페이지:");
       if (cut >= 0 && text.indexOf(res.source_page) >= 0) text = text.slice(0, cut).trim();
       node.appendChild(document.createTextNode(text + " "));
@@ -935,7 +916,7 @@
     var meta = el("span", "regulatory-detail-head__meta-inner");
     meta.appendChild(el("span", "regulatory-detail-head__market", ctx.marketLabel || "—"));
     meta.appendChild(el("span", "regulatory-detail-head__sep", "/"));
-    meta.appendChild(res ? lookupBadge(res.lookup_status, res) : errorBadge(err));
+    meta.appendChild(res ? lookupBadge(res.lookup_status) : errorBadge(err));
     if (types.length) {
       meta.appendChild(el("span", "regulatory-detail-head__sep", "/"));
       meta.appendChild(el("span", "regulatory-detail-head__type", types.join(", ")));
@@ -945,8 +926,8 @@
     if (ctx.amountRef) setText(amountNode, "문서 함량: " + ctx.amountRef + " · 적합 여부는 판정하지 않아요.");
     show(amountNode, !!ctx.amountRef);
     var reason = "";
-    if (err) reason = (err.message || "요청에 실패했어요.") + (err.kind ? " (오류 종류: " + err.kind + (err.http_status ? ", 외부 API HTTP " + err.http_status : "") + ")" : "");
-    else if (res && res.lookup_status === "found") reason = "규제 항목 " + entries.length + "건" + (res.source === "mfds" ? " (조건별 레코드 모두 표시)" : "") + " · 조회됨은 사용 허용·적합 판정이 아니에요.";
+    if (err) reason = (err.message || "요청에 실패했어요.") + (err.kind ? " (오류 종류: " + err.kind + ")" : "");
+    else if (res && res.lookup_status === "found") reason = "규제 항목 " + entries.length + "건 (조건별 레코드 모두 표시) · 조회됨은 사용 허용·적합 판정이 아니에요.";
     else if (res && res.lookup_status === "hold") reason = "응답 상태값 ‘" + (res.result_status || "—") + "’은 확인된 값이 아니에요. 임의로 해석하지 않았어요.";
     else if (res) reason = noDataReason(res);
     var reasonNode = detailNode("head-reason");
@@ -968,16 +949,15 @@
     /* ④-1 입력·매칭 근거 */
     set("input-raw", ctx.inputRaw);
     set("input-market", ctx.marketLabel);
-    // 직접 검색·파일 행 선택(sel.key)은 출처로 표시하고 key 자체는 표시하지 않는다. sel.code 분기는 이전 K뷰티 후보용 — 화면에서 더 이상 만들지 않음 (4단계 삭제)
-    set("match-name", sel.key ? ingredientFull(res, ctx) + " · " + candidateSourceLabel(sel)
-      : (sel.code != null ? ingredientFull(res, ctx) + " · code " + sel.code : "매칭 전"));
+    // 직접 검색·파일 행 선택(sel.key)은 출처로 표시하고 key 자체는 표시하지 않는다
+    set("match-name", sel.key ? ingredientFull(res, ctx) + " · " + candidateSourceLabel(sel) : "매칭 전");
     set("match-method", ctx.matchMethod || "—");
-    set("link-basis", res && res.link ? linkBasisText(res) : (res && res.source === "mfds"
+    set("link-basis", res && res.link ? linkBasisText(res) : (res
       ? ((res.link_basis && res.link_basis.length ? res.link_basis.join("·") : "—") + (res.matched_identity ? " → " + res.matched_identity.std_name + (res.matched_identity.eng_name ? " (" + res.matched_identity.eng_name + ")" : "") : "") + (res.link_conflict ? " · " + res.link_conflict : ""))
-      : (res ? "해당 없음 (K뷰티 API 는 성분 code 로 조회)" : "해당 없음")));
+      : "해당 없음"));
     set("match-updated", sel.key
       ? (res && res.ingredient_source ? ingredientSourceText(res) : (sel.snapshot && sel.snapshot.collected_at ? candidateSourceLabel(sel) + " · " + formatKst(sel.snapshot.collected_at) + " 수집 완료 (원천 갱신일 아님)" : "미제공"))
-      : (sel.record_updated_at ? formatKst(sel.record_updated_at) + " — API 성분 레코드의 updated_at 이며 규제 자료 갱신일이 아니에요." : "미제공"));
+      : "미제공");
     set("input-location", ctx.location || "해당 없음");
 
     /* ④-2 전체 원문·고시 정보 */
@@ -992,7 +972,7 @@
     set("source", sourceDescriptionNode(res));
     set("disclaimer", res && res.disclaimer ? res.disclaimer : "미제공");
     set("refresh-policy", res ? refreshText(res) + (res.refresh_basis ? " — " + res.refresh_basis : "") : "—");
-    var collectedDiffers = !!(res && res.source === "mfds" && res.collected_at && res.collected_at !== res.acquired_at);
+    var collectedDiffers = !!(res && res.collected_at && res.collected_at !== res.acquired_at);
     detailItem("collected-at", collectedDiffers);
     set("collected-at", collectedDiffers ? formatKst(res.collected_at) + " (수집 완료 시각, DB 기록 — 확보 시각과 다른 값)" : "해당 없음");
     var runText = collectionRunText(res);
@@ -1000,11 +980,11 @@
     set("collection-run", runText || "해당 없음");
     set("source-updated", res && res.source_updated_at ? res.source_updated_at : "미제공");
     set("law-dates", res && res.law_dates ? res.law_dates : "미제공");
-    set("queried-at", (res && res.queried_at ? formatKst(res.queried_at) : "—") + (res && res.source === "mfds" ? " (DB 를 읽은 시각)" : (res ? " (외부 API 응답을 받은 시각)" : "")));
+    set("queried-at", (res && res.queried_at ? formatKst(res.queried_at) : "—") + (res ? " (DB 를 읽은 시각)" : ""));
     set("verified-at", "미실시");
 
     /* ⑤ 간결한 출처 */
-    set("foot-source", res ? sourceText(res) : (SOURCE_LABEL[ctx.source] || (err && err.source === "mfds" ? SOURCE_LABEL.mfds : "—")));
+    set("foot-source", res ? sourceText(res) : (SOURCE_LABEL[ctx.source] || "—"));
     set("foot-acquired", acquiredText(res));
 
     resetDetailModalView();
@@ -1018,24 +998,22 @@
     setText($("regulatory-single-market"), ctx.marketLabel);
 
     var st = res.lookup_status;
-    replaceChildren($("regulatory-single-status"), lookupBadge(st, res));
+    replaceChildren($("regulatory-single-status"), lookupBadge(st));
     var statusNote = "";
-    if (st === "found") statusNote = "규제 항목 " + res.entries.length + "건" + (res.source === "mfds" ? " (조건별 레코드 모두 표시)" : " 반환");
-    else if (st === "no_data" || st === "not_listed" || st === "link_required" || st === "no_market_record" || st === "not_linked") statusNote = "응답 상태값: " + (res.result_status || "—");
+    if (st === "found") statusNote = "규제 항목 " + res.entries.length + "건 (조건별 레코드 모두 표시)";
+    else if (st === "not_listed" || st === "link_required" || st === "no_market_record" || st === "not_linked") statusNote = "응답 상태값: " + (res.result_status || "—");
     else statusNote = "응답 상태값: " + (res.result_status || "—") + " (확인되지 않은 값)";
     setText($("regulatory-single-status-note"), statusNote);
 
     var types = res.entries.map(function (e) { return e.regulate_type || "구분 미제공"; });
     setText($("regulatory-single-type"), res.entries.length ? types.join(", ") : "—");
-    var TYPE_NOTE = { no_data: "시장 항목 없음", no_market_record: "선택 국가 기록 없음", not_linked: "규제 성분 연결 미확인", link_required: "성분 연결 확인 필요" };
-    setText($("regulatory-single-type-note"), res.entries.length
-      ? "원문 표기"
-      : (TYPE_NOTE[st] || (st === "not_listed" ? (res.source === "mfds" ? "출처에서 일치 항목 없음" : "목록 미등재") : "판단 보류")));
+    var TYPE_NOTE = { not_listed: "출처에서 일치 항목 없음", no_market_record: "선택 국가 기록 없음", not_linked: "규제 성분 연결 미확인", link_required: "성분 연결 확인 필요" };
+    setText($("regulatory-single-type-note"), res.entries.length ? "원문 표기" : (TYPE_NOTE[st] || "판단 보류"));
 
-    var noData = st === "no_data" || st === "not_listed" || st === "no_market_record" || st === "not_linked";
+    var noData = st === "not_listed" || st === "no_market_record" || st === "not_linked";
     show($("regulatory-single-nodata"), noData);
     var NODATA_TITLE = {
-      not_listed: res.source === "mfds" ? "식약처 수집 DB 에서 일치하는 규제 항목을 찾지 못했어요" : "API 규제 목록에 이 성분이 등재되어 있지 않아요",
+      not_listed: "식약처 수집 DB 에서 일치하는 규제 항목을 찾지 못했어요",
       no_market_record: "규제정보에 이 성분은 있지만 선택한 시장의 기록이 없어요",
       not_linked: "고른 성분과 연결되는 규제정보 성분을 확인하지 못했어요",
     };
@@ -1059,8 +1037,7 @@
     setText($("regulatory-single-lawdate"), res.law_dates ? res.law_dates : "미제공");
     setText($("regulatory-single-nodata-body"), (noDataReason(res) || "허용되거나 안전하다는 뜻은 아니에요.") + " 다른 자료로 추가 확인이 필요해요.");
     var nodataNote = $("regulatory-single-nodata-note");
-    var noteLabel = res.source === "mfds" ? "조회 안내: " : "API 안내(원문): ";
-    if (nodataNote) { setText(nodataNote, res.result_note ? noteLabel + res.result_note : ""); show(nodataNote, !!res.result_note); }
+    if (nodataNote) { setText(nodataNote, res.result_note ? "조회 안내: " + res.result_note : ""); show(nodataNote, !!res.result_note); }
     show($("regulatory-single-hold"), res.lookup_status === "hold");
     setText($("regulatory-single-hold-note"), "응답 상태값 '" + (res.result_status || "—") + "'은 확인된 값이 아니에요. 임의로 해석하지 않았어요.");
     show($("regulatory-asean-notice"), ctx.marketCode === "ASEAN");
@@ -1087,15 +1064,13 @@
     var reselect = errorCategory(err) === "reselect";
     setText($("regulatory-result-error-reason"), ((err && err.message) || "잠시 후 다시 시도해 주세요.") +
       (reselect ? " 이전 선택은 해제했어요. 성분명을 다시 검색해 후보를 선택해 주세요." : ""));
-    var category = errorCategory(err) === "access" ? "접근 제한 (" + ACCESS_KINDS[err.kind] + ")"
-      : (errorCategory(err) === "source_unavailable" ? "출처 이용 불가 (" + DB_KINDS[err.kind] + (err.source && CANDIDATE_SOURCE_LABEL[err.source] ? " · " + CANDIDATE_SOURCE_LABEL[err.source] : "") + ")"
+    var category = errorCategory(err) === "source_unavailable" ? "출처 이용 불가 (" + DB_KINDS[err.kind] + (err.source && CANDIDATE_SOURCE_LABEL[err.source] ? " · " + CANDIDATE_SOURCE_LABEL[err.source] : "") + ")"
       : (reselect ? LOOKUP_LABEL.reselect.text
-      : (err && err.kind === "validation" ? "입력 확인" : (err && err.kind === "network" ? "연결 실패" : "API 오류"))));
+      : (err && err.kind === "validation" ? "입력 확인" : (err && err.kind === "network" ? "연결 실패" : LOOKUP_LABEL.api_error.text)));
     setText($("regulatory-single-source"), "조회 출처: " + (SOURCE_LABEL[ctx.source] || ctx.source || "—"));
     setText($("regulatory-single-acquired"), "—"); setText($("regulatory-single-refresh"), "—");
     setText($("regulatory-result-error-kind"),
-      category + " · 오류 종류: " + ((err && err.kind) || "unknown") +
-      (err && err.http_status ? " · 외부 API HTTP " + err.http_status : "") + " · 입력한 조건은 그대로 남아 있어요.");
+      category + " · 오류 종류: " + ((err && err.kind) || "unknown") + " · 입력한 조건은 그대로 남아 있어요.");
     state.lastSingle = { res: null, ctx: ctx, err: err };
     fillModal(null, ctx, err);
     setResult("error");

@@ -1,7 +1,7 @@
 """국가별 인허가 규제 — 식약처 성분 DB + 규제 DB 통합 성분 검색 (읽기 전용, 담당자 B).
 
-K-Beauty API 성분 검색(regulatory_service.search_ingredients)을 대체하기 위한 1단계 모듈이다.
-이번 단계에서는 app.py·화면에 연결하지 않는다. 외부 API 호출·API 키·자동 재수집 없음. DB 는 mode=ro 로만 연다.
+규제 화면의 성분 검색·조회 모듈 — app.py [B] 의 /api/regulatory/search(search) · /api/regulatory/lookup(lookup_candidate) 가 쓴다.
+(이전 K-Beauty API 성분 검색을 대체. K-Beauty 모듈 regulatory_service.py 는 챗봇만 쓴다.) 외부 API 호출·API 키·자동 재수집 없음. DB 는 mode=ro 로만 연다.
 
 검색 대상 (완료된 수집본만: status completed | completed_with_warnings)
 - 성분 DB  (mfds_ingredients.py 수집, MFDS_INGREDIENT_DB_PATH): INGR_KOR_NAME · INGR_ENG_NAME · INGR_SYNONYM · CAS_NO

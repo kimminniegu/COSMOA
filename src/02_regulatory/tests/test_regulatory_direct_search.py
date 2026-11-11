@@ -1,6 +1,7 @@
 """직접 검색 2단계 Route 테스트 (담당자 B) — /api/regulatory/search · /api/regulatory/lookup.
 
-임시 DB 만 쓴다 (실제 수집 DB·외부 API 사용 안 함). K뷰티 API(regulatory_service._get) 호출이 0회인지 함께 확인한다.
+임시 DB 만 쓴다 (실제 수집 DB·외부 API 사용 안 함). 모든 외부 HTTP(requests) 호출을 막고 0회인지 함께 확인한다.
+app.py 는 4-1단계부터 K뷰티 모듈(regulatory_service)을 로드하지 않는다 — 규제 화면 Route 에서 K뷰티 호출 경로 자체가 없다.
 실행 (프로젝트 루트):  python -m unittest discover -s src/02_regulatory/tests -p "test_regulatory_direct_search.py" -v
 """
 
@@ -23,11 +24,10 @@ _spec.loader.exec_module(F)
 import app as flask_app  # noqa: E402
 
 RS = flask_app.regulatory_search
-SVC = flask_app.regulatory_service
 
 
 class _RouteBase(unittest.TestCase):
-    """임시 DB + K뷰티 호출 차단 + API 키 비움 + 테스트 로그인 (공통 준비만, 테스트 없음)"""
+    """임시 DB + 외부 HTTP 차단 + API 키 비움 + 테스트 로그인 (공통 준비만, 테스트 없음)"""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -39,9 +39,9 @@ class _RouteBase(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {"MFDS_INGREDIENT_DB_PATH": str(self.ingr_path), "MFDS_DB_PATH": str(self.rstr_path)})
         self.env.start()
         RS.clear_cache()
-        # K뷰티 API 호출 감시 — 직접 검색 흐름에서 한 번도 불리면 안 된다 (키 없이도 동작)
-        self.kbeauty = mock.patch.object(SVC, "_get", side_effect=AssertionError("K-Beauty API must not be called"))
-        self.kget = self.kbeauty.start()
+        # 외부 HTTP 감시 — 검색·조회·추출 흐름에서 한 번도 불리면 안 된다 (K뷰티·식약처 API 키 없이도 동작)
+        self.http_block = mock.patch("requests.sessions.Session.request", side_effect=AssertionError("external HTTP must not be called"))
+        self.http = self.http_block.start()
         self.nokey = mock.patch.dict(os.environ, {"RAPIDAPI_KEY": "", "RAPIDAPI_HOST": "", "MFDS_API_KEY": ""})
         self.nokey.start()
         flask_app.app.config["TESTING"] = True
@@ -50,8 +50,8 @@ class _RouteBase(unittest.TestCase):
         login_as(self.client, {"id": 0, "email": "t@example.invalid", "name": "t", "team": "B"}, flask_app)
 
     def tearDown(self):
-        self.assertEqual(self.kget.call_count, 0)
-        self.kbeauty.stop()
+        self.assertEqual(self.http.call_count, 0)
+        self.http_block.stop()
         self.nokey.stop()
         self.env.stop()
         RS.clear_cache()
@@ -124,6 +124,16 @@ class DirectSearchRouteTest(_RouteBase):
             RS.clear_cache()
             st, body = self.get("/api/regulatory/lookup?key=%s&country=EU" % key)
         self.assertEqual((st, body["error"]["kind"]), (503, "db_missing"))
+
+    def test_lookup_markets_from_mfds_module(self):
+        """국가 검증은 regulatory_mfds_lookup.MARKET_CODES 기준 (4-1단계 전환). 지원 시장은 기존과 같은 6개"""
+        self.assertFalse(hasattr(flask_app, "regulatory_service"))
+        self.assertEqual(set(flask_app.regulatory_mfds.MARKET_CODES), {"KR", "EU", "CN", "US", "JP", "ASEAN"})
+        key = self.key_of("Mercury", RS.SRC_RSTR)
+        for m in flask_app.regulatory_mfds.MARKET_CODES:
+            st, body = self.get("/api/regulatory/lookup?key=%s&country=%s" % (key, m.lower()))   # 소문자도 대문자로 정규화
+            self.assertEqual(st, 200, m)
+            self.assertIn(body["lookup_status"], ("found", "no_market_record"), m)
 
     def test_link_required_and_not_linked_are_200_not_errors(self):
         key = self.key_of("%EB%A7%88%EC%9D%B4%EC%B9%B4", RS.SRC_INGR)                       # 마이카
@@ -206,6 +216,9 @@ class FileFlowRouteTest(_RouteBase):
         self.assertNotIn("/api/regulatory/regulations", js)
         self.assertNotIn("findExactMatch", js)
         self.assertNotIn("fileSource", js)
+        # 4-1단계: K뷰티 전용 표시·분기 제거 (출처 라벨·접근 제한·요금제 안내·code/updated_at 표시)
+        for legacy in ("RapidAPI", "ACCESS_KINDS", "note_mentions_plan", "record_updated_at", "sel.code", "성분 code 로 조회", "외부 API HTTP"):
+            self.assertNotIn(legacy, js, legacy)
         html = self.client.get("/regulatory").get_data(as_text=True)
         for marker in ("regulatory-review-accept", "regulatory-kpi-nomarket", "regulatory-kpi-link", "regulatory-kpi-pending",
                        "regulatory-batch-incomplete", "regulatory-batch-snapshot", "regulatory-file-datasource"):

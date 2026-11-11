@@ -118,7 +118,7 @@
             </div>
           </div>
 
-          {# 직접 검색 조회 자료 — 식약처 수집 DB 두 개만 사용 (외부 API 호출 없음). 출처 선택지는 파일 일괄 조회에만 남아 있다 (3단계에서 전환) #}
+          {# 직접 검색 조회 자료 — 식약처 수집 DB 두 개만 사용 (외부 API 호출 없음, 출처 선택지 없음) #}
           <div class="mt-4" id="regulatory-search-datasource">
             <p class="form-label">조회 자료</p>
             <p class="form-help">식약처 수집 DB — <strong>성분정보</strong>(화장품 원료성분정보)와 <strong>규제정보</strong>(화장품 사용제한 원료정보)에서 후보를 찾고, 고른 성분의 규제는 규제정보에서 조회해요. 두 출처의 후보는 합치지 않고 따로 보여줘요.</p>
@@ -332,7 +332,7 @@
       </div>
     </div>
 
-    {# 전체 오류 — API 실패 원인을 그대로 표시 #}
+    {# 전체 오류 — 조회 실패 원인(DB 이용 불가·후보 다시 선택·연결 실패 등)을 그대로 표시 #}
     <div class="card" id="regulatory-result-error" hidden>
       <div class="state state-error">
         <p class="state-title">규제 정보를 불러오지 못했어요</p>
@@ -646,7 +646,7 @@
               <div><dt>매칭 성분</dt><dd data-detail="match-name">—</dd></div>
               <div><dt>매칭 방식</dt><dd data-detail="match-method">—</dd></div>
               <div class="regulatory-detail-list__full"><dt>성분 연결 근거 (식약처 DB)</dt><dd data-detail="link-basis">해당 없음</dd></div>
-              <div class="regulatory-detail-list__full"><dt>성분 레코드 갱신·수집 시각</dt><dd data-detail="match-updated">미제공</dd></div>
+              <div class="regulatory-detail-list__full"><dt>성분 후보 출처·수집 시각</dt><dd data-detail="match-updated">미제공</dd></div>
               <div><dt>원문 위치</dt><dd data-detail="input-location">해당 없음</dd></div>
             </dl>
           </div>
@@ -658,7 +658,7 @@
               <div><dt>고시 성분명</dt><dd class="regulatory-detail__raw" data-detail="lookup-notice-name">—</dd></div>
               <div><dt>규제 조건 전체 원문</dt><dd class="regulatory-detail__raw" data-detail="lookup-raw">—</dd></div>
               <div><dt>단서 조항</dt><dd class="regulatory-detail__raw" data-detail="lookup-proviso">—</dd></div>
-              <div><dt>API 안내 문구</dt><dd class="regulatory-detail__raw" data-detail="lookup-note">—</dd></div>
+              <div><dt>조회 안내 문구</dt><dd class="regulatory-detail__raw" data-detail="lookup-note">—</dd></div>
               <div><dt>응답 상태값</dt><dd data-detail="lookup-result-status">—</dd></div>
               <div><dt>실제 조회 범위</dt><dd data-detail="lookup-scope">—</dd></div>
             </dl>

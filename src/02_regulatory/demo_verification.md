@@ -1,5 +1,7 @@
 # 발표 시연 자료 검증 기록 (담당자 B · 국가별 인허가 규제)
 
+> **과거 기록 (2026-09-24~25)** — 아래 수치는 당시 화면(성분 매칭·조회에 K뷰티 API 사용, 출처 선택)을 기준으로 검증한 결과다. 현재 화면(2026-11-11)은 식약처 성분 DB·규제 DB 후보 검색 → 사용자 선택 → 조회로 바뀌어 K뷰티 API 를 호출하지 않으므로, 이 기록은 현재 흐름의 검증 결과가 아니다. 시연 파일 3개(`samples/`)는 그대로 쓰며 현재 흐름 검증은 `tests/test_regulatory_direct_search.py`(FileFlowRouteTest)를 본다.
+
 - 작성일: 2026-09-25 (검증 실행일 2026-09-24~25) · 발표용 폴더: `src/02_regulatory/samples/` — **최종 파일 3개만** 둔다 (2026-09-25 정리: `samples/demo/` 하위 폴더를 없애고 `samples/` 바로 아래로 이동, 파일 내용은 해시 동일).
 - 회귀 테스트 자료(텍스트 PDF `eu_ser_041_development_brief.pdf`, 스캔 PDF·혼합 PDF, OCR 이미지 3종, 다중 시트 `sample_multisheet_en.xlsx`)는 최종 3개로 대체할 수 없어 `tests/fixtures/` 로 옮겼고 `tests/test_regulatory_service.py` 가 그 경로를 연다. 옛 한국어 샘플 `sample_ingredients_kr.xlsx` 는 테스트에서 추출 성공 여부만 확인하던 자료라 한국어 두피샴푸 XLSX 로 참조를 바꾸고 삭제했다. 옛 발표용 `samples/demo_*` 3개는 테스트·문서 참조가 없어 정리했다.
 - 세 파일은 모두 **가상 자료**이며 전성분 처방이 아닌 ‘주요 검토 성분표 / Key Ingredients for Review’ 다. 함량은 근거가 없어 한국어 ‘미정’, 영어 ‘TBD’. 파일명·제목의 시장은 **규제 조회 시연 추천 시장**이며 수출 적합성 인증이 아니다. 규제 레코드가 있다는 것은 사용 가능·적합을 뜻하지 않는다.
