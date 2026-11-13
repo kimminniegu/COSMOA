@@ -18,7 +18,7 @@
 > | 고객사·프로젝트·탭 저장본 | 고객사·프로젝트: **업무 DB 생성·조회 API + 개발요청서 프로젝트 선택**. 탭 저장본: 저장 API 만 (화면은 아직 메모리) | 저장 시 새 버전·최종본 이력 관리 (개발요청서부터 연결), 고객사·프로젝트 수정·보관 |
 > | 탭 간 반영 (마진·규제·모델링 ↔ 개발요청서) | 없음 | 반영 출처·당시 값 기록 |
 > | 홈 캐시 | SQLite `HOME_CACHE_DB_PATH` (기본 `instance/cosmoa.db`) | 변경 없음 (업무 DB와 분리) |
-> | 식약처 규제 DB | 읽기 전용 SQLite | 변경 없음 (업무 DB와 분리) |
+> | 식약처 규제 DB·성분 DB | 읽기 전용 SQLite — 배포용 사본 `data/regulatory/` 두 개 (2026-11-09 수집본, 배포 파일 준비 완료·운영 미적용) | 변경 없음 (업무 DB와 분리) |
 
 ## 프로젝트 목적
 
@@ -65,7 +65,8 @@ COSMOA/
 ├── requirements.txt
 ├── data/regulatory/
 │   ├── README.md           # 배포용 DB 출처·수집 정보·갱신 절차
-│   └── mfds_use_restriction.sqlite  # Git에 포함된 식약처 DB
+│   ├── mfds_use_restriction.sqlite  # Git에 포함된 식약처 규제 DB (사용제한 원료정보)
+│   └── mfds_ingredients.sqlite      # Git에 포함된 식약처 성분 DB (원료성분정보)
 ├── instance/               # 로컬 데이터 (Git·Docker 이미지 제외)
 │   ├── cosmoa.db           # 홈 캐시 SQLite (HOME_CACHE_DB_PATH 기본값). 로그인 계정은 업무 DB
 │   └── regulatory/         # 로컬 식약처 수집 DB의 기본 위치
@@ -172,19 +173,25 @@ Bash에서는 `cp .env.example .env`를 사용합니다. 전체 항목은 [`.env
 
 ### 4. 식약처 DB와 OCR·PDF 준비
 
-**식약처 DB** — 새로 받은 저장소에는 배포용 DB가 `data/regulatory/`에 포함되어 있습니다. 프로젝트 루트에서 실행할 때 로컬 `.env`에 다음과 같이 지정합니다.
+**식약처 DB** — 규제 화면과 챗봇은 식약처 DB 두 개를 읽습니다. 새로 받은 저장소의 `data/regulatory/`에 두 DB의 배포용 사본(2026-11-09 수집본)이 모두 포함되어 있습니다.
+
+| DB | 역할 | 변수 |
+|---|---|---|
+| 규제 DB (화장품 사용제한 원료정보) | 국가별 규제 조회, 규제 성분 후보 검색 | `MFDS_DB_PATH` |
+| 성분 DB (화장품 원료성분정보) | 한글명·영문명·이명·CAS 성분 후보 검색 | `MFDS_INGREDIENT_DB_PATH` |
+
+프로젝트 루트에서 실행할 때 로컬 `.env`에 다음과 같이 지정합니다.
 
 ```dotenv
 MFDS_DB_PATH=data/regulatory/mfds_use_restriction.sqlite
+MFDS_INGREDIENT_DB_PATH=data/regulatory/mfds_ingredients.sqlite
 ```
 
-다른 작업 디렉터리에서 실행한다면 절대 경로를 사용합니다. 변수를 생략할 경우 코드의 기본 경로는 `instance/regulatory/mfds_use_restriction.sqlite`이므로 그 위치에 DB가 있어야 합니다. 서버는 DB를 읽기 전용으로 조회하며 시작·검색 시 자동 수집하지 않습니다.
+다른 작업 디렉터리에서 실행한다면 절대 경로를 사용합니다. 변수를 생략하면 코드의 기본 경로 `instance/regulatory/mfds_use_restriction.sqlite`·`instance/regulatory/mfds_ingredients.sqlite`(로컬 수집 위치)를 읽습니다. 지정한 DB가 없으면 다른 파일로 대체하지 않고 '검색 결과 없음'이 아닌 'DB 미설치' 오류를 표시합니다. 서버는 DB를 읽기 전용으로 조회하며 시작·검색 시 자동 수집하지 않으므로 `MFDS_API_KEY` 없이 동작합니다.
 
-규제 화면의 성분 검색은 규제 DB와 함께 **성분 DB**(식약처 화장품 원료성분정보)도 읽습니다. 성분 DB는 저장소에 포함되어 있지 않으므로 `mfds_ingredients.py` 수집 스크립트(`MFDS_API_KEY` 필요)로 준비합니다. 기본 경로는 `instance/regulatory/mfds_ingredients.sqlite`이고, 다른 위치라면 `MFDS_INGREDIENT_DB_PATH`로 지정합니다. 성분 DB가 없으면 화면은 '검색 결과 없음'이 아니라 'DB 미설치' 오류를 표시합니다. 수집 명령·옵션은 `src/02_regulatory/mfds_ingredients.py` 상단 사용법을 따릅니다 (예: `python -u src/02_regulatory/mfds_ingredients.py collect`).
+> 배포: 메인(Docker)은 Dockerfile `ENV`로 `/app/data/regulatory/…` 두 경로를 쓰고, 챗봇(Render Python)은 `/opt/render/project/src/data/regulatory/…` 두 경로를 서비스 환경변수에 직접 넣습니다 ([배포 안내](docs/deploy_render.md) 4장). 2026-11-13 기준 **배포 파일 준비는 끝났고 실제 Render 적용은 아직**입니다.
 
-> 배포 환경(Docker 이미지·Render)에는 현재 규제 DB만 포함되어 있습니다. 배포용 성분 DB 준비는 별도 후속 작업입니다.
-
-DB 갱신은 별도 `mfds_use_restriction.py` 수집 작업입니다. 수집기도 `MFDS_DB_PATH`를 사용하므로 **갱신할 때는 로컬 수집 경로를 지정**하고, 검증 후 배포용 사본을 교체합니다. 출처·수집 정보·갱신 절차는 [DB 안내](data/regulatory/README.md)를 따릅니다.
+DB 갱신은 별도 수집 작업(`mfds_use_restriction.py`·`mfds_ingredients.py`, `MFDS_API_KEY` 필요)입니다. 수집기도 같은 경로 변수를 사용하므로 **갱신할 때는 로컬 수집 경로(`instance/regulatory/`)를 지정**하고, 검증 후 배포용 사본을 교체합니다. 출처·수집 정보·해시·갱신 절차는 [DB 안내](data/regulatory/README.md)를 따릅니다.
 
 **OCR** — 스캔 PDF·PNG/JPG를 처리하려면 Tesseract 본체와 `kor`·`eng` 언어 데이터가 필요합니다. `pip install -r requirements.txt`만으로 본체가 설치되지는 않습니다. Windows 설치·경로 설정은 [규제 명세 13장](src/02_regulatory/regulatory.md)을 따릅니다. OCR이 없어도 텍스트 PDF와 Excel 추출은 사용할 수 있습니다.
 
@@ -486,7 +493,7 @@ python src/05_requisition/tests/check_browser.py
 - `git add .` 대신 자신의 폴더만 추가합니다: `git add src/02_regulatory/ app.py`
 - 커밋 전 `git status`로 **자신의 폴더 밖 파일이 바뀌지 않았는지** 확인합니다. (AI 도구가 공통 파일을 건드리는 경우가 있습니다)
 - **커밋·푸시·머지는 담당자가 직접 합니다.** AI 도구는 `git add / commit / push / merge`를 실행하지 않고 변경 내용·검증 결과·커밋 제목 제안만 제공합니다.
-- `.env`, `instance/`, `tdenv/`, `__pycache__/`는 커밋하지 않습니다. DB는 기본적으로 제외하며 배포용 `data/regulatory/mfds_use_restriction.sqlite`만 예외입니다. Key를 실수로 커밋했다면 즉시 김민 PM에게 알리고(업무 DB 접속정보라면 공통 DB 담당 유정현에게도) Key를 재발급합니다.
+- `.env`, `instance/`, `tdenv/`, `__pycache__/`는 커밋하지 않습니다. DB는 기본적으로 제외하며 배포용 `data/regulatory/mfds_use_restriction.sqlite`·`data/regulatory/mfds_ingredients.sqlite` 두 파일만 예외입니다. Key를 실수로 커밋했다면 즉시 김민 PM에게 알리고(업무 DB 접속정보라면 공통 DB 담당 유정현에게도) Key를 재발급합니다.
 
 **충돌 가능성이 높은 파일**
 

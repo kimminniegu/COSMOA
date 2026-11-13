@@ -77,6 +77,7 @@ if not exist .env copy .env.example .env
 | `DATABASE_URL` | 공통 DB 담당 유정현에게 **개별 전달** 받은 dev **앱 역할**(본인 전용 `cosmoa_app_<이니셜>`) 풀링 주소 | 로그인에 필수. 공유 dev DB(개발 전용 비밀번호·테스트용 데이터만). 팀원 역할 생성(0장) 전에는 배포하지 않음. 이 주소도 비밀값 — 다른 사람과 같이 쓰지 않음 |
 | `HOME_CACHE_DB_PATH` | 그대로 (`instance/cosmoa.db`) | 홈 캐시 SQLite |
 | `MFDS_DB_PATH` | `data/regulatory/mfds_use_restriction.sqlite` | 식약처 규제 DB (README 4) |
+| `MFDS_INGREDIENT_DB_PATH` | `data/regulatory/mfds_ingredients.sqlite` | 식약처 성분 DB (README 4). 저장소에 포함 — 수집 불필요 |
 | 기능별 외부 API 키 | 자기 기능에 필요한 것만 | README 「3. .env 설정」 표. 없으면 5장 범위만 확인 가능 |
 
 **두 가지 계정을 받습니다 — 서로 별개입니다** ([DB 규칙](db_rules.md) 8-1)
@@ -113,8 +114,8 @@ python app.py
 |---|---|
 | 로그인 화면 표시, (계정이 있으면) 로그인·로그아웃 | 개발요청서 **파일 자동변환**, 제형 문서 AI 분석 (`OPENAI_API_KEY`) |
 | 개발요청서 프로젝트 선택·고객사·프로젝트 생성 (dev 에 실제로 생성됨 — 7장) | AI 챗봇 답변 (챗봇 서버 + `OPENAI_API_KEY`, `CHATBOT_URL`·`CHATBOT_SECRET`) |
-| 개발요청서 **직접 작성**·수정·결과·인쇄/PDF, FIX 칸 | (규제 화면·챗봇 성분 규제는 외부 키 없이 식약처 DB 로 동작 — 챗봇 답변 자체는 위 OpenAI 키 필요. 성분 DB 는 수집 스크립트로 준비) |
-| 규제 화면 성분 검색·규제 조회 (식약처 규제 DB `MFDS_DB_PATH` + 성분 DB `MFDS_INGREDIENT_DB_PATH` 준비 시 — README 4장) | 홈 환율·수출입·뉴스 등 외부 데이터 (`EXIM_API_KEY`, `DATA_GO_KR_KEY` 등) |
+| 개발요청서 **직접 작성**·수정·결과·인쇄/PDF, FIX 칸 | (규제 화면·챗봇 성분 규제는 외부 키 없이 식약처 DB 로 동작 — 챗봇 답변 자체는 위 OpenAI 키 필요. 두 DB 는 저장소 `data/regulatory/` 에 포함) |
+| 규제 화면 성분 검색·규제 조회 (식약처 규제 DB `MFDS_DB_PATH` + 성분 DB `MFDS_INGREDIENT_DB_PATH` 를 `data/regulatory/` 사본으로 지정 — README 4장) | 홈 환율·수출입·뉴스 등 외부 데이터 (`EXIM_API_KEY`, `DATA_GO_KR_KEY` 등) |
 | 기능별 자동 테스트 (외부 API 는 모의 응답, 업무 DB 대신 메모리 사용자) | |
 
 기능별 자동 테스트 (DB·외부 API 키 불필요):

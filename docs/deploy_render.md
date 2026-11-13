@@ -3,6 +3,20 @@
 > ⚠ **갱신 전 문서.** 로그인이 업무 DB(Neon PostgreSQL) `users` 로 바뀌었습니다. 아래의 `COSMOA_DEMO_*`·`instance/cosmoa.db` 계정 안내는 **예전 방식**입니다.
 > production 브랜치에는 아직 마이그레이션·계정이 없고 배포 환경변수(`DATABASE_URL` 등)도 정해지지 않아 **지금 상태로는 배포 준비가 끝나지 않았습니다.** 절차는 [개발 안내](development.md) 의 다음 단계에서 정합니다.
 
+### 0. 준비 현황 — "배포 파일 준비"와 "운영 적용"은 다르다 (2026-11-13, 5-1단계)
+
+| 항목 | 저장소·배포 파일 | 운영(Render) 적용 |
+|---|---|---|
+| 식약처 규제 DB·성분 DB 배포 사본 (`data/regulatory/`, 3장) | **준비됨** — 2026-11-09 수집본 두 개, Git·Docker 포함 규칙, Dockerfile `ENV` | **미적용** — 실제 배포·챗봇 환경변수 입력 전 |
+| 챗봇 `MFDS_DB_PATH`·`MFDS_INGREDIENT_DB_PATH` (4장) | 값 확정 | **미입력** |
+| `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 제거 (4장) | 코드·안내에서 삭제됨 | **미확인** — 다음 운영 배포 때 메인·챗봇 양쪽에서 제거 |
+
+**배포 전에 남은 공통 전제조건** (식약처 SQLite 준비와 별개 — 이것들이 끝나야 배포 가능)
+1. 업무 DB(Neon) **production** 브랜치 마이그레이션(0001~0004)·앱 역할 — 미적용 (공통 DB 담당 유정현, 시점은 김민 PM 과 결정)
+2. 운영 로그인 계정 준비 — 로그인이 업무 DB `users` 로 바뀌었으므로 아래 `COSMOA_DEMO_*` 방식 대신 production 첫 계정 생성 절차가 필요 (미정)
+3. 운영 환경변수 확정 — `DATABASE_URL`(운영 앱 역할 풀링 주소) 등 업무 DB 변수, 운영용 `FLASK_SECRET_KEY`·`CHATBOT_SECRET` 새 값
+4. 실제 OpenAI 연동 확인 — 챗봇 답변·개발요청서 변환은 지금까지 가짜 응답으로만 검증됨 (6장 6번)
+
 메인 대시보드와 AI 챗봇을 **같은 저장소·같은 커밋**에서 Render **Free** 웹 서비스 2개로 배포한다.
 영구 디스크·SSH·Shell 은 쓰지 않는다. 추가 호스팅 비용이 없다.
 
@@ -10,7 +24,7 @@
 브라우저 ──> 메인 (app.py, Docker, Free) ── POST https://<챗봇>.onrender.com/chat + X-Chatbot-Secret ──> 챗봇 (src/06_chatbot/server.py, Python, Free)
 ```
 
-- 두 서비스는 파일을 공유하지 않는다. 식약처 규제 DB 는 **배포 파일에 포함**돼 각자 읽는다.
+- 두 서비스는 파일을 공유하지 않는다. 식약처 규제 DB·성분 DB 는 **배포 파일에 포함**돼 각자 읽는다 (같은 커밋이면 같은 수집본).
 - `.env` 는 배포에 쓰지 않는다. 값은 Render 서비스별 **Environment** 에만 넣는다. (`.env`·`instance/` 는 Git·Docker 이미지 모두 제외)
 - 두 서비스의 Region 을 같게 둔다 (예: Singapore).
 
@@ -32,7 +46,7 @@
 `Dockerfile` 이 하는 일
 - Tesseract + 한국어·영어 언어 데이터 (규제 OCR), 나눔 폰트 (마진 견적서 PDF 한글)
 - `COSMOA_ENV=production` → `.env` 미로딩, `FLASK_SECRET_KEY` 필수, debug 끔, 보안 쿠키, 공개 기본 비밀번호로 계정 생성 안 함
-- `MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite` (이미지에 포함된 식약처 DB)
+- `MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite`, `MFDS_INGREDIENT_DB_PATH=/app/data/regulatory/mfds_ingredients.sqlite` (이미지에 포함된 식약처 규제 DB·성분 DB)
 - 실행: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 150`
 
 ## 2. 챗봇 서비스
@@ -50,6 +64,7 @@
 
 - 챗봇은 Tesseract·한글 폰트가 필요 없다. `requirements.txt` 전체를 설치해도 동작에는 문제없다.
 - Render Python 서비스의 저장소 위치는 `/opt/render/project/src` 이다. 식약처 DB 경로는 4장 표를 따른다.
+- 챗봇은 Dockerfile 의 `ENV` 를 물려받지 않는다. `MFDS_DB_PATH`·`MFDS_INGREDIENT_DB_PATH` **두 개 모두** 챗봇 환경변수에 넣는다 (비우면 코드 기본값 `instance/regulatory/…` 을 찾다가 'DB 미설치' 오류).
 
 ## 3. 데이터 — 무엇이 유지되고 무엇이 초기화되나
 
@@ -57,7 +72,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 
 | 데이터 | 위치 | 무료 환경에서 |
 |---|---|---|
-| 식약처 규제 DB (읽기 전용) | 저장소 `data/regulatory/mfds_use_restriction.sqlite` | **배포 파일에 포함 → 항상 같은 파일.** 서버가 재수집하지 않음 |
+| 식약처 규제 DB·성분 DB (읽기 전용) | 저장소 `data/regulatory/mfds_use_restriction.sqlite`, `data/regulatory/mfds_ingredients.sqlite` | **배포 파일에 포함 → 항상 같은 파일.** 서버가 재수집하지 않음 |
 | 계정 (`users`) | 메인 `instance/cosmoa.db` | 초기화됨. 시작할 때 `COSMOA_DEMO_*` 로 시연 계정을 다시 만듦 |
 | 홈 캐시 (환율·뉴스·규제 소식·수출입) | 메인 `instance/cosmoa.db`, 챗봇 `instance/cosmoa.db` | 초기화됨. 화면·챗봇 요청이 오면 기존 흐름대로 API 로 다시 수집 |
 | 업로드·생성 파일 (규제 스캔, 개발요청서, 견적서 PDF) | 임시 파일·메모리 | 저장하지 않음 (영향 없음) |
@@ -68,19 +83,22 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 - 캐시가 빈 직후에는 홈·챗봇에 잠시 "수집 중" 이 보이고, 수출입(공공데이터포털) 등 API 호출이 몰린다.
   절전에서 깰 때마다 반복되므로 발표 직전 준비(7장)로 미리 채워 둔다.
 
-### 식약처 규제 DB
+### 식약처 규제 DB · 성분 DB
 
-| 항목 | 값 |
-|---|---|
-| 배포 파일 | `data/regulatory/mfds_use_restriction.sqlite` (원본 `instance/regulatory/…` 의 복사본, 원본은 Git 제외) |
-| 출처·이용조건 | 식품의약품안전처 「화장품 사용제한 원료정보」, 공공데이터포털 이용허락범위 **제한 없음** |
-| 내용 | 수집 기록·페이지 해시·규제 원료 공공데이터만. 계정·개인정보·인증키 없음 |
-| SHA-256 | `e88d2e7027c8eb6f0e6bca05f87251f0a0c36edeaa3ad171b68c844be720d3aa` |
-| 건수 | 31,191건 (run 1, completed, 2026-09-23T10:53:54Z) |
+| 항목 | 규제 DB | 성분 DB |
+|---|---|---|
+| 배포 파일 | `data/regulatory/mfds_use_restriction.sqlite` | `data/regulatory/mfds_ingredients.sqlite` |
+| 역할 | 국가별 사용제한·금지 원료 (규제 조회) | 성분 사전 (한글명·영문명·이명·CAS 후보 검색) |
+| 출처·이용조건 | 식약처 「화장품 사용제한 원료정보」, 공공데이터포털 이용허락범위 **제한 없음** | 식약처 「화장품 원료성분정보」, 공공데이터포털 이용허락범위 **제한 없음** |
+| 수집본 | run 1, completed, 완료 2026-11-09T08:55:53Z | run 1, completed, 완료 2026-11-09T09:15:47Z |
+| 건수 | 31,191건 | 21,968건 |
+| SHA-256 | `bb4e2adf27d10cb8cc9f6810a23f4a97d3354f26bca5c48aa8f424ec9e2ed185` | `906e3555a190a9d32aaa7b746f787e46b25bbcfe9dd88b8bdeafb4f73fff4726` |
 
-- 조회는 기존 코드대로 `mode=ro` (읽기 전용)로만 연다. 서버 시작·절전 복귀 때 재수집하지 않는다.
-- `.gitignore`·`.dockerignore` 는 모든 `*.db`·`*.sqlite` 를 제외하고 **이 파일 하나만** 예외로 포함한다.
-- 갱신 절차는 `data/regulatory/README.md`.
+- 두 파일 모두 로컬 원본 `instance/regulatory/…`(Git 제외)의 바이트 그대로 사본이다. 수집 기록·페이지 해시·공공데이터만 있고 계정·개인정보·인증키 없음.
+- 수집 시각은 데이터를 받은 시각이며 법령 개정일·최신성 보장이 아니다.
+- 조회는 `mode=ro` (읽기 전용)로만 연다. 서버 시작·절전 복귀·검색 때 재수집하거나 DB 를 만들지 않는다 → 서버에 `MFDS_API_KEY` 불필요.
+- `.gitignore`·`.dockerignore` 는 모든 `*.db`·`*.sqlite` 를 제외하고 **이 두 파일만** 예외로 포함한다 (`instance/`·`.env`·업무 DB·캐시 DB·업로드는 계속 제외).
+- 갱신 절차·변경 기록은 `data/regulatory/README.md`. 갱신 후 두 서비스를 **같은 커밋**으로 배포한다.
 
 ## 4. 환경변수
 
@@ -93,10 +111,11 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | | `COSMOA_DEMO_NAME`, `COSMOA_DEMO_TEAM` | 권장. 화면·챗봇 메일 서명에 쓰임 |
 | | `CHATBOT_URL` | `https://<챗봇 서비스 이름>.onrender.com` (끝 `/` 없이) |
 | | `MFDS_DB_PATH` | `/app/data/regulatory/mfds_use_restriction.sqlite` (Dockerfile 기본값과 같음) |
-| | `MFDS_INGREDIENT_DB_PATH` | **아직 준비 안 됨** — 규제 화면 성분 검색용 성분 DB 는 이미지에 포함되어 있지 않아 배포 화면 검색은 'DB 미설치' 오류가 난다. 배포용 성분 DB 준비는 별도 후속 작업 |
+| | `MFDS_INGREDIENT_DB_PATH` | `/app/data/regulatory/mfds_ingredients.sqlite` (Dockerfile 기본값과 같음, 2026-11-13 이미지에 포함) |
 | | `REQUISITION_OPENAI_MODEL` | 선택 |
 | **챗봇** | `PYTHON_VERSION` | `3.10.21` |
-| | `MFDS_DB_PATH` | `/opt/render/project/src/data/regulatory/mfds_use_restriction.sqlite` |
+| | `MFDS_DB_PATH` | **필수** `/opt/render/project/src/data/regulatory/mfds_use_restriction.sqlite` (Dockerfile ENV 를 물려받지 않음) |
+| | `MFDS_INGREDIENT_DB_PATH` | **필수** `/opt/render/project/src/data/regulatory/mfds_ingredients.sqlite` |
 | | `CHATBOT_OPENAI_MODEL` | 선택, 기본 gpt-4.1 |
 | **양쪽** | `OPENAI_API_KEY` | 메인은 개발요청서 자동변환, 챗봇은 답변 생성. **메인에서 빼지 않는다** |
 | | `CHATBOT_SECRET` | 두 서비스에 **같은 값**. 운영 전용으로 새로 만든 긴 임의 문자열 (로컬 값·주소·예시 값 재사용 금지) |
@@ -106,7 +125,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | **넣지 않음** | `TESSERACT_CMD`, `TESSDATA_PREFIX` | 로컬 Windows 경로. Docker 는 PATH·기본 tessdata 사용 |
 | | `FLASK_DEBUG`, `FLASK_PORT`, `CHATBOT_PORT` | Gunicorn 에서 쓰지 않음 (포트는 Render `PORT`). `FLASK_DEBUG` 는 챗봇 debug 를 켜므로 넣지 않는다 |
 | | `CHATBOT_DB_PATH` | 기본값(챗봇 `instance/cosmoa.db`) 사용 |
-| | `MFDS_API_KEY` | 서버에서 재수집하지 않으므로 불필요 |
+| | `MFDS_API_KEY` | 서버에서 재수집하지 않으므로 불필요 — 두 서비스 모두 배포 DB 만 읽어 키 없이 조회 |
 
 ## 5. 시간 제한
 
@@ -117,7 +136,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | 개발요청서 → OpenAI | 소켓 120초 (`src/05_requisition/service.py`) | 브라우저가 150초에 중단하고 안내 |
 | Gunicorn `--timeout` | 메인 150 / 챗봇 120 | gthread(`--threads`) 에서는 worker 생존 확인 시간이라 **요청 시간 상한이 아님** |
 
-- worker 는 1개다. 홈 데이터 수집 중복 방지가 프로세스 안에서만 동작하기 때문이다. `--preload` 는 쓰지 않는다.
+- worker 는 1개다. 홈 데이터 수집 중복 방지가 프로세스 안에서만 동작하기 때문이다. 챗봇은 여기에 더해 **성분 후보 선택 상태(`SelectionStore`)가 서버 메모리에 있어** worker 를 늘리면 선택 버튼이 다른 worker 로 가서 실패한다 (`chatbot.md` 7-1). `--preload` 는 쓰지 않는다.
 - 챗봇이 잠들어 있으면 깨어나는 데 약 1분이 걸린다. 여기에 답변 시간이 더해져 90초를 넘기면 504 가 난다 → 7장 준비 순서로 미리 깨운다.
 - 후속 개선(담당자 F): `run_chat` 에 전체 처리 시간 상한(예: 80초)을 두어 메인이 끊은 뒤에도 OpenAI 호출이 계속되지 않게 한다.
 
@@ -128,7 +147,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 1. **챗봇 배포** — 2장 설정, 환경변수: 챗봇 + 양쪽.
 2. **챗봇 상태 확인** — `https://<챗봇>.onrender.com/health`
    - 200 이면 서버 실행만 확인된 것
-   - 본문 `configured: true` (OpenAI 키·시크릿이 **있음**), `sources.mfds_restriction_db`·`sources.mfds_ingredient_db: true` (식약처 규제 DB·성분 DB 를 **실제로 열어 완료된 수집본 확인**). 현재 배포본에는 성분 DB 가 없어 `mfds_ingredient_db: false` 가 정상 — 배포용 성분 DB 준비 후 true
+   - 본문 `configured: true` (OpenAI 키·시크릿이 **있음**), `sources.mfds_restriction_db`·`sources.mfds_ingredient_db: true` (식약처 규제 DB·성분 DB 를 **실제로 열어 완료된 수집본 확인**). 둘 다 배포 파일에 포함되어 있으므로 하나라도 `false` 면 챗봇 `MFDS_*_DB_PATH` 값(4장)을 확인
    - `exim_rates`·`trade_stats` 는 키가 **있는지만** 본다 (키가 맞는지는 6번에서 확인)
 3. **메인 배포** — 1장 설정, 환경변수: 메인 + 양쪽. `CHATBOT_URL` 은 2번 주소, `CHATBOT_SECRET` 은 챗봇과 같은 값.
 4. 메인 로그에 `데모 계정을 만들지 않았습니다` 경고가 없는지 확인 → `/login` 에서 `COSMOA_DEMO_*` 계정으로 로그인.

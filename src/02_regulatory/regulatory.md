@@ -10,7 +10,7 @@
 - **범위 제외**: 문서 전체 분석·요약·번역·개발요청서 생성, 다른 담당자 페이지와의 파일 연동, 성분 조합의 안전성·규제 적합성 자동 판정.
 - 결과는 조회된 근거와 입력 조건의 비교를 지원한다. 최종 수출 가능 여부, 제품 전체의 적법성 또는 안전성을 확정하지 않는다. 부분 개발요청서는 완성 처방으로 취급하지 않는다.
 - **사전검토 보조 도구 (2026-09-25 명시)**: 이 페이지는 해외영업 담당자가 성분 규제를 사전검토하는 보조 도구이며, 최종 처방과 수출 대상국 규정의 적합성은 연구·규제 담당자가 검토한다. 대시보드에서 조회되지 않는 성분이나 더 자세한 제한사항은 식약처 공식 조회 페이지(의약품안전나라 ‘화장품 사용제한 원료’, `https://nedrug.mfds.go.kr/pbp/CCBDF01`)로 연결해 사용자가 직접 추가 확인한다. 조회 결과가 없다고 사용 가능하거나 규제가 없다는 뜻이 아니며, 식약처 사용제한 원료 조회만으로 모든 해외 시장의 적합성이 확정되지도 않는다. ‘최신 규제 검증 완료’·‘수출 가능’ 같은 단정 문구는 쓰지 않는다.
-- **확인 예정**: 아세안 공통·개별 국가 규정 범위, 추출 도구 및 운영 제한 값, 배포 환경의 성분 DB 준비는 확인 예정이다. 확인 전에는 해당 범위를 제공한다고 단정하지 않는다.
+- **확인 예정**: 아세안 공통·개별 국가 규정 범위, 추출 도구 및 운영 제한 값은 확인 예정이다. (배포용 성분 DB·규제 DB 사본은 2026-11-13 5-1단계에 `data/regulatory/` 에 준비됨 — 실제 운영 배포 적용은 미완료) 확인 전에는 해당 범위를 제공한다고 단정하지 않는다.
 
 ## 2. 담당 파일
 
@@ -317,7 +317,7 @@
 - 규제 화면(메인 서버)은 DB 경로 `MFDS_DB_PATH`(규제 DB)·`MFDS_INGREDIENT_DB_PATH`(성분 DB)만 읽는다(둘 다 선택, 비우면 `instance/regulatory/` 기본 경로). `app.py`의 기존 `load_dotenv()`로 로드된 값을 `os.getenv()`로 읽는다.
 - `MFDS_API_KEY` 는 별도 수집 스크립트(`mfds_use_restriction.py`·`mfds_ingredients.py`)에만 쓴다. DB 조회·서버 실행에는 필요 없다.
 - K-Beauty(RapidAPI) 설정은 쓰지 않는다 (4-3단계에서 `.env.example`·문서에서 삭제). 운영 환경변수 정리는 배포 단계에서 한다.
-- 배포 이미지에는 현재 규제 DB(`data/regulatory/`)만 포함된다. 배포 환경의 성분 DB 준비는 별도 후속 작업이다.
+- 배포 파일(2026-11-13 5-1단계)에는 규제 DB·성분 DB 사본 두 개가 `data/regulatory/` 에 포함된다 (2026-11-09 수집본). 메인 Docker 는 Dockerfile `ENV` 로 `/app/data/regulatory/…`, 챗봇 Python 서비스는 `/opt/render/project/src/data/regulatory/…` 를 두 변수에 직접 지정한다. 출처·해시·갱신 절차는 `data/regulatory/README.md`, 서비스별 값은 `docs/deploy_render.md` 4장. 실제 Render 적용은 아직 하지 않았다.
 - 실제 Key 값은 로컬 `.env`에만 입력한다. 코드, 문서, `samples/`·`tests/fixtures/`, 브라우저 응답, 로그, 커밋에 노출하지 않는다.
 - `.env`, 가상환경(`tdenv/` 등), `__pycache__/`·`.pytest_cache/` 등 캐시는 Git에 포함하지 않는다. 기존 `.gitignore`가 이를 제외하고 있으며 `.gitignore`는 PM 관리 파일이다.
 
@@ -344,7 +344,8 @@
 
 - 서비스는 `regulatory_mfds_lookup.py` 가 `MFDS_DB_PATH`(선택) 또는 `instance/regulatory/mfds_use_restriction.sqlite` 를 **읽기 전용(mode=ro)** 으로 열고, `runs.status` 가 completed/completed_with_warnings 인 최신 실행만 쓴다. DB 가 없으면 만들지 않고 503 `db_missing`, 완료 실행이 없으면 503 `db_incomplete`, 열지 못하면 503 `db_error` 를 돌려준다. 서버 시작·사용자 조회 때 수집은 실행되지 않는다.
 - **팀원 PC 준비 (두 방법 중 하나)**: (A) 재수집 — `.env` 에 `MFDS_API_KEY` 를 넣고 `conda activate tdenv` 후 `python src/02_regulatory/mfds_use_restriction.py collect` (약 313회 호출, 3~4분). (B) 복사 — 이미 완료된 `instance/regulatory/mfds_use_restriction.sqlite` 파일을 같은 경로에 두면 된다(DB 에는 인증키·개인정보가 없고 수집 실행 정보·원본 레코드만 있다). 복사 전 원본 PC 에서 `... status` 로 `completed` 인지 확인하고, 복사 중 수집이 돌고 있지 않게 한다. 어느 방법이든 `.env` 는 각자 보관하며 DB 파일은 Git 에 넣지 않는다(`instance/` 제외).
-- **배포 서버 준비**: 서버에 `instance/regulatory/` 폴더를 만들고 완료된 DB 파일을 업로드(예: scp)하거나 서버에서 (A) 를 1회 실행한다. 웹 프로세스는 읽기만 하므로 재수집은 별도 셸에서 `collect --new-run` 으로 새 실행을 만들고, 완료되면 다음 조회부터 최신 완료 실행이 자동으로 쓰인다(미완료 실행은 사용되지 않는다). DB 는 공개 정적 경로(`src/`, `/assets`)로 옮기지 않는다. 실제 배포·업로드는 이번 작업에서 하지 않았다.
+- **배포 서버 준비 (현재 방식, 2026-11-13)**: 서버에 업로드하지 않고 저장소의 배포 사본 `data/regulatory/` 두 파일을 배포 파일에 포함해 경로 변수로 가리킨다 (`data/regulatory/README.md`). 아래는 초기(2026-09) 검토 기록이다.
+- (초기 검토 기록) **배포 서버 준비**: 서버에 `instance/regulatory/` 폴더를 만들고 완료된 DB 파일을 업로드(예: scp)하거나 서버에서 (A) 를 1회 실행한다. 웹 프로세스는 읽기만 하므로 재수집은 별도 셸에서 `collect --new-run` 으로 새 실행을 만들고, 완료되면 다음 조회부터 최신 완료 실행이 자동으로 쓰인다(미완료 실행은 사용되지 않는다). DB 는 공개 정적 경로(`src/`, `/assets`)로 옮기지 않는다. 실제 배포·업로드는 이번 작업에서 하지 않았다.
 - 재수집 vs 복사: 재수집은 최신 원천 데이터를 받지만 API 호출과 시간이 들고 totalCount 가 바뀔 수 있다. 복사는 수집 시각이 원본 PC 기준으로 고정된다(화면의 ‘수집 시각’ 이 그 시각이다).
 
 **업로드·임시 파일 위치**

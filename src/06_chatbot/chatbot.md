@@ -185,7 +185,7 @@ K-Beauty API(RapidAPI)는 4-2단계(2026-11-11)부터 챗봇에서 쓰지 않으
 | Build Command | `pip install -r requirements.txt` |
 | Start Command | `gunicorn "src.06_chatbot.server:app" --bind 0.0.0.0:$PORT --timeout 120` |
 | Health Check Path | `/health` |
-| 환경변수 | `OPENAI_API_KEY`, `CHATBOT_SECRET`(본 서버와 동일), `CHATBOT_OPENAI_MODEL`(선택), `EXIM_API_KEY`, `DATA_GO_KR_KEY`, (선택) `CHATBOT_DB_PATH`, `MFDS_DB_PATH`, `MFDS_INGREDIENT_DB_PATH`. K-Beauty(`RAPIDAPI_*`) 설정 없음. 성분 DB 는 아직 배포본에 없어 배포 환경 성분 검색은 '출처 이용 불가' — 별도 후속 작업 |
+| 환경변수 | `OPENAI_API_KEY`, `CHATBOT_SECRET`(본 서버와 동일), `CHATBOT_OPENAI_MODEL`(선택), `EXIM_API_KEY`, `DATA_GO_KR_KEY`, (선택) `CHATBOT_DB_PATH`. **식약처 DB 두 개 필수 지정** (Dockerfile ENV 를 물려받지 않음): `MFDS_DB_PATH=/opt/render/project/src/data/regulatory/mfds_use_restriction.sqlite`, `MFDS_INGREDIENT_DB_PATH=/opt/render/project/src/data/regulatory/mfds_ingredients.sqlite` (배포 파일에 포함, 2026-11-13). `MFDS_API_KEY`·K-Beauty(`RAPIDAPI_*`) 설정 없음 |
 | 워커 | **1개** 유지 — 성분 후보 선택 상태가 서버 메모리에 있음 (7-1) |
 
 **로컬 실행** (터미널 2개)

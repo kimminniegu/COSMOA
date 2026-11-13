@@ -4,8 +4,8 @@
 
 - **규제 화면은 식약처 수집 DB 두 개(성분 DB·규제 DB)만 읽는다.** 외부 API 호출·API 키가 없고, K-Beauty API 키(`RAPIDAPI_*`)가 필요하지 않다.
 - 처리 모듈 (app.py [B] 영역에서 파일 경로로 로드): `regulatory_search.py`(후보 검색·key 검증·성분 연결·조회) · `regulatory_mfds_lookup.py`(규제 DB 읽기, `MARKET_CODES`) · `regulatory_extract.py` / `regulatory_ocr.py`(파일 추출)
-- DB: 규제 DB `MFDS_DB_PATH`(기본 `instance/regulatory/mfds_use_restriction.sqlite`, 배포용 사본 `data/regulatory/`) · 성분 DB `MFDS_INGREDIENT_DB_PATH`(기본 `instance/regulatory/mfds_ingredients.sqlite`, 저장소 미포함). 서버는 `mode=ro` 로 읽기만 하며 **앱 시작·요청 때 수집하지 않는다.**
-- 수집: 별도 스크립트 `mfds_use_restriction.py`(규제 DB) · `mfds_ingredients.py`(성분 DB)를 사람이 실행한다. `MFDS_API_KEY` 는 이 수집에만 쓰고 화면 조회에는 필요 없다. 배포 환경의 성분 DB 준비는 별도 후속 작업이다.
+- DB: 규제 DB `MFDS_DB_PATH`(기본 `instance/regulatory/mfds_use_restriction.sqlite`, 배포용 사본 `data/regulatory/`) · 성분 DB `MFDS_INGREDIENT_DB_PATH`(기본 `instance/regulatory/mfds_ingredients.sqlite`, 배포용 사본 `data/regulatory/` — 2026-11-13 추가). 서버는 `mode=ro` 로 읽기만 하며 **앱 시작·요청 때 수집하지 않는다.**
+- 수집: 별도 스크립트 `mfds_use_restriction.py`(규제 DB) · `mfds_ingredients.py`(성분 DB)를 사람이 실행한다. `MFDS_API_KEY` 는 이 수집에만 쓰고 화면 조회에는 필요 없다. 배포용 사본 두 개의 수집본·해시·갱신 절차는 `data/regulatory/README.md`.
 - 규제 화면과 챗봇(`src/06_chatbot/tools.py`)은 같은 `regulatory_search` 를 직접 쓴다. K-Beauty API(RapidAPI) 모듈·응답 기록·테스트·설정은 4-3단계(2026-11-11)에 삭제했다 — 외부 규제 API 호출과 그 키는 없다.
 - 테스트: `python -m unittest discover -s src/02_regulatory/tests -v` (외부 호출 없음)
 
@@ -123,7 +123,8 @@
    - 테스트: `tests/test_regulatory_service.py` 를 나눠 화면·자산·소스 보호·Route 목록은 `test_regulatory_routes.py`, 추출·시트 선택·OCR 은 `test_regulatory_extract.py` 로 옮기고 K-Beauty 정규화·HTTP 분류 테스트만 삭제. `lookup()` 테스트는 `test_mfds_lookup.py` 에서 `lookup_by_identity` 기준으로 옮김.
    - 설정·문서: `.env.example`·README·`docs/deploy_render.md`·`docs/team_onboarding.md`·`regulatory.md`·`chatbot.md` 의 K-Beauty 설정 안내, 이 문서 2장·부록 A 의 K-Beauty 계약. 로컬 `.env` 의 `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 항목 삭제.
    - 유지: `regulatory_mfds_lookup` 의 `MARKET_CODES`·`MARKET_TO_COUNTRY`·`COMPLETED`·`MfdsLookupError`·`lookup_by_identity`·`related_items`·`open_readonly`·`latest_completed_run`·`db_status`(현재 호출처 없음, K-Beauty 무관이라 남김)·`_common_result`·`_entry`·`_identity`·`norm_name`, `regulatory_search`·`regulatory_extract`·`regulatory_ocr` 전체.
-12. **남은 일 (배포 단계)**: 배포용 성분 DB(`MFDS_INGREDIENT_DB_PATH`) 준비 · 운영 서버(Render 메인·챗봇)에서 `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 환경변수 제거 — 4-3단계에서는 운영 설정을 바꾸지 않았다.
+12. **5-1단계 (배포용 DB·경로 준비, 2026-11-13) — 저장소 준비 완료, 운영 미적용.** `data/regulatory/` 에 규제 DB(2026-11-09 수집본으로 교체, 레코드 원문 변화 없음)·성분 DB(새로 추가) 사본, `.gitignore`·`.dockerignore` 예외 두 파일, Dockerfile `MFDS_INGREDIENT_DB_PATH`, 챗봇 경로 안내(`docs/deploy_render.md` 4장). 배포 사본만 읽는 임시 트리·Docker 컨테이너에서 검색·조회 확인.
+13. **남은 일 (운영 배포 단계)**: Render 메인·챗봇 실제 배포와 챗봇 `MFDS_DB_PATH`·`MFDS_INGREDIENT_DB_PATH` 입력 · 운영 서버에서 `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 환경변수 제거 · 실제 OpenAI 연동 확인 — 지금까지 운영 설정은 바꾸지 않았다. 공통 전제조건(업무 DB production·로그인 계정)은 `docs/deploy_render.md` 0장.
 
 **공통 CSS 관련 PM 협의 사항**: `src/common/style.css`에 `[hidden] { display: none }` 규칙이 없어 `.loading`, `.state`, `.badge`, `.alert`처럼 class로 `display`를 지정하는 요소는 `hidden` 속성이 무시된다(로딩·오류·후보 상태가 동시에 보이던 원인). 공통 파일은 수정하지 않고 `regulatory.css`에서 이 페이지 영역(`#regulatory-panel-search`, `#regulatory-panel-file`, `#regulatory-results`, `#regulatory-detail-modal`)에만 `[hidden] { display: none !important }`를 적용했다. 공통 CSS에 같은 규칙을 추가하면 페이지 규칙은 제거해도 된다.
 

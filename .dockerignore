@@ -9,8 +9,11 @@ instance/
 **/*.db
 **/*.sqlite
 **/*.sqlite3
-# 배포용 식약처 규제 DB 한 개만 포함 (읽기 전용 조회, MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite)
+# 배포용 식약처 DB 두 개만 포함 (읽기 전용 조회, data/regulatory/README.md)
+#   규제 DB  MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite
+#   성분 DB  MFDS_INGREDIENT_DB_PATH=/app/data/regulatory/mfds_ingredients.sqlite
 !data/regulatory/mfds_use_restriction.sqlite
+!data/regulatory/mfds_ingredients.sqlite
 
 # 로컬 참고자료 — 이미지에 넣지 않음 (local-reference/ 는 이전 이름)
 local_reference/

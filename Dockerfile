@@ -3,13 +3,15 @@
 # 배포 안내: docs/deploy_render.md
 FROM python:3.10.21-slim-bookworm
 
-# MFDS_DB_PATH: 이미지에 포함한 배포용 식약처 규제 DB (읽기 전용 조회). Render 환경변수로 같은 값을 넣어도 됩니다.
+# MFDS_DB_PATH / MFDS_INGREDIENT_DB_PATH: 이미지에 포함한 배포용 식약처 규제 DB·성분 DB (읽기 전용 조회, data/regulatory/README.md).
+# Render 환경변수로 같은 값을 넣어도 됩니다. 챗봇(Python 서비스)은 이 ENV 를 물려받지 않으므로 챗봇 쪽에 따로 지정합니다.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     COSMOA_ENV=production \
-    MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite
+    MFDS_DB_PATH=/app/data/regulatory/mfds_use_restriction.sqlite \
+    MFDS_INGREDIENT_DB_PATH=/app/data/regulatory/mfds_ingredients.sqlite
 
 # 규제 OCR: Tesseract 본체 + 한국어·영어 언어 데이터 (TESSERACT_CMD / TESSDATA_PREFIX 없이 PATH·기본 tessdata 사용)
 # 마진 견적서 PDF: 한글 폰트 (src/03_margin/service.py 가 /usr/share/fonts/truetype/nanum/NanumGothic.ttf 를 찾음)
