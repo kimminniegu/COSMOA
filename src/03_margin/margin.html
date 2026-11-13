@@ -26,6 +26,10 @@
       <p class="page-description">원가와 마진을 넣으면 수출 단가, 역제안 대응, 수량별 단가, 환율 영향을 한 번에 계산해요.</p>
     </div>
     <div class="page-actions">
+      {# 임시 버튼 — 공통 저장 영역이 들어오면 제거하고 saveMargin / loadLatestMargin 을 그쪽에 연결 #}
+      <span class="text-caption" id="margin-save-status" role="status"></span>
+      <button type="button" class="btn btn-surface btn-sm" id="margin-load-latest" disabled>최신 저장본 불러오기</button>
+      <button type="button" class="btn btn-primary btn-sm" id="margin-save" disabled>저장</button>
       <a class="btn btn-surface" href="{{ url_for('home') }}">← 홈으로</a>
     </div>
   </div>
