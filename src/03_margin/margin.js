@@ -37,18 +37,25 @@
     qtyRows: [{ q: 3000, l: 800000 }, { q: 5000, l: 1000000 }, { q: 10000, l: 1200000 }, { q: 20000, l: 2000000 }, { q: 50000, l: 4000000 }],
     tierData: null,
     quote: null,
+    outputs: {},   // 마지막 render() 의 계산·판정 결과 (저장본 outputs 용, margin.md 17.3)
   };
 
   /* 선택 버튼 묶음 (.tabs 모양, Panel 없이 페이지 JS에서 .is-active 토글) */
+  const SEGS = {};
+  function setSeg(id, k) {   // 클릭과 저장본 복원이 함께 씀 (render 는 호출하는 쪽에서)
+    const { key, after } = SEGS[id];
+    st[key] = k;
+    $(id).querySelectorAll(".tab").forEach((x) => {
+      const on = x.dataset.k === k;
+      x.classList.toggle("is-active", on);
+      x.setAttribute("aria-selected", String(on));
+    });
+    if (after) after();
+  }
   function seg(id, key, after) {
-    const box = $(id);
-    box.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
-      st[key] = b.dataset.k;
-      box.querySelectorAll(".tab").forEach((x) => {
-        x.classList.toggle("is-active", x === b);
-        x.setAttribute("aria-selected", String(x === b));
-      });
-      if (after) after();
+    SEGS[id] = { key, after };
+    $(id).querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
+      setSeg(id, b.dataset.k);
       render();
     }));
   }
@@ -346,10 +353,10 @@
       if (!res.ok || !(res.headers.get("Content-Type") || "").includes("json")) throw new Error();
       liveFx = await res.json();
       if (!(liveFx.rate > 0)) throw new Error();
-      if (fxAuto) {
+      if (fxAuto) keepClean(() => {
         $("fx").value = safeFx(liveFx.rate);
         render();
-      }
+      });
     } catch (e) {
       liveFx = null;
     }
@@ -382,7 +389,9 @@
   });
 
   /* ---------- 렌더 ---------- */
-  function render() {
+  function render() { renderAll(); updateSaveBar(); }
+  function renderAll() {
+    st.outputs = { quote: null, reverse: null, tier: null, fx_impact: null };
     syncLiveFx();
     syncCbmLogi();           // 자동 반영 중이면 물류비·해상운임 칸을 먼저 채워 readInputs 가 같은 값을 읽도록
     const p = readInputs();
@@ -393,6 +402,13 @@
     syncErpStatus();
     if (p.error) { $("cost-sum").textContent = "-"; return; }
     const r = forward(p);
+    st.outputs.quote = {
+      usd: r.usd, fob_usd: r.fobUsd, krw_price: r.P4, order_total_usd: Math.round((Math.round(r.usd * 100) / 100) * p.qty),
+      cost_total: r.C, first_supply: r.P1, pre_sales_price: r.P2, list_price: r.P3,
+      logi_per_unit: r.L, logi_supply: r.Lsup, freight_usd: r.freightU, insurance_usd: r.insU,
+      discount: r.d, surcharge: r.sur, below_moq: r.belowMoq,
+      first_margin: r.m1eff, sales_margin: r.m2after, total_margin: r.marginTotal / r.P4,
+    };
     renderCbm();
     renderInputSummary(p, r);
     renderForward(p, r);
@@ -597,8 +613,10 @@
       if (!res.ok || !(res.headers.get("Content-Type") || "").includes("json")) throw new Error();
       const data = await res.json();
       $("q-company").value = data.company.name;
-      if (!qv("q-contact-name")) $("q-contact-name").value = data.contact.name || "";
-      if (!qv("q-contact-email")) $("q-contact-email").value = data.contact.email || "";
+      keepClean(() => {
+        if (!qv("q-contact-name")) $("q-contact-name").value = data.contact.name || "";
+        if (!qv("q-contact-email")) $("q-contact-email").value = data.contact.email || "";
+      });
       profileLoaded = true;
     } catch (e) {
       $("q-err").textContent = "회사 정보를 불러오지 못했어요. 다시 로그인한 뒤 열어 주세요.";
@@ -741,9 +759,14 @@
   }
 
   /* 영업 승인 가이드라인(R&R): 목표 이상은 담당자 진행, 목표 미만~최소 이상은 팀장 전결, 최소 미만은 본부장/임원 */
+  function approvalLevel(m, p) {
+    if (m >= toSale(p.m2) - 1e-9) return "none";
+    return m >= toSale(p.m2min) - 1e-9 ? "team" : "executive";
+  }
   function approval(m, p) {
-    if (m >= toSale(p.m2) - 1e-9) return "";
-    if (m >= toSale(p.m2min) - 1e-9) return '<span class="badge badge-info">팀장 전결 가능 (승인 권장)</span>';
+    const level = approvalLevel(m, p);
+    if (level === "none") return "";
+    if (level === "team") return '<span class="badge badge-info">팀장 전결 가능 (승인 권장)</span>';
     return '<span class="badge badge-danger">본부장/임원 특별 승인 필요 (마진 방어 필수)</span>';
   }
 
@@ -823,6 +846,11 @@
     const mSim = 1 - rSim.P2 / T;
     const zSim = zoneOf(t, Psim, pSim, rSim, mSim);
     const short = rSim.P2 - supMaxFor(T, p.m2min);   // + 부족 / − 여유 (개당 공급가 기준)
+    st.outputs.reverse = {
+      zone: zSim[0], zone_label: zSim[1], zone_before: z[0], approval: approvalLevel(mSim, p), simulation_applied: simOn,
+      sales_margin_before: m2now, sales_margin_after: mSim, shortfall: short,
+      price_lines: P, price_lines_after: Psim, ve_saved: veSaved, adjust_cut: adjCut,
+    };
     const shortHtml = short >= 0.5
       ? `<span class="margin-rsum__gap is-short">${won(short)} 부족</span>`
       : `<span class="margin-rsum__gap is-ok">${won(-short)} 여유</span>`;
@@ -909,6 +937,10 @@
     $("fx-kpi-m").textContent = pct(m);
     $("fx-kpi-m-note").innerHTML = badge(z[0], z[1]);
     const pnl = diffUnit * p.qty;   // 견적 환율 대비 환차손익 (주문 전체)
+    st.outputs.fx_impact = {
+      settle_fx: f, realized_margin: m, zone: z[0], zone_label: z[1], pnl, defend_price: needU,
+      thresholds: { breakeven: fxBE, min: fxMin, target: fxGoal },
+    };
     const sign = (v, up, down) => (v > 0 ? up : down);
     $("fx-kpi-pnl").innerHTML = Math.abs(pnl) < 0.5 ? "±0원"
       : `<span class="${sign(pnl, "text-up", "text-down")}">${sign(pnl, "▲ +", "▼ −")}${won(Math.abs(pnl))}</span>`;
@@ -1010,6 +1042,7 @@
       if (st.qtyRows.length > 1) { st.qtyRows.splice(+b.dataset.qdel, 1); render(); }
     }));
     st.tierData = { data, p };
+    st.outputs.tier = data.map((x) => ({ qty: x.q, logi_total: x.l, usd: x.r.usd, sales_margin: x.r.m2after, orderable: !x.off }));
   }
 
   /* ---------- 이벤트 ---------- */
@@ -1103,8 +1136,262 @@
   window.addEventListener("scroll", fitAside, { passive: true });
   ["cost", "logi-box"].forEach((id) => $(id).addEventListener("toggle", fitAside));
 
+  /* ---------- 저장본 수집·복원 (margin.md 17.3·17.4) ----------
+     화면 저장 버튼은 공통 저장 영역이 들어온 뒤 연결합니다. 전역 변수를 만들지 않도록 #margin-app 요소에 함수를 둡니다. */
+  const REQUISITION_VE = {
+    target_field: "ingredients.other_notes",
+    change_spec_text: "바이어 단가 협상에 따른 핵심 원료 동등 규격 범용 원료 대체 처방 요망",
+    lab_request_text: "변경 처방 기준 Lab 샘플 재제작 및 안정도 검토 필요",
+  };
+  const PAYLOAD_SECTIONS = ["quote", "cost", "logistics", "reverse", "tier", "fx_impact", "document"];
+  const numOrNull = (id) => { const v = num(id); return isNaN(v) ? null : v; };
+  const setNum = (id, v) => { $(id).value = v == null ? "" : v; };
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const erpSnapshot = (e) => {
+    const vals = { sagup: e.vals.sagup };
+    Object.values(ERP_FIELDS).forEach((k) => { vals[k] = e.vals[k]; });
+    return { item_code: e.item_code, item_name: e.item_name, synced_at: e.synced_at, vals };
+  };
+
+  function collectInputs() {
+    return {
+      quote: { qty: numOrNull("qty"), incoterm: $("inco").value, margin_mode: st.mMode, target_margin: numOrNull("m2"), min_margin: numOrNull("m2min"), base_fx: numOrNull("fx") },
+      cost: {
+        raw: numOrNull("raw"), proc: numOrNull("proc"), pack: numOrNull("pack"), first_margin_mode: st.mInput,
+        rate_raw: numOrNull("r-raw"), rate_proc: numOrNull("r-proc"), rate_pack: numOrNull("r-pack"), rate_all: numOrNull("m1"),
+        loss: numOrNull("loss"), sagup: $("sagup").checked, erp: erp ? erpSnapshot(erp) : null,
+      },
+      logistics: {
+        logi_total: numOrNull("logi"), logi_rate: numOrNull("r-logi"), freight: numOrNull("freight"), insurance: numOrNull("ins"),
+        preset: $("cbm-preset").value, carton_qty: numOrNull("cbm-ea"), carton_cbm: numOrNull("cbm-box"),
+        inland_per_cbm: numOrNull("cbm-inland"), lcl_per_cbm: numOrNull("cbm-lcl"), auto_logi: logiAuto.logi, auto_freight: logiAuto.freight,
+      },
+      reverse: {
+        target_price: numOrNull("target"), item_floor: numOrNull("item-floor"), adjust: { ...st.adj },
+        ve: { coat: $("ve-coat").checked, box: $("ve-box").checked, raw: $("ve-raw").checked },
+      },
+      tier: {
+        moq: st.moq, moq_mode: st.moqMode, moq_surcharge: st.moqSur,
+        discounts: st.tiers.map((t) => ({ min_qty: t.min, percent: t.d })),
+        rows: st.qtyRows.map((row) => ({ qty: row.q, logi_total: row.l })),
+      },
+      fx_impact: { contract_price: numOrNull("fx-contract"), use_quote_price: $("fx-use-quote").checked, settle_fx: st.fxSettle, settle_touched: st.fxTouched },
+      document: {
+        format: st.qMode, absorb_on: $("abs-on").checked, absorb_cost: numOrNull("abs-c"), absorb_logi: numOrNull("abs-l"), absorb_unit: st.absUnit,
+        contact: { name: qv("q-contact-name"), email: qv("q-contact-email") },
+        buyer: { company: qv("q-buyer-company"), country: qv("q-buyer-country"), attn: qv("q-buyer-attn"), address: qv("q-buyer-address"), email: qv("q-buyer-email") },
+        named_place: qv("q-place"), place_touched: placeTouched, place_custom: placeCustom,
+        quote_no: qv("q-no"), validity_days: numOrNull("q-validity"), product: qv("q-product"),
+        payment: qv("q-payment"), lead_time: qv("q-lead"), remarks: qv("q-remarks"),
+      },
+    };
+  }
+
+  /* 입력 오류로 계산이 멈춘 상태에서는 저장하지 않습니다 (outputs 가 이전 값으로 남음). */
+  function collectPayload() {
+    render();
+    const p = readInputs();
+    if (p.error) return { ok: false, error: p.error };
+    const selected = $("ve-raw").checked;
+    return {
+      ok: true,
+      payload: {
+        context: {},   // 고객사·프로젝트는 프로젝트 연결 단계에서 채움
+        inputs: clone(collectInputs()),
+        outputs: clone({
+          ...st.outputs,
+          quote_document: st.quote,
+          cbm: cbmEst ? { cartons: cbmEst.cartons, cbm: cbmEst.cbm } : null,
+          requisition_ve: selected ? { selected, ...REQUISITION_VE } : { selected, target_field: REQUISITION_VE.target_field, change_spec_text: "", lab_request_text: "" },
+        }),
+        meta: { ui_version: 1 },
+      },
+    };
+  }
+
+  /* 순서가 중요합니다 — margin.md 17.4. 지정 장소와 마진 흡수 금액은 인코텀즈·최대값을 반영한 render() 뒤에 넣습니다. */
+  function restorePayload(payload) {
+    const i = payload && payload.inputs;
+    const valid = i && PAYLOAD_SECTIONS.every((k) => i[k] && typeof i[k] === "object")
+      && i.document.contact && i.document.buyer && i.reverse.ve && Array.isArray(i.tier.discounts) && Array.isArray(i.tier.rows) && i.tier.rows.length > 0;
+    if (!valid) return { ok: false, error: "불러올 수 없는 저장본이에요." };
+    const { quote, cost, logistics, reverse, tier, fx_impact: fxImpact, document: doc } = clone(i);
+
+    fxAuto = false;   // 첫 TTB 조회가 불러온 기준 환율을 덮어쓰지 않도록
+
+    setNum("qty", quote.qty);
+    $("inco").value = quote.incoterm;
+    setSeg("seg-mmode", quote.margin_mode);
+    setNum("m2", quote.target_margin);
+    setNum("m2min", quote.min_margin);
+    setNum("fx", quote.base_fx);
+
+    ["raw", "proc", "pack", "loss"].forEach((k) => setNum(k, cost[k]));
+    setSeg("seg-minput", cost.first_margin_mode);
+    setNum("r-raw", cost.rate_raw);
+    setNum("r-proc", cost.rate_proc);
+    setNum("r-pack", cost.rate_pack);
+    setNum("m1", cost.rate_all);
+    $("sagup").checked = !!cost.sagup;
+    erp = cost.erp || null;
+
+    /* handlePackagingPresetChange 는 입수·단가와 자동 반영 상태를 바꾸므로 쓰지 않습니다. */
+    setNum("logi", logistics.logi_total);
+    setNum("r-logi", logistics.logi_rate);
+    setNum("freight", logistics.freight);
+    setNum("ins", logistics.insurance);
+    $("cbm-preset").value = logistics.preset;
+    setNum("cbm-ea", logistics.carton_qty);
+    setNum("cbm-box", logistics.carton_cbm);
+    setNum("cbm-inland", logistics.inland_per_cbm);
+    setNum("cbm-lcl", logistics.lcl_per_cbm);
+    logiAuto.logi = !!logistics.auto_logi;
+    logiAuto.freight = !!logistics.auto_freight;
+
+    setNum("target", reverse.target_price);
+    setNum("item-floor", reverse.item_floor);
+    st.adj = reverse.adjust || {};
+    Object.keys(VE_CUT).forEach((k) => { $("ve-" + k).checked = !!reverse.ve[k]; });
+
+    st.moq = tier.moq;
+    st.moqSur = tier.moq_surcharge;
+    setNum("moq", tier.moq);
+    setNum("moq-sur", tier.moq_surcharge);
+    setSeg("seg-moqmode", tier.moq_mode);
+    st.tiers = tier.discounts.map((t) => ({ min: t.min_qty, d: t.percent }));
+    st.qtyRows = tier.rows.map((row) => ({ q: row.qty, l: row.logi_total }));
+    drawTiers();
+
+    setNum("fx-contract", fxImpact.contract_price);
+    $("fx-use-quote").checked = !!fxImpact.use_quote_price;
+    st.fxSettle = fxImpact.settle_fx;
+    st.fxTouched = !!fxImpact.settle_touched;
+
+    setSeg("seg-qmode", doc.format);
+    setSeg("seg-absunit", doc.absorb_unit);
+    $("abs-on").checked = !!doc.absorb_on;
+    $("q-contact-name").value = doc.contact.name;
+    $("q-contact-email").value = doc.contact.email;
+    ["company", "country", "attn", "address", "email"].forEach((k) => { $("q-buyer-" + k).value = doc.buyer[k]; });
+    $("q-no").value = doc.quote_no;
+    setNum("q-validity", doc.validity_days);
+    $("q-product").value = doc.product;
+    $("q-payment").value = doc.payment;
+    $("q-lead").value = doc.lead_time;
+    $("q-remarks").value = doc.remarks;
+
+    render();   // 인코텀즈 그룹·슬라이더 최대값을 먼저 반영
+
+    placeTouched = !!doc.place_touched;
+    placeCustom = !!doc.place_custom;
+    $("q-place").value = doc.named_place;
+    setNum("abs-c", doc.absorb_cost);
+    setNum("abs-l", doc.absorb_logi);
+    render();
+    return { ok: true };
+  }
+
+  root.collectMarginPayload = collectPayload;
+  root.restoreMarginPayload = restorePayload;
+
+  /* ---------- 프로젝트 연결·변경 감지·저장 (margin.md 17) ----------
+     저장·불러오기는 saveMargin / loadLatestMargin 에 모아 둡니다. 공통 저장 영역이 들어오면 버튼 연결만 옮깁니다. */
+  const versionsUrl = (p) => `/api/projects/${p.id}/tabs/margin/versions`;
+  let project = null, basedOn = null, baseline = null, busy = false;
+  let defaultInputs = null;
+
+  const inputsKey = () => JSON.stringify(collectInputs());
+  const isDirty = () => baseline !== null && inputsKey() !== baseline;
+  const apiMessage = (res) => (res.error && res.error.message) || "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
+  function markClean() { baseline = inputsKey(); updateSaveBar(); }
+  /* 사용자가 하지 않은 자동 입력(첫 TTB, 담당자 정보)은 변경으로 세지 않습니다. */
+  function keepClean(change) {
+    const clean = !isDirty();
+    change();
+    if (clean) markClean();
+  }
+  function saySave(message) { $("save-status").textContent = message; }
+  function setBusy(on) { busy = on; updateSaveBar(); }
+
+  function updateSaveBar() {
+    if (baseline === null) return;
+    $("save").disabled = $("load-latest").disabled = !project || busy;
+    if (!project) saySave("프로젝트를 선택하면 저장할 수 있어요");
+    else if (busy) saySave("처리 중…");
+    else if (isDirty()) saySave("저장하지 않은 변경 있음");
+    else saySave(basedOn ? `v${basedOn.no} 기준 · 변경 없음` : "변경 없음");
+  }
+
+  function resetInputs() {
+    const firstFxPending = fxAuto;   // 첫 TTB 조회 전이면 조회가 끝날 때 자동 적용되도록 유지
+    restorePayload({ inputs: defaultInputs });
+    fxAuto = firstFxPending;
+    if (liveFx && !firstFxPending) { $("fx").value = safeFx(liveFx.rate); render(); }
+    profileLoaded = false;   // 담당자 정보를 비웠으므로 팝업을 열 때 다시 채움
+    basedOn = null;
+    markClean();
+  }
+
+  async function saveMargin() {
+    if (busy || !project) return;
+    const target = project, collected = collectPayload();
+    if (!collected.ok) { saySave(collected.error); return; }
+    const key = inputsKey();
+    collected.payload.context = { customer_id: target.customer.id, customer_name: target.customer.name, project_id: target.id, project_name: target.name };
+    setBusy(true);
+    const res = await window.Common.api("POST", versionsUrl(target), { schema_version: 1, based_on_id: basedOn ? basedOn.id : null, payload: collected.payload });
+    setBusy(false);
+    if (!project || project.id !== target.id) return;   // 기다리는 사이 프로젝트가 바뀜
+    if (!res.ok) { saySave(apiMessage(res)); return; }
+    basedOn = { id: res.data.version.id, no: res.data.version.version_no };
+    baseline = key;   // 저장 요청 뒤에 고친 값은 변경으로 남김
+    updateSaveBar();
+  }
+
+  async function loadLatestMargin() {
+    if (busy || !project) return;
+    const target = project, stale = () => !project || project.id !== target.id;
+    setBusy(true);
+    const finish = (message) => { setBusy(false); if (message && !stale()) saySave(message); };
+    const list = await window.Common.api("GET", versionsUrl(target) + "?limit=1");
+    if (stale()) return finish();
+    if (!list.ok) return finish(apiMessage(list));
+    const latest = list.data.items[0];
+    if (!latest) return finish("아직 저장본이 없어요");
+    if (isDirty() && !window.confirm("저장하지 않은 변경이 사라져요. 최신 저장본을 불러올까요?")) return finish();
+    const keyBefore = inputsKey();   // 이 시점 이후에 고친 값이 있는지 응답 도착 후 다시 확인
+    const got = await window.Common.api("GET", `/api/versions/${latest.id}`);
+    if (stale()) return finish();
+    if (!got.ok) return finish(apiMessage(got));
+    if (inputsKey() !== keyBefore && !window.confirm("불러오는 동안 바꾼 값이 있어요. 그래도 최신 저장본으로 바꿀까요?")) return finish();
+    const restored = restorePayload(got.data.version.payload);
+    if (!restored.ok) return finish(restored.error);
+    basedOn = { id: latest.id, no: latest.version_no };
+    markClean();
+    finish();
+  }
+
+  function connectProject() {
+    if (!window.ProjectBar) return;
+    window.ProjectBar.setGuard((next) => !project || (next && next.id === project.id) || !isDirty()
+      || window.confirm("저장하지 않은 변경이 사라져요. 프로젝트를 바꿀까요?"));
+    window.ProjectBar.onChange((next) => {
+      const previous = project;
+      project = next;
+      if (previous && (!next || next.id !== previous.id)) resetInputs();   // 다른 프로젝트에 이전 값이 저장되지 않도록
+      else updateSaveBar();   // 처음 선택할 때는 입력해 둔 값을 그대로 이어감
+    });
+    project = window.ProjectBar.current();
+  }
+
+  $("save").addEventListener("click", saveMargin);
+  $("load-latest").addEventListener("click", loadLatestMargin);
+
   drawTiers();
   render();
+  defaultInputs = clone(collectInputs());
+  connectProject();
+  markClean();
   fitAside();
   loadLiveFx();
   setInterval(loadLiveFx, FX_REFRESH_MS);
