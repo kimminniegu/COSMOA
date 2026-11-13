@@ -1359,9 +1359,11 @@
     const latest = list.data.items[0];
     if (!latest) return finish("아직 저장본이 없어요");
     if (isDirty() && !window.confirm("저장하지 않은 변경이 사라져요. 최신 저장본을 불러올까요?")) return finish();
+    const keyBefore = inputsKey();   // 이 시점 이후에 고친 값이 있는지 응답 도착 후 다시 확인
     const got = await window.Common.api("GET", `/api/versions/${latest.id}`);
     if (stale()) return finish();
     if (!got.ok) return finish(apiMessage(got));
+    if (inputsKey() !== keyBefore && !window.confirm("불러오는 동안 바꾼 값이 있어요. 그래도 최신 저장본으로 바꿀까요?")) return finish();
     const restored = restorePayload(got.data.version.payload);
     if (!restored.ok) return finish(restored.error);
     basedOn = { id: latest.id, no: latest.version_no };
