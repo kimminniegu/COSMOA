@@ -222,7 +222,17 @@ def migration_files() -> dict[str, set[str]]:
 
 
 def inspect_state(conn) -> dict:
-    """DB 의 public 테이블·적용 기록을 저장소 마이그레이션과 비교합니다. 읽기만 합니다."""
+    """DB 의 public 테이블·적용 기록을 저장소 마이그레이션과 비교합니다. 읽기만 합니다.
+    읽은 뒤 conn.rollback() 으로 읽기 트랜잭션을 끝냅니다 (기존 호출 방식 유지).
+    호출자의 트랜잭션 안에서 쓰려면 read_state() 를 씁니다 (트랜잭션을 건드리지 않음)."""
+    state = read_state(conn)
+    conn.rollback()
+    return state
+
+
+def read_state(conn) -> dict:
+    """inspect_state 와 같은 비교를 하되 트랜잭션을 끝내지 않습니다 (app-role check·테스트의 롤백 트랜잭션 안에서 사용).
+    expected_tables: 적용 기록이 있는 마이그레이션이 만드는 테이블 — 권한 기준을 적용할 표 (app_role_problems)."""
     files = migration_files()
     tables = {r["relname"] for r in conn.execute(
         """SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -231,7 +241,6 @@ def inspect_state(conn) -> dict:
     if "_yoyo_migration" in tables:
         applied = [r["migration_id"] for r in conn.execute(
             "SELECT migration_id FROM _yoyo_migration ORDER BY applied_at_utc")]
-    conn.rollback()
     known = set().union(*files.values()) if files else set()
     problems = []
     unknown = sorted(tables - known - YOYO_TABLES)
@@ -245,8 +254,9 @@ def inspect_state(conn) -> dict:
     foreign = [mid for mid in applied if mid not in files]
     if foreign:
         problems.append(f"저장소에 없는 마이그레이션 적용 기록: {', '.join(foreign)}")
+    expected = set().union(*(files[m] for m in applied if m in files)) if applied else set()
     return {"applied": applied, "pending": [m for m in files if m not in applied],
-            "tables": sorted(tables), "problems": problems}
+            "tables": sorted(tables), "expected_tables": sorted(expected), "problems": problems}
 
 
 def _yoyo(url: str):
@@ -296,6 +306,12 @@ def rollback_last(target: str) -> list[str]:
         state = inspect_state(conn)
     if state["problems"]:
         raise GuardError("예상과 다른 DB 상태라 되돌리지 않았습니다:\n  - " + "\n  - ".join(state["problems"]))
+    return _yoyo_rollback_last(url)
+
+
+def _yoyo_rollback_last(url: str) -> list[str]:
+    """마지막 마이그레이션 하나를 되돌립니다 (yoyo 가 되돌리기 파일 전체를 한 트랜잭션으로 실행).
+    대상 확인은 호출자(rollback_last) 몫입니다. 일회용 로컬 DB 동시성 테스트도 이 함수를 씁니다."""
     backend, migrations = _yoyo(url)
     try:
         with backend.lock():
@@ -451,13 +467,19 @@ APP_PASSWORD_MIN = 16
 TEST_APP_URL_VAR = "TEST_APP_DATABASE_URL"
 MIN_SERVER_VERSION = 160000   # GRANT ... WITH INHERIT TRUE, SET FALSE (PostgreSQL 16+)
 
-# 0004_app_role_grants.sql 과 같은 내용. app-role check 가 실제 권한과 비교합니다 (적거나 많으면 문제).
+# 0004_app_role_grants.sql + 0006_regulatory_notes.sql 과 같은 내용. app-role check 가 실제 권한과 비교합니다 (적거나 많으면 문제).
+# 아직 만들어지지 않은 표(예: 0006 미적용 DB 의 regulatory_notes)는 비교하지 않습니다 (_privilege_problems).
+# DELETE 는 반영 전 규제 메모 삭제용 regulatory_notes 에만 있습니다 (docs/db_rules.md 8-9). 다른 표에 넓히지 않습니다.
 APP_TABLE_PRIVILEGES = {
     "users": {"SELECT"}, "customer_contacts": {"SELECT"}, "project_history": {"SELECT"},
     "customers": {"SELECT", "INSERT"}, "projects": {"SELECT", "INSERT"},
     "tab_versions": {"SELECT", "INSERT"}, "final_history": {"SELECT", "INSERT"}, "version_links": {"SELECT", "INSERT"},
+    "regulatory_notes": {"SELECT", "INSERT", "DELETE"},
 }
-APP_UPDATE_COLUMNS = {"users": {"password_hash"}, "customers": {"updated_at"}, "projects": {"updated_at"}}
+APP_UPDATE_COLUMNS = {
+    "users": {"password_hash"}, "customers": {"updated_at"}, "projects": {"updated_at"},
+    "regulatory_notes": {"memo", "target_country", "target_region", "revision", "updated_by", "updated_at"},
+}
 _ROLE_ADMIN_ATTRS = ("rolsuper", "rolcreaterole", "rolcreatedb", "rolreplication", "rolbypassrls")
 
 
@@ -595,33 +617,60 @@ def app_role_report(target: str, login: str | None = None) -> tuple[list[str], l
         login = validate_app_login_name(login)
     conn, _ = open_target(target)
     with conn:
-        version = _server_version(conn)
-        problems = _app_group_problems(conn)
-        if APP_GRANTS_MIGRATION not in inspect_state(conn)["applied"]:
-            problems.append(f"{APP_GRANTS_MIGRATION} 미적용")
-        subjects = [APP_GROUP]
-        if login:
-            role = _role(conn, login)
-            if role is None:
-                problems.append(f"{login} 역할이 없습니다")
-            else:
-                problems += _role_problems(conn, role, login=True)
-                subjects.append(login)
-        if _role(conn, APP_GROUP) is None:
-            return problems, []
-        info = []
-        table_privs = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]
-        if version >= 170000:
-            table_privs.append("MAINTAIN")
-        for subject in subjects:
-            problems += _privilege_problems(conn, subject, table_privs)
-        if login and login in subjects:
-            info += _app_login_info(conn, login)
+        result = app_role_problems(conn, login)
+        conn.rollback()
+    return result
+
+
+def app_role_problems(conn, login: str | None = None) -> tuple[list[str], list[str]]:
+    """app-role check 본체 (읽기만, 호출자 트랜잭션을 끝내지 않음). app_role_report 와 테스트가 같은 경로를 씁니다.
+    권한 기준은 **적용 기록이 있는 마이그레이션이 만드는 표**에만 적용합니다 — 아직 적용하지 않은 마이그레이션의 표
+    (예: 0006 미적용 DB 의 regulatory_notes)는 없어도 정상이고, 적용 기록이 있는데 표가 없거나, 기록 없이 표만 있으면 문제로 보고합니다."""
+    if login is not None:
+        login = validate_app_login_name(login)
+    version = _server_version(conn)
+    state = read_state(conn)
+    problems = _app_group_problems(conn)
+    problems += [f"마이그레이션 상태: {p}" for p in state["problems"]]
+    if APP_GRANTS_MIGRATION not in state["applied"]:
+        problems.append(f"{APP_GRANTS_MIGRATION} 미적용")
+    problems += _baseline_problems()
+    subjects = [APP_GROUP]
+    if login:
+        role = _role(conn, login)
+        if role is None:
+            problems.append(f"{login} 역할이 없습니다")
+        else:
+            problems += _role_problems(conn, role, login=True)
+            subjects.append(login)
+    if _role(conn, APP_GROUP) is None:
+        return problems, []
+    info = []
+    table_privs = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]
+    if version >= 170000:
+        table_privs.append("MAINTAIN")
+    expected_tables = set(state["expected_tables"])
+    missing = sorted(((set(APP_TABLE_PRIVILEGES) | set(APP_UPDATE_COLUMNS)) & expected_tables) - set(state["tables"]))
+    if missing:
+        problems.append(f"권한 기준 표가 없습니다 (적용 기록 있음): {', '.join(missing)}")
+    for subject in subjects:
+        problems += _privilege_problems(conn, subject, table_privs, expected_tables)
+    if login and login in subjects:
+        info += _app_login_info(conn, login)
     return problems, info
 
 
-def _privilege_problems(conn, subject: str, table_privs: list[str]) -> list[str]:
-    """실제 유효 권한(직접 GRANT·PUBLIC·상속 포함)을 0004 기준과 비교합니다."""
+def _baseline_problems() -> list[str]:
+    """권한 기준(APP_TABLE_PRIVILEGES·APP_UPDATE_COLUMNS)에 마이그레이션 파일이 만들지 않는 표가 있으면 설정 오류."""
+    known = set().union(*migration_files().values())
+    unknown = sorted((set(APP_TABLE_PRIVILEGES) | set(APP_UPDATE_COLUMNS)) - known)
+    return [f"권한 기준에 마이그레이션에 없는 표가 있습니다: {', '.join(unknown)}"] if unknown else []
+
+
+def _privilege_problems(conn, subject: str, table_privs: list[str], expected_tables: set[str]) -> list[str]:
+    """실제 유효 권한(직접 GRANT·PUBLIC·상속 포함)을 기준과 비교합니다.
+    기준(APP_TABLE_PRIVILEGES·APP_UPDATE_COLUMNS)은 expected_tables(적용된 마이그레이션의 표)에만 적용하고,
+    그 밖의 표(기록 없이 생긴 표 등)는 권한이 하나도 없어야 합니다."""
     problems = []
     rows = conn.execute(
         """SELECT c.relname, c.relkind,
@@ -632,7 +681,8 @@ def _privilege_problems(conn, subject: str, table_privs: list[str]) -> list[str]
            WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S') ORDER BY c.relname""",
         (table_privs, subject, subject)).fetchall()
     for row in rows:
-        expected = set() if row["relkind"] == "S" else APP_TABLE_PRIVILEGES.get(row["relname"], set())
+        expected = (APP_TABLE_PRIVILEGES.get(row["relname"], set())
+                    if row["relkind"] != "S" and row["relname"] in expected_tables else set())
         if set(row["granted"]) != expected:
             problems.append(f"{subject}: {row['relname']} 권한 {sorted(row['granted']) or '(없음)'} "
                             f"≠ 기준 {sorted(expected) or '(없음)'}")
@@ -643,7 +693,8 @@ def _privilege_problems(conn, subject: str, table_privs: list[str]) -> list[str]
            WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped""",
         (subject, subject)).fetchall()
     actual_update = {(c["relname"], c["attname"]) for c in columns if c["upd"]}
-    expected_update = {(t, col) for t, cols in APP_UPDATE_COLUMNS.items() for col in cols}
+    # 적용된 마이그레이션의 표만 기준 열을 기대한다. 그 표가 없으면 실제 열이 없어 불일치로 보고된다 (누락을 숨기지 않음).
+    expected_update = {(t, col) for t, cols in APP_UPDATE_COLUMNS.items() if t in expected_tables for col in cols}
     if actual_update != expected_update:
         problems.append(f"{subject}: 수정 가능 열 {sorted(actual_update)} ≠ 기준 {sorted(expected_update)}")
     if any(c["ref"] for c in columns):

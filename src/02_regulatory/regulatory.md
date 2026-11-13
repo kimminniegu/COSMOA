@@ -6,6 +6,7 @@
 
 - **문서 성격**: 이 문서는 `/regulatory` 페이지 기능 구현의 기준 명세이다. 기능 요구사항은 README 규칙에 따라 이 문서를 최우선으로 따른다. 현재 성분 직접 검색(한글·영문 INCI 검색·입력 중 자동완성·후보 선택·시장별 규제 조회·결과 카드)과 파일 탭의 **업로드 → 시트 선택 → 성분·함량 추출 → 확인·수정 → 성분 확인(식약처 DB 후보 검색) → 사용자 선택 → 선택 성분 규제 일괄 조회 → 결과 표·상세**(텍스트 PDF·.xlsx)는 구현되어 있다. 스캔 PDF·PNG/JPG 이미지는 서버 로컬 OCR(Tesseract)로 읽어 같은 흐름에 연결된다(2026-09-23). 중간 포함 검색, 함량 기준 비교(검토 상태), 시장 자동 선택은 **미구현** 상태이다.
 - **현재 구현 기준 (2026-11-11, K-Beauty 제거 4-1~4-3단계)**: 규제 화면(직접 검색·파일 일괄 조회)과 챗봇의 성분 규제 기능은 모두 **식약처 성분 DB(화장품 원료성분정보)·규제 DB(화장품 사용제한 원료정보)를 읽기 전용으로** 쓴다 — 후보 검색 → 사용자 선택 → 국가별 규제 조회. Route 는 `/api/regulatory/search` · `/lookup` · `/extract` 뿐이다. 외부 규제 API 호출이 없고 K-Beauty(RapidAPI) 설정이 필요하지 않다 — 관련 모듈·응답 기록·테스트·설정은 4-3단계에서 삭제했다. 현재 Route·화면 동작은 `api_reference.md` 1·3장, 챗봇은 `src/06_chatbot/chatbot.md` 7-1 이 기준이다. DB 수집은 별도 스크립트로만 하며(`MFDS_API_KEY` 필요) 앱 시작·요청 때 수집하지 않는다. 조회에는 수집이 끝난 DB 파일이 필요하다.
+- **다음 기능 (설계 단계·미구현, 2026-11-13)**: 선택한 규제 내용 저장·담당자 메모(`regulatory_notes`) 설계는 17장. 코드·마이그레이션·DB 변경 없음.
 - **확정 요구사항**: 아래에서 별도로 확인 예정·협의 사항으로 표시하지 않은 기능은 초기 구현 목표이다. PDF(텍스트·스캔), Excel(.xlsx), 이미지(.jpg·.jpeg·.png)를 모두 포함한다.
 - **범위 제외**: 문서 전체 분석·요약·번역·개발요청서 생성, 다른 담당자 페이지와의 파일 연동, 성분 조합의 안전성·규제 적합성 자동 판정.
 - 결과는 조회된 근거와 입력 조건의 비교를 지원한다. 최종 수출 가능 여부, 제품 전체의 적법성 또는 안전성을 확정하지 않는다. 부분 개발요청서는 완성 처방으로 취급하지 않는다.
@@ -417,3 +418,543 @@
 - [ ] 기능 코드·Python 모듈·`api_reference.md`·`samples/`·테스트 코드가 모두 `src/02_regulatory/` 안에 있고, `samples/`·`tests/fixtures/`에 비밀값과 민감한 실제 문서가 없다. 업로드 원본·임시 파일이 공개 자산 경로에 저장되지 않는다.
 - [ ] 공통 컴포넌트·CSS Variable·접두사·JS 범위·Route 규칙을 지키고 반응형 화면에서 표와 Modal을 사용할 수 있다. 12항의 PM 협의 사항이 해결되어 있다.
 - [ ] 변경 파일 검토로 담당 폴더와 14항의 허용 변경(`app.py` [B] 영역, `requirements.txt` 추가 줄, `.env.example` 이름 추가)만 포함되었고 `.env`·가상환경·캐시가 커밋되지 않았음을 확인한다.
+
+## 17. 규제 확인사항 메모 저장 설계 (2026-11-13, 설계 단계·미구현)
+
+> **상태: 설계 문서만 있음.** 마이그레이션·서버 API·화면·테스트 모두 없다. test·dev·production 어디에도 적용하지 않았다.
+> **번호 구분**: 이 절의 구현 순서는 **R1~R6**(17-13)이다. [개발 안내](../../docs/development.md) 2장의 공통 **4단계**(`regulatory_notes` 테이블 추가)·**6단계**(탭 간 반영 실사용)와, 이 문서의 K-Beauty 제거 **4-1~4-3**·배포 준비 **5-1** 단계 번호와는 별개다.
+> **표기**: **[확정]** 공통 문서에 이미 합의된 내용(근거 문서 표시) · **[확정 R1]** 2026-11-13 R1 에서 결정해 공통 문서에 반영한 내용 · **[제안]** 이번 설계안 — 구현 전 김민 PM·유정현(DB)·관련 탭 담당 확인 · **[결정 필요]** 17-14 · **[후속]** 이번 기능 범위 밖. 표시와 상관없이 **모두 미구현**이다.
+> **R1 (2026-11-13, 문서만)**: 대상 국가·권역(17-4), 팀 전체 수정(17-9), 반영 전 메모 실제 삭제(17-10), 사용한 모든 DB 의 수집본 검증(17-6), 기록 유형 3가지(17-5)를 정리하고 공통 문서([데이터 계약](../../docs/data_contract.md) 1-5, [DB 규칙](../../docs/db_rules.md) 5-1·8-9, [API 계약](../../docs/api_contract.md) 1-2·2-1·7장)에 반영했다. 반영 결과는 17-12.
+> 규제 메모 저장은 `tab_versions`(규제 탭 저장본)나 미구현 `tab_drafts`(임시저장)에 의존하지 않는다.
+
+### 17-1. 목적과 범위
+
+해외영업 담당자가 규제 조회 후 R&D·바이어에게 전달할 **확인사항**을 프로젝트에 남긴다.
+
+| 원칙 | 근거 |
+|---|---|
+| 조회 결과 전체를 자동 저장하지 않는다. 사용자가 고른 성분·시장·규제 행만 저장한다 | [확정] FIX (`data_contract.md` 3장 표 `regulatory` 행) |
+| 담당자 메모는 규제 원문과 구분해 저장·표시한다 | [확정] `data_contract.md` 1-5 `memo` |
+| 규제 조회 없이 메모만 있는 기록을 허용한다. 조회도 메모도 없는 기록은 막는다 | [확정] FIX / CHECK 는 [제안] (`data_contract.md` 1-5) |
+| 사용 허용·안전·적합 여부를 자동 판정·저장하지 않는다 | [확정] 이 문서 1장 범위 제외 |
+| 업로드 원본 파일·이미지·파일 본문을 영구 저장하지 않는다 | [확정] `db_rules.md` 6장 |
+| 기록 단위는 수정 가능한 프로젝트별 `regulatory_notes` 다. 규제 탭 저장본(`tab_versions`) 없이 개발요청서에 반영할 수 있다 | [확정] `db_rules.md` 5-1 |
+
+**세 가지 저장의 역할 구분**
+
+| | 규제 메모 (`regulatory_notes`) | 규제 탭 저장본 (`tab_versions`, `tab='regulatory'`) | 임시저장 (`tab_drafts`) |
+|---|---|---|---|
+| 용도 | 성분·시장별 확인사항 1건. 요청서 반영 출처 | 규제 탭 화면 전체의 버전 기록 | 작성 중 탭 내용 보관 (본인만) |
+| 수정 | 메모·대상만 수정 가능, 반영 전이면 삭제 가능 (17-9·17-10) | 추가만 | 갱신·삭제 가능 |
+| 상태 | 4단계 테이블, **미구현** — 이번 기능 | payload·용도 **미정** (`db_rules.md` 2-3) | 설계 확정·**미구현** (`db_rules.md` 2-6, `src/common` 에 코드·테이블 없음 — 2026-11-13 확인) |
+| 이번 기능에 필요 | 예 | **아니오 — 나중으로 미룸.** 메모 저장·요청서 반영 어느 쪽도 저장본을 요구하지 않는다 | **아니오.** 미구현이므로 메모 편집기에 대체 임시저장(`localStorage` 등)을 만들지 않는다 |
+
+### 17-2. 사용자 작업 흐름 [제안]
+
+```
+[프로젝트 선택] ─(공통 프로젝트 바)
+      │
+ ① 직접 검색 → 후보 선택 → 시장 → 조회 결과 카드
+      │        └ 규제 행(entries) 옆 체크 → [확인사항 메모 작성] → 메모 편집기 (선택한 행 원문 = 읽기 전용) → [메모 저장]
+ ② 파일 일괄 조회 → 결과 표에서 저장할 성분 행 체크 → [선택 항목 메모 작성] → 성분별 메모 편집 → [메모 저장]
+ ③ [메모만 작성] → 성분명(직접 입력, 선택)·대상 국가(선택)·메모 → [메모 저장]
+      │
+ 프로젝트별 메모 목록 (규제 화면 안 패널) → 상세 → 메모·대상 국가 수정 / [삭제] (요청서 반영 전만, 확인 후)
+      │
+ (후속, 개발요청서 담당) 요청서에서 메모 선택 → 반영 → 요청서 저장 시 서버가 메모 사본을 version_links 에 기록
+```
+
+1. 규제 조회 자체는 지금처럼 **프로젝트 없이** 할 수 있다. 메모 **저장**에만 프로젝트가 필요하다.
+2. 메모 편집기를 열 때 선택돼 있던 프로젝트가 그 메모의 **연결 프로젝트**다 (요청서 연결 프로젝트 규칙과 같은 방식, `api_contract.md` 5-3·`development.md` 9-1 3번).
+3. 저장 버튼은 **메모 편집기 안의 메모 단위 동작**이다. 탭 전체를 버전으로 남기는 공통 저장 영역(정식 저장·임시저장·불러오기·최종본)과 다르다 — 그 영역의 위치는 아직 합의 전이므로(`development.md` 9-1 2번) 이 기능에서 정하지 않는다.
+
+### 17-3. 메모 1건의 단위 — 추천안
+
+**추천 [제안]: 메모 1건 = 성분 1개 × 조회 시장 1개(또는 조회 없음).** 그 조회 결과에서 사용자가 **체크한 규제 행 0~N개**를 같은 메모에 담는다.
+
+| 경우 | 처리 | 실제 예 (배포 규제 DB 2026-11-09 수집본) |
+|---|---|---|
+| 한 성분·한 시장에 규제 행 1개 | 메모 1건, 행 1개 | 페녹시에탄올 × KR — `한도`, "배합한도 : 1%" 1행 |
+| 한 성분·한 시장에 규제 행 여러 개 | 메모 1건에 사용자가 고른 행만. 기본은 전체 체크가 아니라 **사용자가 직접 체크** | 1-나프톨 × KR — `한도/금지` 2행. 같은 성분·시장 조합이 2행 이상인 경우는 6개 시장에서 약 155건 (성분 구분값·국가 기준 집계) |
+| 한 행 안에 여러 용도 조건 | 행 단위로만 고른다. **행의 일부 문장만 잘라 원문으로 저장하지 않는다** (잘라낸 문장은 클라이언트가 만든 문자열이 됨). 특정 용도만 해당하면 메모에 적는다 | 징크옥사이드 × KR — 한 행에 `<자외선차단제> 25%` 와 `<비타르색소>` |
+| 여러 성분 (파일 일괄 조회) | 성분마다 메모 1건씩. 한 요청으로 여러 건을 함께 만든다 (17-7 `batch`) | 선크림 성분표에서 징크옥사이드·티타늄디옥사이드·페녹시에탄올 × EU 3건 |
+| 여러 시장 | 시장마다 별도 조회 → 별도 메모 | 레티놀 EU(found 1행) 와 KR(no_market_record) 은 2건 |
+
+- 근거: 개발요청서 반영(`version_links`) 단위가 메모 1건이고, R&D 전달 문구도 보통 "성분 × 시장" 으로 묶인다. 성분 여러 개를 한 메모에 넣으면 일부만 반영하거나 일부만 수정할 수 없다.
+- **사용자가 보지 않은 내용은 저장하지 않는다**: 체크할 수 있는 행은 화면에 실제로 표시된 `entries` 뿐이다. 관련 항목(`related`, 적용 여부 확인 필요)·연결 후보(`link_candidates`)·다른 시장 기록은 저장 대상이 아니다 (관련 항목 첨부는 [후속]). 서버도 요청한 행이 그 key·시장 조회 결과에 있는지 확인한다 (17-6).
+
+### 17-4. 대상 국가와 규제 조회 시장의 구분
+
+현재 계약의 `country`(ISO 2글자, `data_contract.md` 1-5, 기본설계 `db_rules.md` 2-1 3번)는 대상 국가다. 그런데 규제 조회 시장은 `KR·EU·US·CN·JP·ASEAN` 6개이고 그중 `EU`·`ASEAN` 은 국가가 아니다. 또 규제 DB 에는 6개 시장 밖의 국가 기록(대만·브라질·아르헨티나·캐나다 등, 2026-11-09 수집본 기준 11개 국가·권역)도 있고, 바이어 국가는 더 다양하다.
+
+**[확정 R1] — 조회 시장과 업무 대상을 분리한다** (값 이름·화면 문구는 [제안])
+
+| 값 | 뜻 | 누가 정함 | 허용값 |
+|---|---|---|---|
+| `lookup_market` | 실제로 규제 DB 를 조회한 시장 (조회 근거) | **서버** (검증된 조회 요청의 시장) | `KR`·`EU`·`US`·`CN`·`JP`·`ASEAN` (CHECK, `regulatory_mfds_lookup.MARKET_CODES` 와 같음). 시장별 조회 기록에만 있다 (17-5) |
+| `target_country` | 메모가 겨냥하는 업무 대상 국가 1개 | 사용자 (선택) | **유효한** ISO 3166-1 alpha-2 국가 코드 (형식 `^[A-Z]{2}$` + 서버가 국가 코드 목록으로 확인 — `EU` 같은 예약 코드·없는 코드는 거부). **6개 시장으로 제한하지 않음** |
+| `target_region` | 국가가 아닌 권역 전체가 대상일 때 | 사용자 (선택) | `EU`·`ASEAN` (CHECK) |
+
+- 메모 한 건의 대상은 `target_country` **또는** `target_region` 중 **하나**다 (CHECK `num_nonnulls(…) <= 1`). 둘 다 비면 "대상 미지정" — 허용 (기존 제안 유지).
+- **여러 개별 국가가 대상이면 메모를 나눈다** (예: ASEAN 조회 결과를 VN·TH 바이어에게 각각 전달 → 메모 2건, 같은 조회를 두 번 첨부). 국가 목록 배열은 두지 않는다.
+- 화면 기본값 [제안]: 조회 시장이 KR·US·CN·JP 면 `target_country` 를 같은 국가로, EU·ASEAN 이면 `target_region` 을 미리 채운다. 사용자는 회원국(예: ASEAN 조회 후 `VN`) 등으로 바꾸거나 비울 수 있다.
+- **대상 국가를 바꿔도 조회 근거의 적용 국가는 바뀌지 않으며, 바뀐 것처럼 표시하지 않는다.** 예: ASEAN 조회 결과를 VN 대상으로 저장하면 화면·응답은 "규제 근거: 아세안(ASEAN) 기록 (식약처 수집 DB)" 과 "업무 대상: 베트남" 을 **다른 칸**에 보여 준다. "베트남 규제", "베트남 기준 한도" 처럼 근거를 대상 국가 이름으로 부르지 않는다 (이 문서 5장 아세안 원칙). 요청서 반영 사본(17-11)도 두 값을 따로 담는다.
+- 6개 시장 밖 국가(예: 대만 `TW`)는 지금 조회 시장이 없으므로 **메모만**(또는 다른 시장 조회 + 대상 국가 TW) 으로 남긴다. 규제 DB 에 있는 대만 기록을 화면에서 조회하는 기능은 이번 범위가 아니다 [후속].
+
+### 17-5. 저장 필드 표 [제안]
+
+열 이름·타입은 [제안] (`data_contract.md` 1-5 "열 이름은 제안"). 기존 1-5 의 FIX 항목은 모두 대응시킨다 (오른쪽 열).
+
+**기록 유형 3가지 [확정 R1]** — `note_type` 열로 구분하고 유형마다 필수값이 다르다 (값 이름은 [제안])
+
+| `note_type` | 뜻 | 만드는 요청 |
+|---|---|---|
+| `market_lookup` | **성분의 시장별 조회 기록** — 고른 후보 1개 × 조회 시장 1개의 조회 결과(상태 + 체크한 규제 행) | 후보 key + 시장 (직접 검색·파일 일괄 조회) |
+| `search_no_result` | **검색 결과 0건 기록** — 검색어로 성분정보·규제정보 두 DB 를 검색해 후보가 없었음. 검색은 시장별 조회가 아니므로 시장이 없다 | 검색어 |
+| `memo_only` | **조회 첨부 없이 메모만** | 없음 |
+
+**열**
+
+| 열 | 타입 | 값을 만드는 주체 | 검증 기준 | 1-5 대응 |
+|---|---|---|---|---|
+| `id` | bigint identity | DB | — | `id` |
+| `project_id` | bigint → projects | 서버 (URL 의 프로젝트, 존재·보관 확인) | UNIQUE (`id`, `project_id`) [확정] — `version_links` 복합 FK 용. 수정 불가 | `project_id` |
+| `note_type` | text CHECK | 서버 (요청 형태) | 위 3개. 수정 불가 | (신규) |
+| `origin` | text CHECK | 서버 (호출 경로) | `direct`·`file_batch`. `memo_only` 이면 NULL. 수정 불가 | (신규) |
+| `ingredient_name` | text | `market_lookup` = **서버** (선택 후보의 `kr_name` 원문 — 성분정보 `INGR_KOR_NAME`, 규제정보 `INGR_STD_NAME`. 비어 있으면 영문명 원문) / 그 외 = 사용자 입력 (선택) | 1~200자, 제어 문자 불가. `market_lookup` 에서는 요청 값을 받지 않음. (2026-11-09 배포 수집본은 두 DB 모두 한글명 빈 행 0건) | `ingredient_name` |
+| `ingredient_name_source` | text CHECK | 서버 | `mfds_ingredients`·`mfds_restriction` (원문) / `user` (직접 입력 — 화면에 "직접 입력" 표시) | (신규) |
+| `ingredient_eng_name`, `ingredient_cas` | text | 서버 (후보 원문) | 원문 그대로. CAS 는 **필수 아님**, 형식 정리·추정하지 않음 (누락·복수·주석 원문이 많음) | (신규) |
+| `lookup_market` | text CHECK | 서버 | 6개 시장 코드 | `country` 일부 (17-4) |
+| `lookup_status` | text CHECK | 서버 (저장 시 재조회 결과) | `found`·`no_market_record`·`not_linked` (17-8) | (신규) |
+| `lookup_source` | text | 서버 | 출처 표시 문구 원문. `search_no_result` 는 검색한 두 DB 출처 문구 | `lookup_source` |
+| `looked_up_at` | timestamptz | 서버 | **저장 요청 처리 중 서버가 식약처 DB 를 읽은 시각** (화면 조회 시각 아님, 17-6) | `looked_up_at` |
+| `regulation_text` | text | 서버 (체크한 행 원문을 정해진 형식으로 이어 붙인 읽기용 사본) | 클라이언트 값 받지 않음. 원문 구조는 `lookup_snapshot` | `regulation_text` |
+| `lookup_snapshot` | jsonb | **서버만** | 아래 구조, 상한 32 KiB [제안] (`version_links.applied_values` 와 같은 수준, `api_contract.md` 4장) | (신규 — 원문·출처 사본) |
+| `target_country` / `target_region` | text | 사용자 (선택) | 17-4 | `country` (17-4) |
+| `memo` | text | 사용자 | 0~5,000자 [제안], 제어 문자(줄바꿈·탭 제외) 불가 | `memo` |
+| `revision` | integer | 서버 (1부터, 수정할 때 +1) | 동시 수정·삭제 확인용 (17-9). 버전 번호 아님 | (신규) |
+| `created_by`, `created_at` | | 서버 (세션 사용자·저장 시각) | 본문 값 받지 않음 [확정] `db_rules.md` 3-5 | ✓ |
+| `updated_by`, `updated_at` | | 서버 (마지막 수정 사용자·시각) | 같음 | `updated_at` (+`updated_by` 신규) |
+| 관련 요청서·샘플 연결 | | | 방식 **미정** 유지 (`data_contract.md` 1-5) — `version_links` 로 "반영됨"은 알 수 있음 | 그대로 |
+
+보관(`archived_at`) 열은 두지 않는다 — 반영 전 메모는 실제 삭제한다 (17-10, [확정 R1]).
+
+**유형별 필수값·NULL (✓ 필수 · ○ 선택 · — 반드시 NULL)**
+
+| 열 | `market_lookup` | `search_no_result` | `memo_only` |
+|---|---|---|---|
+| `origin` | ✓ | ✓ | — |
+| `ingredient_name` | ✓ (서버, 후보 원문) | ○ (사용자) | ○ (사용자) |
+| `ingredient_name_source` | ✓ `mfds_*` | 이름이 있으면 ✓ `user` | 이름이 있으면 ✓ `user` |
+| `ingredient_eng_name`, `ingredient_cas` | ○ (원문에 있을 때) | — | — |
+| `lookup_market` | ✓ | — | — |
+| `lookup_status` | ✓ | — (유형 자체가 상태) | — |
+| `lookup_source`, `looked_up_at`, `lookup_snapshot` | ✓ | ✓ | — |
+| `regulation_text` | `found` 이면 ✓, 그 외 — | — | — |
+| `memo` | ○ | ○ | ✓ (공백만은 불가) |
+| `target_country` / `target_region` | ○ (최대 하나) | ○ | ○ |
+
+**CHECK [제안]** (위 표를 DB 에서도 보장)
+- `note_type = 'market_lookup'` ↔ `lookup_market`·`lookup_status`·`origin`·`ingredient_name`·`ingredient_name_source IN ('mfds_ingredients','mfds_restriction')` NOT NULL
+- `note_type = 'search_no_result'` ↔ `lookup_market IS NULL AND lookup_status IS NULL AND regulation_text IS NULL AND origin IS NOT NULL`, `ingredient_name_source` 는 NULL 또는 `user`
+- `note_type IN ('market_lookup','search_no_result')` ↔ `lookup_source`·`looked_up_at`·`lookup_snapshot` NOT NULL / `memo_only` ↔ 이 셋과 `origin` 모두 NULL, `btrim(coalesce(memo,'')) <> ''`
+- `regulation_text IS NOT NULL` ↔ `lookup_status = 'found'`
+- `(ingredient_name IS NULL) = (ingredient_name_source IS NULL)`
+- `num_nonnulls(target_country, target_region) <= 1`, `target_region IN ('EU','ASEAN')`, `target_country ~ '^[A-Z]{2}$'` (유효 코드 목록 확인은 서버)
+- 조회 근거 부분(`note_type`, `origin`, `lookup_*`, `regulation_text`, `ingredient_*`, `project_id`)은 **수정 불가** — 앱 역할에 해당 열 UPDATE 권한을 주지 않는다 ([DB 규칙](../../docs/db_rules.md) 8-9 열 단위 GRANT). 근거를 바꾸려면 새 메모를 만든다 (17-9).
+- "조회 결과가 없음"을 허용·안전·규제 없음으로 표현하는 열·값은 두지 않는다 (17-8).
+
+**`lookup_snapshot` 구조 (서버가 저장 요청 처리 중 만든 사본) [제안]**
+
+| 칸 | 담는 것 |
+|---|---|
+| `selection` | 사용자가 고른 후보: `source`(`mfds_ingredients`/`mfds_restriction`), `key`(참고용), `kr_name`·`eng_name`·`synonym`·`cas` 원문, `record_id`(그 수집본 안 id) |
+| `regulation_identity` | 연결된 규제 성분 구분값 `std_name`·`eng_name_normalized` (규제정보 후보면 직접, 성분정보 후보면 `link`) |
+| `link` | `status`(`direct`/`linked`/`none`)·`basis` |
+| `market` | `code`·`country_names`(예: `["아세안"]`) |
+| `entries` | **사용자가 체크한 행만**: `country`·`regulate_type`·`notice_ingr_name`·`proviso`·`limit_condition`·`limit_missing` 원문, `record_id`·`page_no` |
+| `entries_available` | 그 조회에서 화면에 표시된 행 수 (예: 2행 중 1행 저장 → `1/2` 로 "일부 선택" 표시) |
+| `sources.mfds_ingredients` / `sources.mfds_restriction` | **이 기록을 만들 때 실제로 사용한 DB 마다** `snapshot_id`·`run_id`·`status`·`started_at`·`collected_at`(수집 완료 시각)·`records` — 17-6 에서 검증한 바로 그 수집본. 성분정보 후보 조회·검색 0건 = 둘 다, 규제정보 후보 직접 조회 = `mfds_restriction` 만 |
+| `notices` | 저장 당시 안내 원문: 출처 `disclaimer`, 상태 안내(예: no_market_record 의 "허용·안전·규제 없음을 뜻하지 않아요"), "수집 시각은 법령 개정일이 아님" |
+| `search` | `search_no_result` 일 때만: 검색어 원문·정규화값·출처별 건수(`counts`, 모두 0). `selection`·`entries`·`market`·`link` 는 없음 |
+| `file` | `file_batch` 일 때만: 사용자가 확인한 추출 성분명·함량 원문 문자열, 원본 파일명 (`db_rules.md` 6장 메타데이터 범위). **파일 본문·이미지·추출 원자료 전체(`raw_extracted_data`) 없음** |
+
+- 후보 key 는 수집본 안에서만 유효하다(이 문서 9·10장, `regulatory_search` `stale_key`). 그래서 key 만 저장하지 않고 **이름·CAS 원문 + 수집본 지문 + 원문 행 사본**을 함께 남긴다. `record_id` 는 그 수집본 안에서만 의미가 있다.
+- 배포 DB 를 새 수집본으로 바꿔도(`data/regulatory/README.md` 4장) 저장한 메모의 `lookup_snapshot`·`regulation_text` 는 **자동으로 바뀌지 않는다.**
+
+### 17-6. 서버가 원문·출처를 확보하고 수집본을 검증하는 방법
+
+클라이언트는 **규제 원문·상태·출처·성분명(시장별 조회 기록)·수집본 정보를 보내지 않는다.** 보내는 것은 "무엇을 골랐는지"(후보 key·시장·행 id 또는 검색어), **화면이 본 수집본 지문(비교용)**, 사용자 입력(메모·대상)뿐이다.
+
+**문제 (R1 보완)**: 지금 `resolve_key` 는 **후보가 속한 DB 의 snapshot_id 만** 검사한다 (`regulatory_search.py`, 키 형식 `<source>:<snapshot_id>:<id>`). 성분정보 후보를 고른 뒤 **규제 DB 만** 새 수집본으로 바뀌면 후보 key 는 그대로 유효하지만, 저장 때 다시 조회한 규제 원문은 사용자가 화면에서 본 것과 다를 수 있다.
+
+**원칙 [확정 R1]** (필드 이름은 [제안], 모두 **미구현** — 조회 코드는 R3 에서 바꾼다)
+1. 저장할 때 **그 기록을 만드는 데 실제로 사용한 DB 마다** snapshot_id 를 검증한다.
+
+   | 기록 | 실제 사용한 DB | 검증 대상 |
+   |---|---|---|
+   | `market_lookup` — 성분정보 후보 (`mfds_ingredients:…`) | 성분 DB(후보 확인) + 규제 DB(성분 연결·국가별 조회) | **성분 DB·규제 DB 둘 다** |
+   | `market_lookup` — 규제정보 후보 (`mfds_restriction:…`) | 규제 DB | **규제 DB** (성분 DB 는 사용하지 않으므로 비교하지 않음) |
+   | `search_no_result` | 검색한 성분 DB·규제 DB | **둘 다** |
+   | `memo_only` | 없음 | 없음 |
+
+2. 클라이언트가 보낸 예상 snapshot_id(`expected_snapshots`)는 **비교 조건으로만** 쓴다. 저장하지 않고, 저장할 원문·출처·수집본 정보(`lookup_snapshot.sources` 등)는 서버가 직접 읽어 만든다.
+3. **검증한 수집본과 사본을 만든 수집본이 같아야 한다.** 비교에 쓰는 snapshot_id 와 사본(`entries`·`sources`)은 **같은 한 번의 서버 조회 결과**에서 나온다. 비교 뒤 DB 를 다시 읽어 사본을 만들지 않는다.
+4. 수집본이 다르면 **저장하지 않는다** (409). 화면은 메모·대상 국가 입력을 유지하고 재조회·재선택을 안내한다 (17-8).
+
+**조회 응답에 추가할 검증 필드 [제안, 미구현]**
+
+| 응답 | 필드 | 내용 |
+|---|---|---|
+| `GET /api/regulatory/lookup` (직접 검색·파일 일괄 조회 공통) | `basis_snapshots` | 이 조회에 **실제로 사용한** DB 의 snapshot_id. 성분정보 후보 `{"mfds_ingredients": "e364…", "mfds_restriction": "a74e…"}` / 규제정보 후보 `{"mfds_restriction": "a74e…"}` |
+| `GET /api/regulatory/search` | `sources.<source>.snapshot_id` (**구현됨**) + `basis_snapshots` (추가, 같은 값 모음) | 검색한 두 DB 의 snapshot_id. 검색 0건 기록에 쓴다 |
+
+- 지금 `lookup_candidate` 응답에는 수집 시각(`selection.collected_at`·`regulation_source.collected_at`)만 있고 snapshot_id 가 없다. R3 에서 `lookup_candidate` 가 **자신이 사용한 색인의 snapshot**(후보 DB = `resolve_key` 의 snapshot, 규제 DB = `_index(SRC_RSTR)` 의 snapshot)을 결과에 담아 돌려주게 한다.
+- 규제 행을 읽는 `lookup_by_identity` 는 이미 `expected_run`(run_id·시작·완료 시각)으로 색인과 같은 실행인지 확인한다. R3 에서 이 확인을 snapshot_id 기준으로 맞춰, 한 요청 안에서 파일이 바뀌어도 다른 수집본의 행이 섞이지 않게 한다.
+- 챗봇은 메모를 저장하지 않으므로 이번 변경 대상이 아니다.
+
+**저장 요청에서 받는 검증 필드**: `lookup.expected_snapshots` / `search_no_result.expected_snapshots` — 화면이 조회·검색 응답의 `basis_snapshots` 를 그대로 보낸다. 키 집합은 위 표의 "검증 대상" 과 **정확히 같아야** 한다 (빠지거나 남으면 400 `invalid_parameter`, `field: expected_snapshots`).
+
+**서버 처리 순서 [제안]**
+1. 본문 검사: 허용 필드만 받는다. 원문·출처·상태·수집본 정보(`regulation_text`, `lookup_snapshot`, `entries`, `lookup_status`, `lookup_source`, `looked_up_at`, `sources`, `collected_at`, `market_lookup` 의 `ingredient_*`)가 있으면 400 `unknown_fields` (공통 규칙 `api_contract.md` 1-1). `expected_snapshots` 는 비교 조건일 뿐 출처 입력이 아니므로 이 규칙과 충돌하지 않는다.
+2. **한 번** 조회: `market_lookup` 은 `lookup_candidate(key, market)`, `search_no_result` 는 `search(query)` (읽기 전용 SQLite, 외부 호출 없음, 지금 화면 조회와 같은 함수). 결과와 `basis_snapshots` 를 함께 받는다.
+   - 후보 DB 수집본이 바뀌었으면 여기서 `resolve_key` 가 `stale_key` → 409 `stale_key`.
+3. 수집본 비교: 2번의 `basis_snapshots` 와 `expected_snapshots` 가 DB 마다 같아야 한다. 하나라도 다르면 409 `snapshot_changed` + `changed: [{"source": "mfds_restriction", "expected": "…", "current": "…"}]`. **성분 DB 는 그대로, 규제 DB 만 바뀐 경우가 여기서 걸린다.**
+4. 선택 검사: `selected_record_ids` ⊆ 2번 결과 `entries[].record_id` (아니면 400 `invalid_selection` — 화면에 없던 행·다른 시장 행·관련 항목 차단). `found` 는 1개 이상, `no_market_record`·`not_linked` 는 빈 목록, `link_required` 는 400 `link_required`. `search_no_result` 는 2번 `total = 0` 이어야 한다 (아니면 400 `search_has_results`).
+5. 사본 생성: `lookup_snapshot`·`regulation_text`·`lookup_status`·`looked_up_at`·`ingredient_*`·`lookup_source` 를 **2번 결과로만** 만든다. `lookup_snapshot.sources` 에는 3번에서 검증한 수집본(= 2번이 사용한 수집본)을 넣는다.
+6. 업무 DB 트랜잭션: 프로젝트 행 확인(존재·보관) → INSERT → 커밋. SQLite 읽기는 트랜잭션 전에 끝낸다.
+7. 화면·응답은 원문(`lookup_snapshot.entries`, 읽기 전용, "식약처 수집 DB 원문 · 저장 당시")과 `memo`("담당자 메모")를 **다른 영역**에 표시한다.
+
+- 수집본이 같으면 2번 결과는 사용자가 본 결과와 같다 (같은 파일·key·시장 또는 검색어).
+
+### 17-7. API 초안 [제안]
+
+경로는 프로젝트 하위 (공통 `/api/projects/<id>/…` 형식). 인증 401·CSRF 403·JSON 필수·오류 형식은 `api_contract.md` 1장과 같다. 화면은 `Common.api()` 로 호출한다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/projects/<project_id>/regulatory-notes?limit=&before=` | 메모 목록 (최신 수정순, 원문 사본 제외 요약) |
+| POST | `/api/projects/<project_id>/regulatory-notes` | 메모 1건 만들기 (201) |
+| POST | `/api/projects/<project_id>/regulatory-notes/batch` | 여러 건 한 번에 (파일 일괄 조회, 최대 20건, **전부 성공 또는 전부 취소**) |
+| GET | `/api/regulatory-notes/<note_id>` | 상세 (`lookup_snapshot` 포함, 반영 여부 `applied`) |
+| PATCH | `/api/regulatory-notes/<note_id>` | 메모·대상 수정 (`expected_revision` 필수) |
+| DELETE | `/api/regulatory-notes/<note_id>` | 반영 전 메모 실제 삭제 (`expected_revision` 필수, 17-10) |
+
+- 만들기 요청 본문은 셋 중 **하나만** 담는다: `lookup`(→ `market_lookup`) / `search_no_result`(→ `search_no_result`) / 둘 다 없음(→ `memo_only`). 둘 다 있으면 400 `invalid_parameter`.
+
+**만들기 — 성분의 시장별 조회 기록 (`market_lookup`, 직접 검색)**
+
+```http
+POST /api/projects/12/regulatory-notes
+X-CSRF-Token: …
+Content-Type: application/json
+
+{
+  "lookup": {"candidate_key": "mfds_ingredients:e36457e0445f4c55:15233", "market": "ASEAN", "selected_record_ids": [27310],
+             "expected_snapshots": {"mfds_ingredients": "e36457e0445f4c55", "mfds_restriction": "a74e63a3d8a6f149"}},
+  "target_country": "VN",
+  "target_region": null,
+  "memo": "베트남 바이어 확인 요청: 아세안 한도 1% 기준으로 처방 검토. 개별국 추가 규정 여부는 R&D 확인 필요."
+}
+```
+
+- `expected_snapshots` 는 조회 응답의 `basis_snapshots` 그대로 (17-6). 규제정보 후보(`mfds_restriction:…`)면 `{"mfds_restriction": "…"}` 하나만.
+
+```json
+201
+{
+  "ok": true,
+  "note": {
+    "id": 31, "project_id": 12, "note_type": "market_lookup", "origin": "direct", "revision": 1,
+    "ingredient": {"name": "페녹시에탄올", "name_source": "mfds_ingredients", "eng_name": "Phenoxyethanol", "cas": "122-99-6"},
+    "lookup_market": "ASEAN", "target_country": "VN", "target_region": null,
+    "lookup_status": "found", "lookup_source": "식약처 화장품 사용제한 원료정보 (수집 DB)",
+    "looked_up_at": "2026-11-13T05:02:11+00:00",
+    "regulation_text": "[아세안 · 한도] * 【Restrictions】 Maximum authorised concentration in the finished cosmetic …",
+    "lookup_snapshot": {
+      "selection": {"source": "mfds_ingredients", "key": "mfds_ingredients:e36457e0445f4c55:15233",
+                    "kr_name": "페녹시에탄올", "eng_name": "Phenoxyethanol", "synonym": null, "cas": "122-99-6", "record_id": 15233},
+      "regulation_identity": {"std_name": "페녹시에탄올", "eng_name_normalized": "phenoxyethanol"},
+      "link": {"status": "linked", "basis": ["…연결 근거 원문…"]},
+      "market": {"code": "ASEAN", "country_names": ["아세안"]},
+      "entries": [{"country": "아세안", "regulate_type": "한도", "notice_ingr_name": "…", "proviso": null,
+                   "limit_condition": "* 【Restrictions】 Maximum authorised concentration …", "limit_missing": false,
+                   "record_id": 27310, "page_no": 274}],
+      "entries_available": 1,
+      "sources": {
+        "mfds_ingredients": {"snapshot_id": "e36457e0445f4c55", "run_id": 1, "status": "completed", "started_at": "2026-11-09T09:13:19+00:00", "collected_at": "2026-11-09T09:15:47+00:00", "records": 21968},
+        "mfds_restriction": {"snapshot_id": "a74e63a3d8a6f149", "run_id": 1, "status": "completed", "started_at": "2026-11-09T08:52:13+00:00", "collected_at": "2026-11-09T08:55:53+00:00", "records": 31191}
+      },
+      "notices": ["…disclaimer 원문…", "수집 시각은 데이터를 받은 시각이며 법령 개정일이 아니에요."]
+    },
+    "memo": "베트남 바이어 확인 요청: …",
+    "created_by": {"id": 3, "name": "유정현"}, "created_at": "2026-11-13T05:02:11.402+00:00",
+    "updated_by": {"id": 3, "name": "유정현"}, "updated_at": "2026-11-13T05:02:11.402+00:00",
+    "applied": false
+  }
+}
+```
+
+(값은 형식 예시다. `record_id`·key 숫자는 실제 수집본 값과 다를 수 있다.)
+
+**만들기 — 검색 결과 0건 기록 (`search_no_result`, 17-8)**
+
+```json
+POST /api/projects/12/regulatory-notes
+{"search_no_result": {"query": "Bakuchiol",
+                      "expected_snapshots": {"mfds_ingredients": "e36457e0445f4c55", "mfds_restriction": "a74e63a3d8a6f149"}},
+ "origin": "direct", "ingredient_name": null, "target_country": "US", "target_region": null,
+ "memo": "식약처 DB 검색 결과 없음 — 미국 규정은 별도 확인 필요."}
+
+201 {"ok": true, "note": {"id": 33, "note_type": "search_no_result", "origin": "direct", "revision": 1,
+     "ingredient": null, "lookup_market": null, "lookup_status": null, "regulation_text": null,
+     "lookup_source": "식약처 화장품 원료성분정보 · 사용제한 원료정보 (수집 DB)", "looked_up_at": "2026-11-13T05:10:02+00:00",
+     "lookup_snapshot": {"search": {"query": "Bakuchiol", "query_normalized": "bakuchiol",
+                                    "counts": {"mfds_ingredients": 0, "mfds_restriction": 0}},
+                         "sources": {"mfds_ingredients": {"snapshot_id": "e36457e0445f4c55", …}, "mfds_restriction": {"snapshot_id": "a74e63a3d8a6f149", …}},
+                         "notices": ["검색 결과가 없다는 것은 허용·안전·규제 없음을 뜻하지 않아요.", …]},
+     "target_country": "US", "target_region": null, "memo": "…", …}}
+```
+- 서버가 `regulatory_search.search(query)` 를 다시 실행해 **두 DB 전체 0건일 때만** 저장한다 (아니면 400 `search_has_results` — 후보를 골라 조회하도록 안내). 검색은 시장별 조회가 아니므로 `lookup_market`·`lookup_status` 는 NULL 이다 (17-5 유형표).
+- `origin` 은 `direct`(직접 검색) 또는 `file_batch`(파일 행 검색 0건). `ingredient_name` 은 사용자가 원하면 입력(`name_source: user`), 검색어는 `lookup_snapshot.search` 에 있다.
+
+**만들기 — 메모만 (`memo_only`)**
+
+```json
+POST /api/projects/12/regulatory-notes
+{"ingredient_name": "Bakuchiol (바이어 지정 원료)", "target_country": "TW", "target_region": null,
+ "memo": "대만 바이어가 바쿠치올 사용 가능 여부 문의. 현재 화면은 대만 조회 미지원 — R&D·현지 에이전트 확인 필요."}
+
+201 {"ok": true, "note": {"id": 32, "note_type": "memo_only", "origin": null, "revision": 1,
+     "ingredient": {"name": "Bakuchiol (바이어 지정 원료)", "name_source": "user", "eng_name": null, "cas": null},
+     "lookup_market": null, "lookup_status": null, "lookup_source": null, "looked_up_at": null,
+     "regulation_text": null, "lookup_snapshot": null, "target_country": "TW", "target_region": null, "memo": "…", …}}
+```
+- `memo` 가 비어 있거나 공백뿐이면 400 `empty_note`. `origin` 은 받지 않는다.
+
+**batch (파일 일괄 조회)**: `{"items": [ {"lookup": {"candidate_key": …, "market": "EU", "selected_record_ids": […], "expected_snapshots": {…}}, "file": {"file_name": "sun_essence.pdf", "extracted_name": "Zinc Oxide", "amount_text": "15%"}, "target_country": …, "memo": …}, … ]}`. 항목은 `lookup` 또는 `search_no_result` 중 하나다. 각 항목을 위와 같이 서버가 재조회·검증하고 하나라도 실패하면 아무것도 만들지 않는다. 오류에 실패 항목 순번(`index`)과 코드를 담아 화면이 그 행만 표시한다.
+
+**목록**
+
+```json
+GET /api/projects/12/regulatory-notes?limit=20
+200 {"ok": true, "limit": 20, "next_before": null,
+     "items": [{"id": 32, "note_type": "memo_only", "ingredient": {"name": "…", "name_source": "user"},
+                "lookup_market": null, "target_country": "TW", "target_region": null, "lookup_status": null, "entries_count": 0,
+                "memo_preview": "대만 바이어가 …(120자)", "collected_at": null, "revision": 1,
+                "created_by": {"id": 3, "name": "…"}, "updated_by": {"id": 3, "name": "…"}, "updated_at": "…",
+                "applied": false, "can_delete": true}, …]}
+```
+- `applied`: 개발요청서 반영 출처(`version_links.source_note_id`)로 참조되었는지. `can_delete`: 반영 전이고 삭제 주체 규칙(17-10)을 만족하는지 — 화면이 삭제 버튼 표시에 쓴다 (서버가 삭제 요청 때 다시 확인).
+
+**수정**
+
+```json
+PATCH /api/regulatory-notes/31
+{"expected_revision": 1, "memo": "…수정한 메모…", "target_country": "TH", "target_region": null}
+200 {"ok": true, "note": {…, "revision": 2, "updated_by": {…}, "updated_at": "…"}}
+```
+- 받는 필드: `expected_revision`(필수)·`memo`·`target_country`·`target_region` 만. 그 외(`lookup`·`regulation_text`·`project_id`·`note_type` 등)는 400 `unknown_fields`.
+- `memo_only` 의 메모를 빈 값으로 바꾸면 400 `empty_note` (메모만 있는 기록의 유일한 내용).
+- 반영된 메모도 수정할 수 있다. 이미 저장된 요청서·반영 사본은 바뀌지 않는다 ([확정] `db_rules.md` 5-1).
+
+**삭제**
+
+```json
+DELETE /api/regulatory-notes/31
+X-CSRF-Token: …
+Content-Type: application/json
+
+{"expected_revision": 2}
+200 {"ok": true, "deleted": {"id": 31, "project_id": 12}}
+```
+- `Common.api("DELETE", url, {expected_revision})` 로 보낸다 (CSRF 헤더·JSON 본문, 2026-11-13 확인한 `common.js` 동작).
+- 서버 순서: 한 트랜잭션에서 메모 행 `FOR UPDATE` → 프로젝트 보관 확인 → `revision` 비교 → 삭제 주체 확인(17-10) → 반영 여부 확인 → `DELETE`. 반영 확인과 별개로 DB 의 `ON DELETE RESTRICT` 가 최종 보장한다 (동시에 요청서가 반영 저장하면 먼저 커밋한 쪽만 성공 — 17-10).
+- 없거나 이미 지운 메모는 404 `note_not_found` (중복 삭제는 성공으로 보지 않음).
+
+**오류**
+
+| 상태 | `error.code` | 화면 처리 (입력은 항상 유지) |
+|---|---|---|
+| 400 | `missing_fields`, `unknown_fields`, `invalid_parameter`(+`field`: memo 길이·국가 코드·`expected_snapshots` 키 집합 등), `empty_note`, `invalid_selection`(행이 그 조회 결과에 없음·상태와 맞지 않는 개수), `search_has_results`, `link_required`(성분정보 후보가 규제 성분 하나로 연결되지 않음 — 연결 후보 선택 필요), `project_archived`, `invalid_json`, `json_required` | 해당 칸·행 표시 |
+| 401 | `unauthorized` | 로그인 안내 |
+| 403 | `csrf_failed` (`Common.api` 가 1회 재시도) / `note_delete_forbidden` (삭제 주체 아님 — 17-10 [제안]) | 재시도 / 삭제할 수 없는 이유 안내 |
+| 404 | `project_not_found`, `note_not_found` | 프로젝트 다시 선택·목록 새로 고침 |
+| 409 | `stale_key` (후보 DB 수집본이 바뀜), `snapshot_changed` (+`changed`: 바뀐 DB·예상·현재 snapshot — 후보 key 는 유효하지만 조회에 쓴 다른 DB 가 바뀜), `note_conflict` (+`current`: 현재 revision·updated_by·updated_at·memo·대상), `note_referenced` (요청서 반영 출처라 삭제 불가) | 17-8 / 17-9 / 17-10 |
+| 413 | `payload_too_large` (snapshot·batch 상한) | 잘라 저장하지 않았다고 안내 |
+| 503 | `db_missing`·`db_incomplete`·`db_error` (식약처 DB), `db_unavailable` (업무 DB) | 저장 안 됨 안내, 다시 시도 |
+
+### 17-8. 조회 상태별 저장과 오래된 key
+
+| 화면 상태 | 기록 유형 | 메모 저장 | 저장되는 뜻 |
+|---|---|---|---|
+| 조회됨 `found` | `market_lookup` | 체크한 행 1개 이상과 함께 | "식약처 수집 DB 에 이 시장 기록이 있음 (저장 당시)". 허용·적합 판정 아님 |
+| 선택 국가 기록 없음 `no_market_record` | `market_lookup` | 행 없이 상태만 (`selected_record_ids: []`) + 메모 | "규제정보에 성분 기록은 있으나 선택 시장 기록 없음". 화면·사본에 **"허용·안전·규제 없음을 뜻하지 않음"** 안내 원문을 함께 저장 |
+| 연결 미확인 `not_linked` | `market_lookup` | 상태만 + 메모 | "성분정보 후보와 정확히 연결되는 규제정보 항목 없음". 같은 안내 |
+| 연결 후보 선택 필요 `link_required` | — | **조회 첨부 불가** (400 `link_required`). 연결 후보를 직접 고른 뒤 저장하거나 메모만 작성 | — |
+| 검색 결과 없음 (두 DB 후보 0건) | `search_no_result` | 서버가 두 DB 0건 재확인 + 메모. 시장 없음 | "저장 당시 두 DB 에서 검색어와 일치하는 후보 없음". 같은 안내 |
+| 식약처 DB 오류 (`db_missing` 등) | — | 조회 첨부 불가. `memo_only` 만 가능 | 오류를 '결과 없음'으로 저장하지 않는다 (이 문서 11장 원칙) |
+
+- **[확정] 검색 결과 없음·특정 시장 기록 없음·연결 미확인을 허용·안전·규제 없음으로 표현하지 않는다.** `lookup_status`·`note_type` 와 별개로 "규제 없음"·"사용 가능"·"적합" 같은 값·열을 두지 않는다. 목록 Badge 도 화면의 기존 상태 문구(`조회됨`·`선택 국가 기록 없음`·`연결 미확인`·`검색 결과 없음`)만 쓴다.
+
+**저장 직전에 수집본이 바뀐 경우 (배포 DB 교체 후 같은 화면에서 저장)** — 두 경우 모두 아무것도 만들지 않는다
+
+| 응답 | 뜻 | 화면 안내 |
+|---|---|---|
+| 409 `stale_key` | 고른 후보가 속한 DB 가 바뀜 — 후보 key 자체가 무효 | "수집본이 바뀌어 성분을 다시 검색해야 해요" + [다시 검색] (선택했던 성분명으로 검색어 채움) |
+| 409 `snapshot_changed` | 후보 key 는 유효하지만 **조회에 쓴 다른 DB 가 바뀜** (예: 성분 DB 는 그대로, 규제 DB 만 교체) · 또는 검색 0건 기록의 두 DB 중 하나가 바뀜 | "규제정보 수집본이 바뀌어 조회 결과가 달라졌을 수 있어요" + [다시 조회] (같은 후보·시장으로 재조회 — 행 id 가 바뀌므로 **행을 다시 체크**) / 검색 0건이면 [다시 검색] |
+
+- 공통: 메모·대상 국가 입력을 **그대로 유지**하고 첨부한 조회 결과에만 표시한다. 체크했던 행은 새 결과에서 다시 고르게 하며, 이름이 같다고 자동으로 다시 체크하거나 비슷한 후보로 바꿔 저장하지 않는다.
+- batch 는 전부 취소하고 바뀐 행만 표시한다.
+
+**이미 저장한 과거 메모를 다시 볼 때**
+- 저장된 `lookup_snapshot`·`regulation_text` 만으로 보여 준다. **현재 key 가 유효한지 확인하지 않고, 현재 DB 가 없거나 바뀌어도 열람은 된다.**
+- 표시: "저장 당시 원문 · 규제정보 수집 완료 2026-11-09T08:55:53Z (snapshot a74e63a3…)" — 수집 시각을 법령 개정일·최신 규정으로 표현하지 않는다.
+- [제안] 현재 배포 DB 의 snapshot_id 와 다르면 "현재 서버 DB 는 다른 수집본이에요. 최신 수집본으로 확인하려면 다시 조회하세요" 안내만 붙인다 (자동 재조회·자동 갱신 없음). 다시 조회해 저장하면 **새 메모**가 된다.
+
+### 17-9. 수정·동시 수정·입력 보호
+
+- **수정 권한 [확정 R1]**: 개발용 팀 공유 정책(`db_rules.md` 3-5)에 따라 **로그인한 팀 전체**가 메모를 수정할 수 있다. 서버가 마지막 수정자(`updated_by`)·시각(`updated_at`)·`revision` 을 기록한다. 운영 권한 체계가 정해지면 그 규칙을 따른다.
+- **수정 가능한 것 [확정 R1]**: `memo`, `target_country`, `target_region` 만. 조회 원문·출처 사본(`lookup_snapshot`·`regulation_text`)과 상태·성분·유형은 **수정하지 않는다** → 근거가 바뀌면 새 메모. 이유: 이미 요청서에 반영된 사본과 원본 메모의 근거가 다른 수집본이 되는 일을 막고, "사용자가 본 원문" 을 그대로 남긴다.
+- **수정 이력 [확정 R1]**: 전체 수정 이력 보관·이전 내용 복구 기능은 **두지 않는다.** 남는 것은 현재 값과 작성자·마지막 수정자·시각·`revision` 뿐이다. 요청서에 반영된 시점의 내용은 반영 사본(`version_links.applied_values`)에 남는다 ([확정] `db_rules.md` 5-1).
+- **동시 수정 [확정 R1 원칙 / 방식 제안]**: 자동 덮어쓰기 없이 사용자 입력을 유지한다. 방식은 `revision` 비교 (임시저장 `api_contract.md` 6-4, 최종본 `db_rules.md` 4-2 와 같은 원칙). 서버는 한 트랜잭션에서 `SELECT … FOR UPDATE` → `revision` 비교 → 다르면 409 `note_conflict` + 현재 값, 같으면 UPDATE(`revision + 1`, `updated_by`, `updated_at`). 삭제도 같은 `expected_revision` 비교를 한다 (17-10).
+  - 409 화면: 내가 쓴 메모를 **지우지 않고** 그대로 두고, 다른 사람이 저장한 현재 메모·대상을 옆에 보여 준다. 사용자가 합쳐서 다시 저장하거나 취소한다. 자동 병합·자동 덮어쓰기 없음.
+- **저장 중 오류**: 모든 오류에서 편집기 입력·체크한 행 유지, 버튼은 처리 중 비활성(중복 저장 방지 — `Common.api` 는 409·503 을 재전송하지 않음, `api_contract.md` 1-2 4번).
+- **프로젝트 변경** (공통 프로젝트 바 `ProjectBar.setGuard`): 저장하지 않은 메모 편집기가 열려 있을 때 다른 프로젝트·고객사를 고르면 확인을 묻는다. 취소 → 선택 되돌림·입력 유지. 확인 → **메모 편집기만** 닫는다(조회 결과·파일 결과는 프로젝트와 무관하므로 유지). 편집기를 연 뒤 저장 대상은 연 시점의 연결 프로젝트이며, 편집기에 `고객사 › 프로젝트` 를 표시한다.
+- **페이지 이탈**: 저장하지 않은 메모가 있으면 브라우저 기본 이탈 확인만 둔다 (`beforeunload`). 내용을 브라우저·서버에 따로 보관하지 않는다 — 대체 임시저장 아님 (17-1).
+- **보관된 프로젝트 [제안]**: 조회·열람은 허용, 만들기·수정·삭제는 400 `project_archived` (정식 저장과 같은 정책 `api_contract.md` 2-1). 임시저장의 예외 규칙(`db_rules.md` 3-7 7번)은 메모에 적용하지 않는다.
+
+### 17-10. 권한·삭제 규칙
+
+| 항목 | 기존 공통 계약 (R1 전) | R1 이후 |
+|---|---|---|
+| 조회·작성 범위 | 로그인한 팀 사용자 전체가 프로젝트·저장본을 공유 (개발용 기본 정책, `db_rules.md` 3-5). 운영 권한 체계 별도 | 같음 — 팀 전체가 모든 프로젝트 메모를 보고 만든다 |
+| 수정 권한 | 메모는 "수정 가능" 만 정해짐 | **[확정 R1]** 팀 전체 수정 + `updated_by`·`updated_at`·`revision` 기록 (17-9) |
+| 작성자·시각 | 서버 세션 사용자 [확정] | 같음 |
+| 반영된 메모 삭제 | 불가 (`ON DELETE RESTRICT`) [확정] | 같음 — 유지 |
+| 반영 전 메모 삭제 **방식** | **미정** (`data_contract.md` 1-5, `db_rules.md` 8-9 "DELETE 여부는 미정") | **[확정 R1]** 삭제 버튼 + 확인 절차 후 **실제 삭제**(DELETE). 보관(`archived_at`) 방식은 쓰지 않는다 |
+| 반영 전 메모 삭제 **주체** | **확정 규칙 없음** (2026-11-13 공통 문서 확인 — `data_contract.md`·`db_rules.md`·`api_contract.md` 어디에도 메모 삭제 주체 규칙 없음) | **[제안] 작성자만 삭제** (`created_by` = 세션 사용자). 다른 사람은 403 `note_delete_forbidden`. **"팀 전체 수정" 결정을 "팀 전체 삭제" 로 넓혀 해석하지 않는다** — 수정은 현재 값·`revision` 으로 흔적이 남지만 삭제는 되돌릴 수 없기 때문. 최종 결정은 17-14 |
+
+**삭제 절차 [확정 R1 방식 / 세부 제안]**
+1. 화면: 상세·목록에서 [삭제] → 확인 Modal (예: "이 메모를 삭제할까요? 삭제하면 되돌릴 수 없어요." — 문구는 제안). 확인할 때만 `DELETE` 를 보낸다.
+2. 반영된 메모(`applied: true`)는 삭제 버튼을 막고 이유를 보여 준다 ("개발요청서에 반영된 메모는 삭제할 수 없어요. 내용 수정은 할 수 있어요."). 서버도 다시 확인한다.
+3. 서버: 한 트랜잭션에서 `SELECT … FOR UPDATE` → 프로젝트 보관(400 `project_archived`) → `expected_revision` 비교(409 `note_conflict`, 다른 사람이 그사이 수정했으면 지우지 않음) → 삭제 주체(403 `note_delete_forbidden`, [제안]) → `version_links` 참조 확인(409 `note_referenced`) → `DELETE` → 커밋.
+4. **동시 반영과의 경합**: 요청서 저장이 같은 메모를 반영하는 순간 삭제가 들어와도 `version_links.source_note_id` FK(`ON DELETE RESTRICT`)가 최종 보장한다. 반영이 먼저 커밋되면 삭제는 FK 위반 → 409 `note_referenced` 로 바꿔 돌려준다. 삭제가 먼저 커밋되면 요청서 저장은 출처 메모가 없어 실패(400 `invalid_link_source`, 요청서 입력 유지)한다.
+5. 삭제 실패 시 화면의 메모 내용은 그대로 둔다.
+
+**앱 역할 권한 (변경안 — 실제 권한 변경은 하지 않음, R2 마이그레이션에서)**
+- `GRANT SELECT, INSERT, DELETE ON regulatory_notes TO cosmoa_app;`
+- `GRANT UPDATE (memo, target_country, target_region, revision, updated_by, updated_at) ON regulatory_notes TO cosmoa_app;` — 조회 근거 열·`project_id`·`created_*`·`note_type`·`origin` 은 UPDATE 권한에서 뺀다.
+- REFERENCES·TRUNCATE·TRIGGER 는 주지 않는다.
+- 이것은 앱 역할 DELETE 를 `tab_drafts` 밖으로 넓히는 **두 번째 제한된 예외**다 (`db_rules.md` 8-9). 기존 표(`tab_versions`·`final_history`·`version_links`·`customers`·`projects` 등)에는 넓히지 않는다. 같은 PR 에서 `db_admin.APP_TABLE_PRIVILEGES`·`APP_UPDATE_COLUMNS` 와 `app-role check` 기준을 고친다.
+- "작성자만 삭제" 는 앱 역할이 팀 공용이라 DB 권한으로 구분할 수 없다 → **서버 코드가** 세션 사용자로 확인한다. 반영된 메모 보호는 DB FK 가 보장한다.
+- `version_links` 에 `source_note_id` 를 넣을 때 FK 검사에 앱 역할의 `regulatory_notes` REFERENCES 권한은 필요 없다고 본다 (REFERENCES 는 FK 를 **만드는** 마이그레이션 역할에 필요). R2 test DB 에서 실제로 확인한다.
+
+- 운영 권한 체계가 정해지면 그 규칙을 따른다. 이 표를 운영 정책으로 확정하지 않는다.
+
+### 17-11. 개발요청서 반영과의 경계 [확정 유지 + 후속 협업]
+
+| 항목 | 내용 | 상태 |
+|---|---|---|
+| 규제 탭 저장본 없이 메모를 요청서에 반영 | `version_links.source_note_id` | [확정] `db_rules.md` 5-1 |
+| 반영 당시 메모 사본 | 요청서 저장 트랜잭션 안에서 **서버가 DB 의 메모를 읽어** `applied_values` 에 사본 (클라이언트 메모 내용을 출처 기록으로 쓰지 않음) | [확정] 5-1 |
+| 메모 수정 후 | 저장된 요청서·`version_links` 는 그대로 | [확정] 5-1 |
+| 다른 프로젝트 메모 | 반영 불가 (서버 확인 + 복합 FK) | [확정] 5-1 |
+| 반영된 메모 삭제 | 불가 (`ON DELETE RESTRICT`) | [확정] |
+| `applied_values` 사본 내용 | 5-1 의 성분명·국가·규제 내용·조회 출처·조회일·메모·`updated_at` 에 더해 `revision`·`note_type`·`lookup_market`(조회 근거)·`target_country/region`(업무 대상, 따로)·`lookup_status`·`lookup_snapshot.sources`(사용한 수집본) | [제안] — 요청서 담당·DB 담당과 확정 |
+| 반영 후 저장 전 메모가 수정된 경우 | 요청에 반영 시점 `revision` 을 함께 보내고, 다르면 저장은 진행하되 응답에 알림 (5-1 제안을 `updated_at` 대신 `revision` 으로) | [제안] |
+
+**요청서 담당과 협업할 범위 (이번에 개발요청서 코드는 고치지 않음)**
+1. 요청서 화면이 쓸 API: 17-7 의 목록·상세 (같은 프로젝트 메모만 반영 후보). 삭제된 메모는 목록에 없고, 반영 저장 때 없으면 요청서 저장이 실패한다 (17-10 4번).
+2. 공통 저장 API 2-1 `links` 항목에 `{"source_note_id": 31, "note_revision": 2, "applied_values": {"target_field": "…", "inserted_text": "…"}}` 형식 추가 — 공통 파일(`versions*.py`) 변경이므로 김민 PM·유정현과 조율.
+3. 마이그레이션 (17-12): `regulatory_notes` + `version_links.source_note_id`·"출처는 정확히 하나" CHECK + 권한.
+4. 반영 문구를 요청서의 어느 필드에 넣을지(예: R&D 확인 요청사항)는 요청서 담당이 정한다.
+
+### 17-12. 공통 계약 정리 (R1, 2026-11-13 반영)
+
+| 문서 | R1 전 | R1 반영 (모두 미구현) |
+|---|---|---|
+| `data_contract.md` 1-5 | `country` 대상 국가(ISO 2글자) 1개 | **반영**: `lookup_market`(조회 근거, 서버) / `target_country`(유효한 ISO 국가 코드) / `target_region`(EU·ASEAN) 분리, 하나만·미지정 허용 [확정 R1]. 기본설계 "국가는 ISO 2글자"(`db_rules.md` 2-1 3번)는 `target_country` 에 그대로 적용 |
+| `data_contract.md` 1-5 | 열 목록 | **반영**: 기록 유형 3가지·유형별 필수값 요약, 추가 열(`note_type`·`origin`·`ingredient_*`·`lookup_status`·`lookup_snapshot`·`revision`·`updated_by`) [열 이름 제안]. 세부는 이 절 17-5 |
+| `data_contract.md` 1-5 | "그 외 삭제 허용 여부 미정" | **반영**: 반영 전 메모는 확인 후 실제 삭제 [확정 R1], 삭제 주체는 [제안] 작성자만 (미결) |
+| `db_rules.md` 2-2·5-1 | 반영 후 저장 전 수정: `updated_at` 비교 (제안) | **반영**: 메모 수정 범위·팀 전체 수정·수정 이력 없음 [확정 R1], 반영 후 저장 전 수정 비교는 `revision` [제안] |
+| `db_rules.md` 8-9 | 규제 메모: INSERT·열 UPDATE (DELETE 여부 미정) | **반영**: SELECT·INSERT·**DELETE** + 열 UPDATE 변경안 (17-10). DELETE 는 `tab_drafts` 다음의 제한된 예외. **실제 GRANT·`db_admin` 기준 변경은 R2** |
+| `api_contract.md` 1-2 | CSRF 를 POST 기준으로 설명 | **반영**: 변경 요청(POST·PATCH·DELETE 등) 모두 같은 헤더 규칙 — `Common.api` 의 실제 동작(GET 외 모든 메서드에 토큰) 기준 |
+| `api_contract.md` 2-1 | "규제 메모 출처는 4단계에서 추가" | **반영**: 추가 예정 형식(`source_note_id`·`note_revision`) 안내 [제안], 지금은 여전히 저장본 출처만 받음 |
+| `api_contract.md` 7장 (새 장) | 없음 | **반영**: 규제 메모 API 요약·수집본 검증 계약 [설계 단계·미구현]. 상세 기준은 이 절 17-6·17-7 |
+| `api_contract.md` 5-3 · `ui_components.md` | 개발요청서 상단 "연결 프로젝트 카드" 기준으로 설명 | **반영 안 함** (이번 결정과 무관): 실제 코드에는 공통 프로젝트 바(`src/common/project_bar.js`, 6e431ee, 규제·마진·요청서·모델링 페이지에 표시)가 있다 — 문서 갱신은 공통 담당 확인 사항으로 남김 (이 절은 `ProjectBar.current()`·`setGuard()` 사용을 전제) |
+| `ui_components.md` | 공통 저장 영역 위치 미합의 (9-1) | **변경 없음**. 메모 저장·삭제는 메모 편집기·상세 안의 동작이라 공통 저장 영역을 새로 정하지 않는다 |
+| 마이그레이션 | 0001~0004 적용, 0005 는 `tab_drafts` 제안 이름 | **R2-1 작성 (2026-11-13)**: `0006_regulatory_notes.sql`·되돌리기 파일 — 0005 는 비워 둠, `tab_drafts` 에 의존하지 않음. 로컬 Docker PostgreSQL 18 에서만 검증, 공유 DB 미적용. 공유 DB 적용 전 번호 조정 여부는 DB 담당이 `tab_drafts` 와 함께 결정 |
+
+### 17-13. 구현 순서 (R1~R6) [제안]
+
+각 순서는 앞 순서 결과를 확인한 뒤 진행한다. 공통 파일·DB 적용은 `development.md` 9-1 4번·`db_rules.md` 7장 절차를 따른다.
+
+| 순서 | 작업 | 담당 | 끝난 기준 |
+|---|---|---|---|
+| R1 | 대상·수정·삭제 방식 결정 반영, 수집본 검증 계약, 기록 유형 3가지, 공통 문서 정리 — **문서 반영 완료 (2026-11-13), 커밋 전**. 남은 것: 삭제 주체 결정(17-14), 공통 문서 변경 검토(김민 PM·요청서 담당) | 유정현 + 김민 PM (+ 요청서 담당 검토) | 공통 문서에 확정 표시 (완료) · 17-14 결정 |
+| R2 | **R2-1 완료 (2026-11-13, 커밋 전)**: `0006_regulatory_notes.sql`·`.rollback.sql`, `db_admin` 권한 기준, `src/common/tests/test_regulatory_notes_integration.py` — 로컬 Docker PostgreSQL 18 검증. **남음**: 공유 test DB 적용·통합 테스트(DB 담당). 원래 범위: 마이그레이션 `regulatory_notes`(유형별 CHECK, + `version_links.source_note_id`·"출처는 정확히 하나" CHECK·권한 SELECT/INSERT/DELETE/열 UPDATE)·되돌리기 파일, `db_admin` 권한 기준, DB 통합 테스트 | 규제 담당 작성 → DB 담당 test 적용 | test 통합 테스트 통과, PR |
+| R3 | 서버: 조회·검색 응답 `basis_snapshots`(17-6), 저장 서비스(한 번 재조회·수집본 비교·스냅샷 생성) + 17-7 API(삭제 포함), 단위 테스트(SQLite 는 픽스처 DB, 업무 DB 는 test) | 규제 담당 (`app.py` [B] 영역 + `src/02_regulatory/`) | 아래 검증 사례 통과 |
+| R4 | 화면: 직접 검색 결과 행 체크·메모 편집기·메모만 작성·목록/상세/수정/삭제 확인, 프로젝트 바 guard | 규제 담당 | 실제 브라우저 확인 |
+| R5 | 화면: 파일 일괄 조회 선택 저장(batch) | 규제 담당 | 실제 브라우저 확인 |
+| R6 | 요청서 반영 (`links.source_note_id`, 공통 저장 API) | 요청서 담당 + 공통 담당 ([후속], 공통 6단계 범위) | 반영 후 메모 수정 시 요청서·`applied_values` 불변 |
+
+dev 적용은 R3 검증 뒤 DB 담당이 한다. production 은 공통 배포 전제조건(`docs/deploy_render.md` 0장) 이후.
+
+**검증 사례**
+
+| # | 사례 | 기대 |
+|---|---|---|
+| 1 | 페녹시에탄올 × ASEAN 조회 → 1행 체크 → 대상 VN 저장 | `note_type=market_lookup`, `lookup_market=ASEAN`, `target_country=VN`, 사본 1행, 두 수집본 기록, 작성자=세션 사용자. 화면·응답이 근거(아세안 기록)와 대상(베트남)을 따로 표시 |
+| 2 | 1-나프톨 × KR (2행) 중 1행만 체크 | `entries` 1개, `entries_available=2`, 체크 안 한 행 없음 |
+| 3 | 요청에 `regulation_text`·`lookup_snapshot`·`created_by` 를 넣음 | 400 `unknown_fields`, 행 없음 |
+| 4 | `selected_record_ids` 에 다른 시장·관련 항목 행 id | 400 `invalid_selection` |
+| 5 | 레티놀 × KR (`no_market_record`) 상태만 첨부 + 메모 | 저장, "허용·안전·규제 없음 아님" 안내 사본, 허용·적합 값 없음 |
+| 6 | 정제수 × EU (`not_linked`) | 상태만 첨부 저장 |
+| 7 | `link_required` 후보로 저장 | 400 `link_required` |
+| 8 | 검색 0건 검색어로 `search_no_result` / 결과가 있는 검색어로 | 저장 — `lookup_market`·`lookup_status`·`regulation_text` NULL, `lookup_source`·`looked_up_at`·`lookup_snapshot`(두 DB 수집본) 있음 / 400 `search_has_results` |
+| 9 | 메모만 (성분명 직접 입력, TW) | `note_type=memo_only`, `name_source=user`, `origin`·조회 열 모두 NULL |
+| 10 | 조회도 메모도 없음 (공백 메모) | 400 `empty_note` + DB CHECK |
+| 10-1 | DB 에 직접 `market_lookup` 인데 `lookup_market` NULL / `search_no_result` 인데 `lookup_market` 있음 / `memo_only` 인데 `lookup_snapshot` 있음 | 세 경우 모두 CHECK 거부 (R2) |
+| 10-2 | `target_country` 와 `target_region` 을 함께 / `target_country=EU`·`XX`(없는 코드) / `target_region=APAC` | 400 `invalid_parameter` (+ DB CHECK) |
+| 11 | 성분 DB 를 다른 수집본으로 바꾼 뒤, 그 전에 고른 성분정보 후보로 저장 | 409 `stale_key`, 행 없음, 메모·대상 입력 유지 |
+| 11-1 | **성분 DB 는 그대로, 규제 DB 만 다른 수집본으로 교체** 후, 교체 전 화면에서 고른 성분정보 후보(key 는 유효)로 저장 | 409 `snapshot_changed` (`changed` 에 `mfds_restriction`만), 행 없음, 메모·대상 입력 유지, [다시 조회] 후 행 재선택하면 새 수집본으로 저장 |
+| 11-2 | 규제 DB 교체 후 규제정보 후보(`mfds_restriction:…`)로 저장 | 409 `stale_key` (후보 DB 자체가 바뀜) |
+| 11-3 | 성분 DB 만 교체 후 규제정보 후보로 저장 (`expected_snapshots` = 규제 DB 하나) | 저장 — 성분 DB 는 사용하지 않으므로 비교·기록하지 않음 (`sources` 에 `mfds_restriction` 만) |
+| 11-4 | 검색 0건 화면 뒤 규제 DB 만 교체하고 `search_no_result` 저장 | 409 `snapshot_changed`, 행 없음 |
+| 11-5 | `expected_snapshots` 키가 사용 DB 와 다름 (성분정보 후보인데 규제 DB 만 보냄 / 규제정보 후보인데 둘 다 보냄) | 400 `invalid_parameter` (`field: expected_snapshots`) |
+| 11-6 | 저장 성공 후 `lookup_snapshot.sources` 와 비교에 쓴 snapshot | 같다 (한 번의 조회에서 비교·사본 생성) — 서버 단위 테스트에서 조회 함수 호출 1회 확인 |
+| 12 | 과거 메모를 식약처 DB 가 없는 서버에서 열람 | 사본으로 정상 표시 (key 확인 안 함) |
+| 13 | 두 창(다른 사용자 포함)에서 같은 메모 수정 | 늦은 쪽 409 `note_conflict` + 현재 값, 입력 유지, 자동 덮어쓰기 없음. 작성자가 아닌 팀원 수정 성공 시 `updated_by` = 그 팀원, `revision` +1 |
+| 13-1 | `memo_only` 메모를 빈 값으로 수정 | 400 `empty_note` |
+| 14 | 조회 근거 열(`lookup_snapshot`·`regulation_text`·`lookup_market`·`note_type` 등) UPDATE 시도 (앱 역할) | 권한 거부 |
+| 15 | 보관 프로젝트에 만들기·수정·삭제 / 열람 | 400 `project_archived` / 200 |
+| 15-1 | 반영 전 메모 삭제 (작성자, 확인 후) | 200, 행 없음, 목록에서 사라짐 |
+| 15-2 | 요청서 반영 출처인 메모 삭제 (R6 이후, 또는 테스트에서 `version_links` 직접 추가) | 409 `note_referenced`, 행 유지 (FK `ON DELETE RESTRICT`) |
+| 15-3 | 오래된 `expected_revision` 으로 삭제 (그사이 다른 사람이 수정) | 409 `note_conflict`, 행 유지 |
+| 15-4 | 작성자가 아닌 팀원이 삭제 ([제안] 규칙 채택 시) | 403 `note_delete_forbidden`, 행 유지 |
+| 15-5 | 이미 지운 메모 다시 삭제 / 없는 id | 404 `note_not_found` |
+| 15-6 | 삭제와 요청서 반영 저장이 동시에 (R6) | 먼저 커밋한 쪽만 성공 — 반영 먼저면 삭제 409, 삭제 먼저면 요청서 저장 400 `invalid_link_source` |
+| 15-7 | 앱 역할 권한 (`app-role check`) | `regulatory_notes` 에 SELECT·INSERT·DELETE·지정 열 UPDATE 만, DELETE 는 `tab_drafts`·`regulatory_notes` 외 표에 없음 |
+| 16 | 다른 프로젝트 메모를 요청서에 반영 (R6) | 400 + FK 거부 |
+| 17 | 반영된 메모를 수정 → 요청서 저장본·`applied_values` 확인 (R6) | 그대로 |
+| 18 | batch 3건 중 1건 stale | 전부 취소, 실패 `index` 표시 |
+| 19 | 파일 조회 메모 저장 후 DB·응답 확인 | 파일명·사용자 확인 성분명만, 파일 본문·이미지·`raw_extracted_data` 없음 |
+| 20 | 저장 요청 처리 중 외부 HTTP | 0회 (식약처 DB 읽기 전용, `mode=ro`) |
+| 21 | 미저장 편집기 상태에서 프로젝트 변경 → 취소 / 확인 | 선택 복귀·입력 유지 / 편집기만 닫힘, 조회 결과 유지 |
+
+### 17-14. 결정 사항과 남은 결정
+
+**R1 에서 결정됨 (2026-11-13)**
+
+| 항목 | 결정 | 반영 위치 |
+|---|---|---|
+| 메모 대상 | `target_country`(유효한 ISO 국가 코드) 또는 `target_region`(EU·ASEAN) 중 하나, 미지정 허용, 여러 국가는 메모를 나눔. 조회 시장과 구분하고, 대상을 바꿔도 근거의 적용 국가가 바뀐 것처럼 표시하지 않음 | 17-4, `data_contract.md` 1-5 |
+| 수정 권한 | 팀 전체 수정, 마지막 수정자·시각·`revision` 기록, 충돌 시 자동 덮어쓰기 없음·입력 유지, 조회 원문·출처 사본 수정 불가, 전체 수정 이력·복구 기능 없음 | 17-9, `db_rules.md` 5-1 |
+| 삭제 방식 | 반영 전 메모는 삭제 버튼·확인 후 실제 삭제. 보관 방식 제거. 반영된 메모는 `ON DELETE RESTRICT` 유지 | 17-10, `data_contract.md` 1-5, `db_rules.md` 8-9 |
+| 수집본 검증 | 조회에 실제 사용한 각 DB 의 snapshot_id 검증, 클라이언트 값은 비교 조건만, 다르면 저장 안 함·입력 유지 | 17-6, `api_contract.md` 7장 |
+| 기록 유형 | `market_lookup` / `search_no_result`(시장 NULL) / `memo_only` 와 유형별 필수값 | 17-5, `data_contract.md` 1-5 |
+
+**아직 결정이 필요한 사항 (1개)**
+
+1. **반영 전 메모의 삭제 주체** — 공통 문서에 확정 규칙이 없다 (2026-11-13 확인). 추천 [제안]: **작성자만 삭제**. 수정은 현재 값·`revision`·마지막 수정자로 흔적이 남지만 삭제는 되돌릴 수 없고, 수정 이력 기능도 두지 않기로 했기 때문이다. 대안: 팀 전체 삭제 (작성자 부재 시 정리 가능, 대신 다른 사람 메모가 확인 절차만으로 사라짐). "팀 전체 수정" 결정을 이 항목의 결정으로 보지 않는다. 결정 전까지 R2 마이그레이션은 영향이 없다 (DB 권한은 같고, 구분은 서버 코드) — **R3 서버 구현 전에** 정한다.

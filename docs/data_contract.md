@@ -89,23 +89,44 @@
 
 ### 1-5. `regulatory_notes` (프로젝트별 규제 확인사항 메모, 수정 가능) — 확정(개발기준)
 
-규제 탭 저장본과 별개로 수정할 수 있는 프로젝트별 메모다. 규제 탭 저장본 없이 개발요청서에 바로 반영할 수 있다. (`db_rules.md` 5-1) 4단계에서 만든다.
+규제 탭 저장본과 별개로 수정할 수 있는 프로젝트별 메모다. 규제 탭 저장본 없이 개발요청서에 바로 반영할 수 있다. (`db_rules.md` 5-1) 4단계에서 만든다. **미구현** — 테이블은 `db/migrations/0006_regulatory_notes.sql` 로 작성해 로컬 검증만 했다 (2026-11-13 R2-1, 공유 test·dev·production 미적용). API·화면 없음.
+> 세부 설계(필드·유형별 CHECK·원문 사본 구조·API·검증 사례): [규제 명세](../src/02_regulatory/regulatory.md) 17장. 2026-11-13 R1 결정은 아래에 **확정(개발기준, R1)** 으로 표시했다.
 
 | 열 | 필수 | 근거 | 설명 |
 |---|---|---|---|
 | `id` | ✓ | 기본설계 | |
 | `project_id` | ✓ | 확정(FIX) 연결 프로젝트 | FK → projects. UNIQUE (`id`, `project_id`) — `version_links` 가 같은 프로젝트 조건으로 참조 |
-| `ingredient_name` | | 확정(FIX) | 선택한 성분명. 메모만 있으면 NULL |
-| `country` | | 확정(FIX) | 대상 국가 (ISO 2글자) |
-| `regulation_text` | | 확정(FIX) | 선택한 규제 내용 (조회 결과에서 복사) |
-| `lookup_source`, `looked_up_at` | | 확정(FIX) | 조회 출처·조회일 |
+| `note_type` | ✓ | 확정(개발기준, R1) — 이름은 제안 | 기록 유형: `market_lookup`(성분의 시장별 조회) / `search_no_result`(검색 결과 0건) / `memo_only`(조회 첨부 없이 메모만). 아래 유형표 |
+| `ingredient_name` | | 확정(FIX) | 선택한 성분명. 시장별 조회는 서버가 후보 원문으로 채움, 그 외는 사용자 입력(선택) |
+| ~~`country`~~ → `lookup_market` / `target_country` / `target_region` | | 확정(FIX) 대상 국가 + 확정(개발기준, R1) 분리 | `lookup_market`: 실제로 조회한 규제 시장(조회 근거, 서버, `KR·EU·US·CN·JP·ASEAN`). `target_country`: 업무 대상 국가(유효한 ISO 3166-1 alpha-2, 6개 시장으로 제한하지 않음). `target_region`: 권역 대상(`EU`·`ASEAN`). 대상은 국가·권역 중 **하나**, 미지정 허용. 여러 국가는 메모를 나눈다. 대상을 바꿔도 조회 근거의 적용 국가는 바뀌지 않고 바뀐 것처럼 표시하지 않는다 |
+| `regulation_text` | | 확정(FIX) | 선택한 규제 내용 (조회 결과에서 복사). **서버가** 사용자가 체크한 행 원문으로 만든다 |
+| `lookup_source`, `looked_up_at` | | 확정(FIX) | 조회 출처·조회일 (서버, 저장 처리 중 조회 시각) |
+| `lookup_status`, `lookup_snapshot` | | 제안 (R1) | 조회 상태(`found`·`no_market_record`·`not_linked`)와 원문·출처·**사용한 수집본** 사본 (서버만 작성, 수정 불가) |
+| `ingredient_name_source`, `ingredient_eng_name`, `ingredient_cas`, `origin` | | 제안 (R1) | 이름 출처(식약처 원문/직접 입력), 후보 원문, 호출 경로. CAS 는 필수 식별자가 아님 |
 | `memo` | | 확정(FIX) | 담당자 메모 (조회 결과와 구분) |
+| `revision` | ✓ | 확정(개발기준, R1) — 이름은 제안 | 동시 수정·삭제 확인 번호. 버전 번호 아님 |
 | `created_by`, `created_at`, `updated_at` | ✓ | 확정(FIX) 작성자·작성일 | |
+| `updated_by` | ✓ | 확정(개발기준, R1) | 마지막 수정자 (서버 세션 사용자) |
 | 관련 개발요청서·샘플 수정 요청 연결 | | 확정(FIX) "필요하면" | 방식 **미정** |
 
-- 열 이름은 **제안**. 조회 결과 없이 메모만 있는 행을 허용한다. (확정(FIX)) 조회 결과도 메모도 없는 행은 막는다. (CHECK, 제안)
+유형별 필수값 — 확정(개발기준, R1) (✓ 필수 · ○ 선택 · — NULL)
+
+| 열 | `market_lookup` | `search_no_result` | `memo_only` |
+|---|---|---|---|
+| `lookup_market`, `lookup_status` | ✓ | — (검색은 시장별 조회가 아님) | — |
+| `lookup_source`, `looked_up_at`, `lookup_snapshot` | ✓ | ✓ (검색한 두 DB) | — |
+| `regulation_text` | `found` 이면 ✓ | — | — |
+| `ingredient_name` | ✓ (서버) | ○ (사용자) | ○ (사용자) |
+| `memo` | ○ | ○ | ✓ (공백 불가) |
+| `target_country` / `target_region` | ○, 최대 하나 | ○ | ○ |
+
+- 열 이름은 **제안**. 조회 결과 없이 메모만 있는 행을 허용한다. (확정(FIX)) 조회 결과도 메모도 없는 행은 막는다. (CHECK, 제안 — 위 유형표를 CHECK 로 보장)
+- 검색 결과 없음·특정 시장 기록 없음·연결 미확인을 **허용·안전·규제 없음으로 표현하는 값·열을 두지 않는다.**
+- 원문·출처·수집본 사본은 저장 요청 처리 중 **서버가** 식약처 DB 를 다시 읽어 만든다. 클라이언트가 보낸 원문·출처는 받지 않고, 클라이언트의 예상 수집본 지문은 비교 조건으로만 쓴다 ([API 계약](api_contract.md) 7장). — 확정(개발기준, R1)
+- **수정** — 확정(개발기준, R1): 로그인한 팀 전체가 `memo`·`target_country`·`target_region` 만 수정한다 (개발용 팀 공유 정책 `db_rules.md` 3-5). 조회 원문·출처 사본·상태·성분은 수정하지 않는다. 마지막 수정자·시각·`revision` 을 기록하고, 충돌 시 자동 덮어쓰기 없이 사용자 입력을 유지한다. 전체 수정 이력·이전 내용 복구는 두지 않는다.
 - 메모를 수정해도 이미 저장된 요청서와 `version_links` 반영 기록은 바뀌지 않는다.
-- 반영 출처로 참조된 메모는 삭제할 수 없다 (`ON DELETE RESTRICT`). 그 외 삭제 허용 여부는 **미정**.
+- 반영 출처로 참조된 메모는 삭제할 수 없다 (`ON DELETE RESTRICT`).
+- **반영 전 메모 삭제** — 확정(개발기준, R1): 삭제 버튼과 확인 절차를 거쳐 **실제 삭제**한다 (보관 방식 아님). 삭제할 수 있는 사람은 **미정** — 제안: 작성자만 (팀 전체 수정 결정을 팀 전체 삭제로 넓히지 않음).
 
 ---
 

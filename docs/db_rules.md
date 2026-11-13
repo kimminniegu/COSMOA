@@ -39,7 +39,7 @@
 | 임시저장 | `tab_drafts` | 한 사용자의 한 프로젝트·탭 임시저장 1개 (정식 저장본 아님) | **갱신·삭제 가능, 본인만** (3-7) | 3 (설계 확정, 미구현) |
 | 저장본 보조 | `requisition_ingredients` | 요청서 저장본의 원료 항목 1개 | **추가만** | 4 이후 |
 | 저장본 보조 | `cost_spec_changes` | 원가 저장본의 사양 변경(VE) 1개 | **추가만** | 4 |
-| 인허가 | `regulatory_notes` | 프로젝트별 규제 확인사항 메모 1건 | 수정 가능 (반영된 요청서·기록에는 영향 없음, 5-1) | 4 |
+| 인허가 | `regulatory_notes` | 프로젝트별 규제 확인사항 메모 1건 | 메모·대상만 수정 가능 (반영된 요청서·기록에는 영향 없음, 5-1). 반영 전이면 실제 삭제 가능 (5-1, R1) | 4 (`0006_regulatory_notes` 작성·로컬 검증, 공유 DB 미적용) |
 | 샘플 | `dev_rounds` | 연구소 의뢰 1차수 | 메모만 수정 | 5 |
 | 샘플 | `sample_requests` | 차수 안 가격대별 요청 1건 | 수정 가능 | 5 |
 | 샘플 | `lab_samples` | 샘플 1개 (Lab No.) | 메모만 수정 | 5 |
@@ -293,7 +293,14 @@
 - 메모 사본은 서버가 저장 트랜잭션 안에서 DB 의 메모를 읽어 만든다. 클라이언트가 보낸 메모 내용을 출처 기록으로 쓰지 않는다.
 - 같은 프로젝트 검증: 서버가 메모의 `project_id` 를 확인하고, DB 도 FK (`source_note_id`, `project_id`) → `regulatory_notes(id, project_id)` 로 다른 프로젝트 메모를 거부한다.
 - 원본 메모를 나중에 수정해도 이미 저장된 요청서 payload 와 `version_links` 기록은 바뀌지 않는다. (추가만 + 트리거) 화면은 메모를 다시 읽어 저장된 요청서 값을 덮어쓰지 않는다. 바뀐 메모를 반영하려면 다시 반영해 새 버전으로 저장한다.
-- 반영 후 저장 전에 메모가 수정된 경우의 처리는 구현 시 정한다. (제안: 반영 시점 메모의 `updated_at` 을 함께 보내고, 다르면 저장은 진행하되 응답에 알린다 — 3-3 과 같은 방식)
+- 반영 후 저장 전에 메모가 수정된 경우의 처리는 구현 시 정한다. (제안: 반영 시점 메모의 `revision` 을 함께 보내고, 다르면 저장은 진행하되 응답에 알린다 — 3-3 과 같은 방식. R1 에서 비교값을 `updated_at` 대신 메모의 `revision` 으로 바꿈)
+
+**메모 자체의 수정·삭제 — 확정(개발기준, 2026-11-13 R1), 미구현** (세부: [규제 명세](../src/02_regulatory/regulatory.md) 17-9·17-10)
+- 수정: 로그인한 팀 전체가 `memo`·대상 국가·권역만 수정한다 (3-5 개발용 공유 정책). 조회 원문·출처·수집본 사본은 수정하지 않는다 (앱 역할에 그 열 UPDATE 권한 없음, 8-9). 서버가 `updated_by`·`updated_at`·`revision` 을 기록한다.
+- 동시 수정: 기준 `revision` 이 다르면 409 로 거부하고 화면 입력을 유지한다. 자동 덮어쓰기·자동 병합 없음.
+- 수정 이력: 전체 수정 이력 보관·이전 내용 복구는 두지 않는다. 반영 당시 내용은 `version_links.applied_values` 사본에 남는다.
+- 삭제: 개발요청서에 반영되지 않은 메모는 사용자가 삭제를 고르고 확인하면 **실제 삭제**(DELETE)한다. 보관(`archived_at`) 방식은 쓰지 않는다. 반영된 메모는 위 `ON DELETE RESTRICT` 로 삭제되지 않는다 (동시에 반영 저장과 삭제가 들어오면 FK 가 먼저 커밋한 쪽만 남긴다).
+- 삭제할 수 있는 사람: **미정** (기존 확정 규칙 없음). 제안: 작성자만 — 서버가 세션 사용자로 확인한다 (앱 역할은 팀 공용이라 DB 권한으로 구분할 수 없음). 팀 전체 수정 결정은 삭제 주체를 정한 것이 아니다.
 
 ---
 
@@ -416,9 +423,11 @@ GRANT UPDATE (updated_at) ON customers, projects TO cosmoa_app; -- 행 잠금(FO
 
 - 파일 첫 부분의 `DO` 블록이 `cosmoa_app` 이 있고 NOLOGIN·관리 속성 없음·표식 일치인지 확인한다. 아니면 **실패하고 아무 권한도 주지 않는다** (역할을 먼저 만들게 하는 순서 확인 장치). 역할 자체는 마이그레이션이 만들지 않는다 (역할은 DB 전체 객체이고 브랜치마다 따로 있음).
 - 기준 상수: `src/common/db_admin.py` 의 `APP_TABLE_PRIVILEGES`·`APP_UPDATE_COLUMNS`. `app-role check` 가 실제 유효 권한(직접 GRANT·PUBLIC·상속 포함)과 비교해 **적어도 많아도** 문제로 보고한다.
+  - 권한 기준은 **적용 기록이 있는 마이그레이션이 만드는 표**에만 적용한다 (2026-11-13 R2-1 보완, `db_admin.app_role_problems`). 아직 적용하지 않은 마이그레이션의 표(예: 0006 미적용 DB 의 `regulatory_notes`)는 없어도 정상이다. 적용 기록이 있는데 표가 없거나(기존 필수 표 포함), 적용 기록 없이 표만 있거나, 마이그레이션에 없는 표가 있으면 마이그레이션 상태 문제로 함께 보고한다. 기록이 없는 표에는 앱 권한이 하나도 없어야 한다.
+  - 상태 비교(`read_state`)는 호출자의 트랜잭션을 끝내지 않는다. 기존 `inspect_state` 는 그대로 읽은 뒤 롤백한다.
 - `updated_at` 은 `BEFORE UPDATE` 트리거가 `now()` 로 다시 덮어써서 업무 값을 바꿀 수 없다.
 - 시퀀스: 모든 id 가 `GENERATED ALWAYS AS IDENTITY` 라 시퀀스 권한 없이 추가된다 (test 에서 시퀀스 권한 0개로 확인).
-- **주지 않는 것**: DELETE·TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 전부 (예외 설계: 임시저장 `tab_drafts` 의 DELETE 만 — 8-9, 미적용), `users` INSERT(계정 추가는 관리 명령), `project_history` INSERT·`projects` 단계·상태·납기·보관 열 UPDATE(단계 변경 API 미연결), `customers.name` 등 업무 열 UPDATE, `customer_contacts` 쓰기, yoyo 표 4개 전부, 스키마·DB CREATE.
+- **주지 않는 것**: DELETE·TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 전부 (예외 설계: 임시저장 `tab_drafts` 의 DELETE — 8-9, 미적용 / 반영 전 규제 메모 `regulatory_notes` 의 DELETE — 8-9 변경안 2026-11-13 R1, 미적용), `users` INSERT(계정 추가는 관리 명령), `project_history` INSERT·`projects` 단계·상태·납기·보관 열 UPDATE(단계 변경 API 미연결), `customers.name` 등 업무 열 UPDATE, `customer_contacts` 쓰기, yoyo 표 4개 전부, 스키마·DB CREATE.
 - 되돌리기 `0004_app_role_grants.rollback.sql`: `cosmoa_app` 의 권한만 회수한다 (역할은 남김, 데이터 변화 없음).
 
 ### 8-5. 실행 순서와 명령 (Windows CMD, 공통 DB 담당)
@@ -535,7 +544,21 @@ python -m src.common.db_admin app-role whoami --target test
   - 프로젝트 단계·상태·납기 변경 API: `UPDATE (stage, state, due_date) ON projects`, `INSERT ON project_history`
   - 고객사 수정·보관: `UPDATE (name, archived_at) ON customers` (프로젝트 보관도 같은 방식)
   - 고객사 담당자: `INSERT`, 필요한 열 `UPDATE` ON `customer_contacts`
-  - 규제 메모(`regulatory_notes`, 수정 가능 표): 그 표 설계에 맞춘 INSERT·열 UPDATE (DELETE 여부는 미정)
+  - 규제 메모(`regulatory_notes`, 수정 가능 표): 아래 "규제 메모 권한" (2026-11-13 R1 변경안 — **미적용**)
+
+**규제 메모 `regulatory_notes` 권한 — 확정(개발기준, R1): 실제 삭제 필요. `0006_regulatory_notes.sql` 에 작성 (2026-11-13 R2-1, 로컬 Docker PostgreSQL 18 에서만 검증) — test·dev·production 미적용**
+
+```sql
+-- 0006_regulatory_notes.sql 안에 있다 (0005 는 tab_drafts 제안 이름으로 비워 둠 — 번호 조정은 공유 DB 적용 전에 DB 담당이 결정)
+GRANT SELECT, INSERT, DELETE ON regulatory_notes TO cosmoa_app;
+GRANT UPDATE (memo, target_country, target_region, revision, updated_by, updated_at) ON regulatory_notes TO cosmoa_app;
+```
+
+- 반영 전 메모를 실제 삭제하므로(5-1) **DELETE 가 필요하다.** `tab_drafts` 에 이은 **두 번째 제한된 예외**이며, 기존 표에는 넓히지 않는다는 아래 원칙은 그대로다.
+- 조회 근거 열(`note_type`·`origin`·`lookup_*`·`regulation_text`·`ingredient_*`)·`project_id`·`created_*` 는 UPDATE 권한에서 뺀다 (수정 불가를 DB 권한으로 보장). TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 은 주지 않는다.
+- 반영된 메모 삭제 금지는 `version_links.source_note_id` FK(`ON DELETE RESTRICT`)가 보장한다. 삭제 주체(미정, 제안: 작성자만)는 서버 코드가 확인한다.
+- 같은 PR 에서 `db_admin.APP_TABLE_PRIVILEGES`·`APP_UPDATE_COLUMNS` 와 `app-role check` 기준(DELETE 허용 표: `tab_drafts`·`regulatory_notes`)을 고친다.
+- **되돌리기(`0006_regulatory_notes.rollback.sql`)의 동시 저장 보호** (2026-11-13 R2-1 보완, 로컬 검증): yoyo 가 파일 전체를 한 트랜잭션으로 실행하고, 데이터 확인 **전에** `version_links` → `regulatory_notes` 순으로 ACCESS EXCLUSIVE 잠금을 얻어 DROP·커밋까지 유지한다 (`lock_timeout` 5초). 먼저 시작한 저장이 커밋되면 되돌리기가 중단되고 데이터·구조가 남는다. 되돌리기가 잠금을 잡은 뒤의 저장은 오류로 실패한다 (성공 후 사라지지 않음). 잠금을 5초 안에 못 얻으면 아무것도 바꾸지 않고 실패한다. 대기 중에는 두 표 읽기도 막히므로 사용이 없을 때 실행한다. 검증: `src/common/tests/test_regulatory_notes_rollback_concurrency.py` (일회용 로컬 PostgreSQL 전용 — 표를 실제로 지우므로 공유 test DB 에서 실행하지 않음).
 
 **임시저장 `tab_drafts` 권한 — 확정(개발기준), 미적용** (마이그레이션 PR 에서 추가)
 
@@ -545,10 +568,10 @@ GRANT SELECT, INSERT, DELETE ON tab_drafts TO cosmoa_app;
 GRANT UPDATE (<내용 열>) ON tab_drafts TO cosmoa_app;   -- payload·schema_version·revision·updated_at 등, 열 목록은 테이블 확정 때 정함
 ```
 
-- **DELETE 는 `tab_drafts` 에만 주는 제한된 예외**다. 앱 역할은 지금까지 어떤 표에도 DELETE 가 없었다 (8-4). 임시저장은 정식 저장 성공 시(`revision` 일치)·사용자가 직접 삭제할 때 지워야 하므로 이 표에만 준다 (3-7). 자동 만료·정기 청소용 권한이나 작업은 두지 않는다.
+- **DELETE 는 `tab_drafts` 에만 주는 제한된 예외**다. 앱 역할은 지금까지 어떤 표에도 DELETE 가 없었다 (8-4). 임시저장은 정식 저장 성공 시(`revision` 일치)·사용자가 직접 삭제할 때 지워야 하므로 이 표에만 준다 (3-7). 자동 만료·정기 청소용 권한이나 작업은 두지 않는다. (2026-11-13 R1: 반영 전 규제 메모 실제 삭제가 정해져 `regulatory_notes` 가 **두 번째 예외**로 추가될 예정이다 — 위 "규제 메모 권한". 다른 기존 표에 넓히지 않는다는 원칙은 같다.)
 - 기존 표(`tab_versions`·`final_history`·`version_links`·`customers`·`projects` 등)에는 DELETE 를 **넓히지 않는다.** TRUNCATE·REFERENCES·TRIGGER·MAINTAIN 은 `tab_drafts` 에도 주지 않는다.
 - 소유자 열·`project_id`·`tab`·`created_at` 은 UPDATE 권한에서 뺀다 (갱신은 내용만).
-- 같은 PR 에서 `db_admin.APP_TABLE_PRIVILEGES` 에 `tab_drafts` 를, `APP_UPDATE_COLUMNS` 에 허용 열을 넣는다. `app-role check` 는 DELETE 를 `tab_drafts` 에서만 허용하는 기준으로 바뀐다.
+- 같은 PR 에서 `db_admin.APP_TABLE_PRIVILEGES` 에 `tab_drafts` 를, `APP_UPDATE_COLUMNS` 에 허용 열을 넣는다. `app-role check` 는 DELETE 를 `tab_drafts` 에서만 허용하는 기준으로 바뀐다. (`regulatory_notes` 마이그레이션이 들어오면 그 PR 에서 허용 표를 `tab_drafts`·`regulatory_notes` 로 넓힌다.)
 - 열 권한은 행을 구분하지 않는다. 위 권한만으로는 "본인 행만" 을 **웹·API(서버)** 가 보장하고, 앱 역할 주소로 DB 에 직접 접속하면 다른 사용자 행도 다룰 수 있다 (8-7).
 - 보호 범위는 **웹·API** 로 확정했다 (확정(개발기준), 3-7). DB 직접 접속에서의 사용자별 차단은 **이번 범위에서 제외** — RLS·DB 사용자 식별 체계를 추가하지 않고, 모든 개발자 역할이 같은 `cosmoa_app` 권한을 받는 지금 구조를 유지한다.
 

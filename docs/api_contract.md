@@ -3,6 +3,7 @@
 > **상태: 2단계 구현됨** — 서버 API·DB(`0003_versioning`, test·dev 적용). **화면(저장 버튼·개발요청서 연결)은 아직 연결하지 않았다** (3단계).
 > **3-1단계 구현됨** — 고객사·프로젝트 생성·조회 API 와 개발요청서의 프로젝트 선택 화면 ([5장](#5-고객사프로젝트-생성조회-api--3-1단계-구현됨)).
 > **임시저장 API(6장)는 설계 단계·미구현이다.** 서버 코드·DB 테이블 모두 아직 없다.
+> **규제 메모 API(7장)는 설계 단계·미구현이다** (2026-11-13 R1). 서버 코드·DB 테이블 모두 아직 없다. 임시저장·탭 저장본과 별개 기능이다.
 > 코드: `src/common/versions_api.py`(경로) → `versions.py`(업무 규칙) → `versions_repo.py`(SQL), payload 검증 `payloads.py`.
 > 규칙 근거: [DB 규칙](db_rules.md) 3·4·5장, [데이터 계약](data_contract.md) 2·3·5·6장.
 
@@ -16,10 +17,10 @@
 - 로그인한 팀 사용자 전체가 모든 프로젝트·저장본을 조회·저장한다 (개발용 기본 정책, `db_rules.md` 3-5). 운영 권한 체계는 별도 확정 항목. 임시저장은 예외로 본인만 쓴다 (6장, 미구현).
 - 작성자(`created_by`)는 **서버 로그인 사용자**로 정한다. 버전 번호(`version_no`)는 **DB 가 부여**한다. 요청 본문에 `created_by`·`version_no` 등 받지 않는 필드가 있으면 400 `unknown_fields`.
 
-### 1-2. CSRF — 변경 요청(POST)
+### 1-2. CSRF — 변경 요청(POST, 이후 PUT·PATCH·DELETE)
 
 1. `GET /api/csrf-token` 으로 토큰을 받는다 (로그인할 때 세션에 만들어짐).
-2. POST 요청에 **`X-CSRF-Token: <토큰>` 헤더**와 **`Content-Type: application/json`** 을 붙인다.
+2. POST 요청에 **`X-CSRF-Token: <토큰>` 헤더**와 **`Content-Type: application/json`** 을 붙인다. 지금 구현된 변경 API 는 모두 POST 다. 설계 중인 PUT·PATCH·DELETE(6장 임시저장, 7장 규제 메모)도 같은 헤더·JSON 본문 규칙을 따른다 — `Common.api` 는 GET 외 모든 메서드에 토큰과 JSON 본문을 붙인다 (`common.js`, 2026-11-13 확인). 서버 쪽 검사는 각 경로를 구현할 때 같은 방식으로 붙인다.
 3. 토큰이 없거나 다르면 **403** `csrf_failed`, JSON 이 아니면 **400** `json_required`.
 4. `Common.api`(`src/common/common.js`)는 **403 `csrf_failed` 일 때만** 새 토큰으로 한 번 다시 보낸다 (CSRF 거부는 서버가 처리 전에 막으므로 중복 처리 없음). 네트워크 오류·503·다른 403·409 등은 다시 보내지 않는다 — 생성·저장이 두 번 처리되지 않도록.
 5. 로그인 폼(`POST /login`)도 CSRF 토큰을 확인한다: 로그인 화면이 로그인 전 세션에 토큰을 만들어 hidden 필드(`csrf_token`)로 보내고, 없거나 다르면 비밀번호 확인 전에 400 으로 거부한다. 로그인하면 이 토큰은 지워지고 위 세션 토큰을 쓴다.
@@ -106,7 +107,7 @@ Content-Type: application/json
 - 서버 순서: **프로젝트 행 잠금 → (DB 트리거가) 다음 `version_no` 부여 → 저장본·반영 출처 추가 → 커밋.** 하나라도 실패하면 전부 롤백 (저장본도 번호도 남지 않음).
 - `based_on_id`: 같은 프로젝트·같은 탭 저장본만 (아니면 400 `invalid_based_on`). 최신이 아닌 저장본에서 시작해도 **저장은 진행**하고 `based_on_id` 를 그대로 남긴다. `base.is_stale = true` 와 저장 직전 최신 번호로 알린다 — 화면이 안내한다.
 - `links`: 같은 프로젝트의 **다른 탭** 저장본만 (같은 탭이면 `based_on_id` 로, 다른 프로젝트면 400 `invalid_link_source`). 한 번에 최대 20개, 같은 출처 중복 불가. `applied_values` 는 비어 있지 않은 객체.
-- 규제 메모(`regulatory_notes`) 출처는 4단계에서 추가한다. 지금은 저장본 출처만 받는다.
+- 규제 메모(`regulatory_notes`) 출처는 4단계에서 추가한다. 지금은 저장본 출처만 받는다. 추가할 형식(제안): `{"source_note_id": 31, "note_revision": 2, "applied_values": {…}}` — 메모 사본은 서버가 트랜잭션 안에서 DB 메모를 읽어 만든다 (`db_rules.md` 5-1). 7장 참고.
 - 보관된 프로젝트에는 저장할 수 없다 (400 `project_archived`).
 - 개발요청서 v1 은 payload 의 `context.project_id`·`customer_id` 가 URL 프로젝트·그 고객사와 같아야 한다 (400 `context_project_mismatch` / `context_customer_mismatch`). 이름 사본은 서버가 DB 값으로 저장한다. 계약 전체: [데이터 계약](data_contract.md) 4-5.
 - 정식 저장 성공 시 임시저장을 지우는 연동은 6-5 (설계 단계·미구현). 지금 이 API 는 임시저장을 다루지 않는다.
@@ -384,3 +385,54 @@ Content-Type: application/json
 
 - 첫 구현은 **수동 임시저장 버튼**만 둔다. 자동저장은 하지 않는다.
 - 자동저장은 후속 검토 항목이다. "변경 시 30초 간격" 은 **검토안**이며 확정한 동작이 아니다. 도입하면 요청 빈도·6-4 충돌 처리·화면 표시를 함께 정한다.
+
+---
+
+## 7. 규제 메모 API — **설계 단계·미구현** (2026-11-13 R1)
+
+> 서버 코드·테이블(`regulatory_notes`)·화면 모두 없다. 아래 경로는 아직 등록되어 있지 않다.
+> 세부 기준(요청·응답 예시, 오류별 화면 처리, 검증 사례): [규제 명세](../src/02_regulatory/regulatory.md) 17-6·17-7·17-10. 데이터 구조: [데이터 계약](data_contract.md) 1-5. 권한: [DB 규칙](db_rules.md) 5-1·8-9.
+> 표기: **확정(개발기준, R1)** 2026-11-13 결정 · **제안** 경로·필드 이름·오류 코드 이름.
+
+### 7-1. 원칙 — 확정(개발기준, R1)
+
+- 규제 메모는 탭 저장본(2장)·임시저장(6장)과 **별개**다. 메모를 저장하려고 규제 탭 저장본이나 임시저장을 만들지 않는다.
+- 인증·CSRF·JSON·오류 형식은 1장과 같다. 작성자·수정자·시각·`revision` 은 서버가 정한다.
+- 팀 전체가 조회·작성·수정한다 (1-1 개발용 공유 정책). 반영 전 메모는 확인 후 **실제 삭제**한다. 삭제 주체는 **미정** (제안: 작성자만).
+- **원문·출처는 서버가 만든다.** 클라이언트는 고른 후보 key·시장·행 id(또는 검색어)와 메모·대상만 보낸다. 규제 원문·조회 상태·출처·수집본 정보(`regulation_text`, `lookup_snapshot`, `entries`, `lookup_status`, `lookup_source`, `looked_up_at`, `sources` 등)가 본문에 있으면 400 `unknown_fields`.
+- **수집본 검증**: 저장할 때 그 기록에 **실제로 사용한 식약처 DB 마다** snapshot_id 를 확인한다 — 성분정보 후보의 시장별 조회 = 성분 DB·규제 DB, 규제정보 후보의 직접 조회 = 규제 DB, 검색 결과 0건 기록 = 두 DB. 클라이언트의 예상 값(`expected_snapshots`, 조회·검색 응답의 `basis_snapshots` 그대로)은 **비교 조건으로만** 쓰고 저장하지 않는다. 비교와 사본 생성은 **같은 한 번의 서버 조회 결과**로 한다. 다르면 저장하지 않고(409) 화면은 메모·대상 입력을 유지한다.
+- 검색 결과 없음·특정 시장 기록 없음을 허용·안전·규제 없음으로 표현하지 않는다.
+
+### 7-2. 경로 (안)
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/projects/<project_id>/regulatory-notes?limit=&before=` | 목록 (원문 사본 제외 요약, `applied`·`can_delete`) |
+| POST | `/api/projects/<project_id>/regulatory-notes` | 1건 만들기 (201). 본문은 `lookup`(시장별 조회) / `search_no_result`(검색 0건) / 둘 다 없음(메모만) 중 하나 |
+| POST | `/api/projects/<project_id>/regulatory-notes/batch` | 파일 일괄 조회에서 여러 건 (최대 20건, 전부 성공 또는 전부 취소) |
+| GET | `/api/regulatory-notes/<note_id>` | 상세 (원문 사본 포함) |
+| PATCH | `/api/regulatory-notes/<note_id>` | `memo`·`target_country`·`target_region` 수정 (`expected_revision` 필수) |
+| DELETE | `/api/regulatory-notes/<note_id>` | 반영 전 메모 삭제 (`expected_revision` 필수, JSON 본문) |
+
+### 7-3. 조회 응답에 추가할 검증 필드 (안, 미구현)
+
+| 응답 | 필드 |
+|---|---|
+| `GET /api/regulatory/lookup` | `basis_snapshots` — 그 조회에 실제로 사용한 DB 의 snapshot_id (`{"mfds_ingredients": …, "mfds_restriction": …}` 또는 규제정보 후보면 `{"mfds_restriction": …}`) |
+| `GET /api/regulatory/search` | `sources.<source>.snapshot_id` (구현됨) + `basis_snapshots` (추가) |
+
+`expected_snapshots` 의 키 집합은 실제 사용 DB 와 같아야 한다 (아니면 400 `invalid_parameter`, `field: expected_snapshots`).
+
+### 7-4. 오류 (안)
+
+| 상태 | `error.code` |
+|---|---|
+| 400 | `missing_fields`, `unknown_fields`, `invalid_parameter`(+`field`), `empty_note`, `invalid_selection`, `search_has_results`, `link_required`, `project_archived`, `invalid_json`, `json_required` |
+| 401 / 403 | `unauthorized` / `csrf_failed`, `note_delete_forbidden` (삭제 주체 규칙 — 미정·제안) |
+| 404 | `project_not_found`, `note_not_found` |
+| 409 | `stale_key` (후보가 속한 DB 수집본이 바뀜), `snapshot_changed` (+`changed`, 후보 key 는 유효하지만 조회에 쓴 다른 DB 가 바뀜 — 예: 성분 DB 그대로·규제 DB 만 교체), `note_conflict` (+`current`, 기준 `revision` 불일치 — 수정·삭제), `note_referenced` (요청서 반영 출처라 삭제 불가, `ON DELETE RESTRICT`) |
+| 413 | `payload_too_large` |
+| 503 | `db_missing`·`db_incomplete`·`db_error` (식약처 DB), `db_unavailable` (업무 DB) |
+
+- 409·503 은 `Common.api` 가 다시 보내지 않는다 (1-2 4번). 화면은 입력을 유지한다.
+- 2-1 저장 API 의 `links` 에 메모 출처(`source_note_id`)를 받는 변경은 4단계 마이그레이션·요청서 반영 작업에서 함께 한다 (2-1).
