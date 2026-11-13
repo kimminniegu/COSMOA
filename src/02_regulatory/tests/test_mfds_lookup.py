@@ -1,4 +1,4 @@
-"""식약처 수집 DB 조회 모듈·Route 테스트 (담당자 B). 임시 DB(수집 스키마 재사용)와 실제 수집 DB(있을 때만)로 검증. 외부 API 호출 없음.
+"""식약처 규제 DB 조회 모듈(regulatory_mfds_lookup.lookup_by_identity) 테스트 (담당자 B). 임시 DB(수집 스키마 재사용)와 실제 수집 DB(있을 때만, 읽기 전용)로 검증. 외부 API 호출 없음.
 
 실행: python -m unittest discover -s src/02_regulatory/tests -p "test_mfds_lookup*.py" -v
 """
@@ -61,114 +61,124 @@ def build_db(path, status="completed"):
     return rid
 
 
-class LookupFixtureTest(unittest.TestCase):
+class IdentityLookupFixtureTest(unittest.TestCase):
+    """lookup_by_identity() — 규제 화면·챗봇이 regulatory_search.lookup_candidate 를 거쳐 쓰는 조회 경로.
+    4-3단계에서 삭제한 이름·CAS 재매칭 lookup() 테스트 중 새 경로에도 필요한 검증(국가별 조회·조건별 복수 레코드·제한 조건 없음·
+    EU/유럽 구분·DB 상태·수집 시각과 원문 보존)을 이 경로 기준으로 옮겼다. 이름·CAS 로 성분을 찾는 검증은 test_regulatory_search.py 가 맡는다."""
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
         cls.db = Path(cls.tmp) / "fixture.sqlite"
         build_db(cls.db)
 
-    def look(self, **kw):
+    def look(self, std, eng, market, **kw):
         kw.setdefault("path", self.db)
-        return lk.lookup(**kw)
+        return lk.lookup_by_identity(std, eng, market, **kw)
 
-    def test_retinol_eu_found_with_basis(self):
-        r = self.look(kr_name="레티놀", inci_name="Retinol", cas="11103-57-4, 68-26-8", market="EU", api_code=5489)
+    def test_retinol_eu_found_with_raw_text_and_source(self):
+        r = self.look("레티놀", "retinol", "EU")
         self.assertEqual(r["lookup_status"], "found")
-        self.assertEqual(r["link_status"], "confirmed")
-        self.assertEqual(r["link_basis"], ["CAS", "영문명", "표준명"])
         self.assertEqual(len(r["entries"]), 1)
         e = r["entries"][0]
-        self.assertEqual(e["regulate_type"], "한도"); self.assertEqual(e["country"], "EU"); self.assertEqual(e["country_code"], "EU")
-        self.assertIn("【Restrictions】", e["limit_condition"]); self.assertFalse(e["limit_missing"]); self.assertEqual(e["source_type"], "mfds")
+        self.assertEqual((e["regulate_type"], e["country"], e["country_code"], e["source_type"]), ("한도", "EU", "EU", "mfds"))
+        self.assertEqual(e["limit_condition"], FIXTURE[0]["LIMIT_COND"])          # 원문 그대로 (가공·번역 없음)
+        self.assertFalse(e["limit_missing"])
         self.assertEqual(r["markets_listed"], ["EU", "캐나다"])
-        self.assertEqual(r["ingredient"]["code"], 5489)                        # API 코드는 표시용으로만 전달
-        self.assertEqual(r["collected_at"], "2026-09-23T10:53:54+00:00")
-        self.assertIsNone(r["source_updated_at"])
+        self.assertEqual(r["matched_identity"], {"std_name": "레티놀", "eng_name": "Retinol"})
         self.assertEqual(r["source_page"], lk.SOURCE_PAGE)
-        # 관련 항목: 레티닐아세테이트(이명에 retinol) — 확정 규제와 분리
-        self.assertTrue(any(x["std_name"] == "레티닐아세테이트" for x in r["related"]))
+        self.assertIsNone(r["source_updated_at"]); self.assertIsNone(r["law_dates"])
+        self.assertTrue(any(x["std_name"] == "레티닐아세테이트" for x in r["related"]))   # 관련 항목은 확정 규제와 분리
         self.assertTrue(all(x["std_name"] != "레티놀" for x in r["related"]))
 
-    def test_phenoxyethanol_four_markets(self):
+    def test_country_mapping_and_no_market_record(self):
         for m, snippet in (("EU", "1.0%"), ("CN", "배합한도"), ("JP", "1.0 g"), ("ASEAN", "1.0%")):
-            r = self.look(kr_name="페녹시에탄올", inci_name="Phenoxyethanol", cas="122-99-6", market=m)
+            r = self.look("페녹시에탄올", "phenoxyethanol", m)
             self.assertEqual(r["lookup_status"], "found", m)
             self.assertIn(snippet, r["entries"][0]["limit_condition"], m)
-        r = self.look(kr_name="페녹시에탄올", inci_name="Phenoxyethanol", market="US")
-        self.assertEqual(r["lookup_status"], "not_listed")                       # 미국 항목 없음 — 미등재 ≠ 허용
+        r = self.look("페녹시에탄올", "phenoxyethanol", "US")
+        self.assertEqual(r["lookup_status"], "no_market_record")                    # 기록 없음 ≠ 허용
+        self.assertEqual(r["entries"], [])
         self.assertIn("허용·안전·규제 없음을 뜻하지 않아요", r["result_note"])
 
-    def test_not_listed_glycerin_niacinamide(self):
-        for kr, en in (("글리세린", "Glycerin"), ("나이아신아마이드", "Niacinamide")):
-            r = self.look(kr_name=kr, inci_name=en, market="EU")
-            self.assertEqual(r["lookup_status"], "not_listed", kr)
-            self.assertEqual(r["link_status"], "none")
-            self.assertEqual(r["entries"], [])
+    def test_identity_normalization_keeps_symbols(self):
+        self.assertEqual(self.look("페녹시에탄올", "  PHENOXYETHANOL ", "EU")["lookup_status"], "found")   # 대소문자·공백만 정규화
+        r = self.look("2,4-다이아미노페녹시에탄올", "2,4-diaminophenoxyethanol", "EU")                  # 숫자·기호 유지
+        self.assertEqual(r["entries"][0]["regulate_type"], "금지")
+        self.assertIsNone(r["entries"][0]["limit_condition"]); self.assertFalse(r["entries"][0]["limit_missing"])   # 금지 + null ≠ 제한 없음
 
-    def test_case_and_whitespace_only_normalization(self):
-        r = self.look(inci_name="  PHENOXYETHANOL ", market="EU")
-        self.assertEqual(r["lookup_status"], "found")
-        r2 = self.look(inci_name="2,4-Diaminophenoxyethanol", market="EU")   # 숫자·기호 유지
-        self.assertEqual(r2["lookup_status"], "found")
-        self.assertEqual(r2["entries"][0]["regulate_type"], "금지")
-        self.assertIsNone(r2["entries"][0]["limit_condition"]); self.assertFalse(r2["entries"][0]["limit_missing"])   # 금지 + null ≠ 제한 없음
-
-    def test_limited_without_limit_text_flagged(self):
-        r = self.look(inci_name="Fictional Limited", market="EU")
-        self.assertTrue(r["entries"][0]["limit_missing"])                        # 화면: '상세 제한사항 미제공'
-        r2 = self.look(inci_name="Fictional Prohibited", market="EU")
-        self.assertEqual(r2["entries"][0]["proviso"], "단서 예시")               # PROVIS_ATRCL 사용
+    def test_limited_without_limit_text_flagged_and_proviso(self):
+        self.assertTrue(self.look("가상한도물질", "fictional limited", "EU")["entries"][0]["limit_missing"])   # 화면 '상세 제한사항 미제공'
+        self.assertEqual(self.look("가상금지물질", "fictional prohibited", "EU")["entries"][0]["proviso"], "단서 예시")
 
     def test_multiple_condition_records_all_returned(self):
-        r = self.look(inci_name="Multi Condition", market="EU")
-        self.assertEqual(len(r["entries"]), 2)
-        self.assertEqual({e["limit_condition"] for e in r["entries"]}, {"* 【Restrictions】\n조건 A", "* 【Restrictions】\n조건 B"})
+        r = self.look("복수조건물질", "multi condition", "EU")
+        self.assertEqual([e["limit_condition"] for e in r["entries"]], ["* 【Restrictions】\n조건 A", "* 【Restrictions】\n조건 B"])
 
-    def test_ambiguous_identity_not_confirmed(self):
-        r = self.look(kr_name="동명물질", market="EU")                           # 표준명 같고 영문명 둘 → 확인 필요
-        self.assertEqual(r["lookup_status"], "link_required")
-        self.assertEqual(len(r["link_candidates"]), 2)
-        self.assertEqual(r["entries"], [])
-        r2 = self.look(kr_name="레티놀", inci_name="Retinol", cas="99-99-9", market="EU")   # 이름 일치하지만 CAS 불일치 → 충돌
-        self.assertEqual(r2["lookup_status"], "link_required")
-        self.assertIn("겹치지 않아요", r2["link_conflict"])
-        r3 = self.look(inci_name="No Such Name", cas="122-99-6", market="EU")            # CAS 만 일치 → 자동 확정 안 함
-        self.assertEqual(r3["lookup_status"], "link_required")
-        self.assertEqual(r3["link_candidates"][0]["std_name"], "페녹시에탄올")
-
-    def test_substring_does_not_confirm(self):
-        r = self.look(inci_name="Retinyl", market="EU")                          # 부분 문자열만 → 미등재 + 관련 항목
-        self.assertEqual(r["lookup_status"], "not_listed")
-        self.assertTrue(any("Retinyl Acetate" == x["eng_name"] for x in r["related"]))
+    def test_same_std_name_identities_not_merged(self):
+        a = self.look("동명물질", "same name a", "EU")
+        b = self.look("동명물질", "same name b", "EU")
+        self.assertEqual([e["regulate_type"] for e in a["entries"]], ["금지"])
+        self.assertEqual([e["regulate_type"] for e in b["entries"]], ["한도"])
 
     def test_eu_scope_excludes_europe_label(self):
-        r = self.look(inci_name="Europe Only", market="EU")
-        self.assertEqual(r["lookup_status"], "not_listed")                       # 원본 '유럽' 은 EU 조회 범위 밖 (합치지 않음)
+        r = self.look("유럽전용", "europe only", "EU")
+        self.assertEqual(r["lookup_status"], "no_market_record")                    # 원본 '유럽' 은 EU 조회 범위 밖 (합치지 않음)
+        self.assertEqual(r["markets_listed"], ["유럽"])
         self.assertEqual(r["country"]["country_names"], ["EU"])
         self.assertEqual(lk.MARKET_TO_COUNTRY["EU"], ["EU"])
 
-    def test_db_states(self):
+    def test_collected_at_from_run_metadata(self):
+        r = self.look("레티놀", "retinol", "EU")
+        self.assertEqual(r["collected_at"], "2026-09-23T10:53:54+00:00")             # runs.finished_at 그대로 (파일 수정 시각·현재 시각 아님)
+        self.assertEqual(r["acquired_at"], r["collected_at"])
+        self.assertNotEqual(r["queried_at"], r["acquired_at"])
+        self.assertEqual(r["refresh_policy"], "수동 재수집 (자동 갱신 없음)")
+        self.assertEqual(r["collection_run"]["records"], len(FIXTURE))
+        nofin = Path(self.tmp) / "nofinish.sqlite"; build_db(nofin)
+        conn = mfds.open_db(nofin)
+        with conn:
+            conn.execute("UPDATE runs SET finished_at=NULL")
+        conn.close()
+        self.assertIsNone(self.look("레티놀", "retinol", "EU", path=nofin)["acquired_at"])   # 기록 없으면 None (화면 '수집 시각 미기록')
+
+    def test_missing_identity_and_stale_run(self):
         with self.assertRaises(lk.MfdsLookupError) as ctx:
-            lk.lookup(inci_name="Retinol", market="EU", path=Path(self.tmp) / "nope.sqlite")
+            self.look("없는성분", "no such", "EU")
+        self.assertEqual(ctx.exception.kind, "identity_missing")
+        run = self.look("레티놀", "retinol", "EU")["collection_run"]
+        ok = self.look("레티놀", "retinol", "EU", expected_run={"run_id": run["run_id"], "started_at": run["started_at"], "finished_at": run["finished_at"]})
+        self.assertEqual(ok["lookup_status"], "found")
+        with self.assertRaises(lk.MfdsLookupError) as ctx2:
+            self.look("레티놀", "retinol", "EU", expected_run={"run_id": run["run_id"], "started_at": "2000-01-01T00:00:00+00:00", "finished_at": run["finished_at"]})
+        self.assertEqual(ctx2.exception.kind, "stale_run")
+
+    def test_db_states(self):
+        missing = Path(self.tmp) / "nope.sqlite"
+        with self.assertRaises(lk.MfdsLookupError) as ctx:
+            self.look("레티놀", "retinol", "EU", path=missing)
         self.assertEqual(ctx.exception.kind, "db_missing")
-        self.assertFalse((Path(self.tmp) / "nope.sqlite").exists())            # 빈 DB 를 만들지 않는다
+        self.assertFalse(missing.exists())                                       # 빈 DB 를 만들지 않는다
         inc = Path(self.tmp) / "incomplete.sqlite"; build_db(inc, status="running")
         with self.assertRaises(lk.MfdsLookupError) as ctx2:
-            lk.lookup(inci_name="Retinol", market="EU", path=inc)
+            self.look("레티놀", "retinol", "EU", path=inc)
         self.assertEqual(ctx2.exception.kind, "db_incomplete")
         bad = Path(self.tmp) / "bad.sqlite"; bad.write_bytes(b"this is not a sqlite database at all")
         with self.assertRaises(lk.MfdsLookupError) as ctx3:
-            lk.lookup(inci_name="Retinol", market="EU", path=bad)
+            self.look("레티놀", "retinol", "EU", path=bad)
         self.assertEqual(ctx3.exception.kind, "db_error")
         with self.assertRaises(lk.MfdsLookupError) as ctx4:
-            lk.lookup(inci_name="Retinol", market="TW", path=self.db)
+            self.look("레티놀", "retinol", "TW")
         self.assertEqual(ctx4.exception.kind, "validation")
+
+    def test_removed_name_lookup_api(self):
+        for name in ("lookup", "identify", "cas_tokens"):
+            self.assertFalse(hasattr(lk, name), name)                              # 4-3단계 삭제 (실행 코드 미사용)
 
 
 class RouteSourceTest(unittest.TestCase):
     """규제 화면 출처 표시. 이전 /api/regulatory/regulations(source=mfds|api) Route 테스트는 4-1단계에서 경로와 함께 삭제했다.
-    lookup() 자체는 챗봇이 쓰므로 위 LookupFixtureTest 로 계속 검증하고, 화면 조회(/lookup)는 test_regulatory_direct_search.py 가 검증한다."""
+    규제 기록 조회는 위 IdentityLookupFixtureTest(lookup_by_identity), 화면 조회(/lookup)는 test_regulatory_direct_search.py 가 검증한다."""
 
     @classmethod
     def setUpClass(cls):
@@ -198,11 +208,12 @@ class RouteSourceTest(unittest.TestCase):
 
 @unittest.skipUnless(REAL_DB.is_file(), "수집 DB 가 있을 때만")
 class RealDbTest(unittest.TestCase):
+    """실제 로컬 수집 DB (읽기 전용) — lookup_by_identity 로 대표 성분 확인"""
+
     def test_real_records(self):
-        r = lk.lookup(kr_name="레티놀", inci_name="Retinol", cas="11103-57-4, 68-26-8", market="EU", path=REAL_DB)
+        r = lk.lookup_by_identity("레티놀", "retinol", "EU", path=REAL_DB)
         self.assertEqual(r["lookup_status"], "found"); self.assertEqual(r["entries"][0]["regulate_type"], "한도")
-        for m in ("EU", "CN", "JP", "ASEAN"):
-            self.assertEqual(lk.lookup(kr_name="페녹시에탄올", inci_name="Phenoxyethanol", cas="122-99-6", market=m, path=REAL_DB)["lookup_status"], "found", m)
-        for kr, en in (("글리세린", "Glycerin"), ("나이아신아마이드", "Niacinamide")):
-            self.assertEqual(lk.lookup(kr_name=kr, inci_name=en, market="EU", path=REAL_DB)["lookup_status"], "not_listed", kr)
-        self.assertEqual(lk.lookup(kr_name="레티놀", inci_name="Retinol", market="US", path=REAL_DB)["lookup_status"], "not_listed")
+        for m in ("EU", "CN", "JP", "ASEAN", "KR"):
+            self.assertEqual(lk.lookup_by_identity("페녹시에탄올", "phenoxyethanol", m, path=REAL_DB)["lookup_status"], "found", m)
+        self.assertEqual(lk.lookup_by_identity("레티놀", "retinol", "US", path=REAL_DB)["lookup_status"], "no_market_record")
+        self.assertIsNotNone(r["collected_at"])

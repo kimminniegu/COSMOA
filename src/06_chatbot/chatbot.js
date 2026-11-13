@@ -2,6 +2,9 @@
    AI 챗봇 위젯 (담당자 F) — 우하단 플로팅 채팅. 명세: src/06_chatbot/chatbot.md 7·12장
    - 대화 기록·열림 상태는 sessionStorage 에 두어 페이지 이동 후에도 이어집니다. (탭을 닫으면 사라짐)
    - 서버 호출은 /api/chatbot/message 하나. 답변 생성·도구 호출은 서버가 처리합니다.
+   - 성분 후보 선택 카드: 서버가 돌려준 choices(offer_id·후보 순번·표시 정보만, 후보 key 없음)를 답변 아래에 그립니다.
+     사용자가 국가와 후보 버튼을 누를 때만 {selection: {offer_id, index, market}} 을 보내고, 서버가 이 대화의 최신 목록과 대조해 조회합니다.
+     대화마다 conversation_id(임의 값)를 두고 '대화 지우기' 때 새로 만듭니다. 새 목록이 오면 이전 카드는 비활성화합니다.
    - 전역 변수를 만들지 않도록 IIFE 안에 작성합니다.
    ========================================================================== */
 (function () {
@@ -24,9 +27,19 @@
 
   var KEY_MESSAGES = "cosmoa.chatbot.messages";
   var KEY_OPEN = "cosmoa.chatbot.open";
+  var KEY_CONV = "cosmoa.chatbot.conversation";
   var MAX_HISTORY = 30;
   var messages = [];
   var pending = false;
+  var conversationId = null;
+
+  function newConversationId() {
+    var bytes = new Uint8Array(16), out = "";
+    try { window.crypto.getRandomValues(bytes); } catch (e) { for (var i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256); }
+    for (var j = 0; j < bytes.length; j++) out += ("0" + bytes[j].toString(16)).slice(-2);
+    conversationId = out;
+    try { sessionStorage.setItem(KEY_CONV, out); } catch (e) { /* 저장 불가 환경 무시 */ }
+  }
 
   /* 저장 / 복원 ---------------------------------------------------------- */
   function load() {
@@ -35,6 +48,8 @@
       var parsed = raw ? JSON.parse(raw) : [];
       if (Array.isArray(parsed)) messages = parsed.filter(function (m) { return m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string"; });
     } catch (e) { messages = []; }
+    try { conversationId = sessionStorage.getItem(KEY_CONV); } catch (e) { conversationId = null; }
+    if (!conversationId || !/^[A-Za-z0-9_-]{16,64}$/.test(conversationId)) newConversationId();
   }
   function save() {
     try { sessionStorage.setItem(KEY_MESSAGES, JSON.stringify(messages.slice(-MAX_HISTORY))); } catch (e) { /* 저장 불가 환경 무시 */ }
@@ -76,10 +91,85 @@
     return wrap;
   }
   function render() {
-    body.querySelectorAll(".chatbot__msg, .chatbot__pending").forEach(function (el) { el.remove(); });
+    body.querySelectorAll(".chatbot__msg, .chatbot__pending, .chatbot__choice").forEach(function (n) { n.remove(); });
     empty.hidden = messages.length > 0;
-    messages.forEach(function (m) { body.appendChild(bubble(m.role, m.content)); });
+    messages.forEach(function (m) {
+      body.appendChild(bubble(m.role, m.content));
+      if (m.role === "assistant" && Array.isArray(m.choices)) m.choices.forEach(function (c) { body.appendChild(choiceCard(c)); });
+    });
     scrollBottom();
+  }
+
+  /* 성분 후보 선택 카드 — 모든 값은 textContent 로만 넣는다 ---------------- */
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function marketLabel(c, code) {
+    var m = (c.markets || []).filter(function (x) { return x.code === code; })[0];
+    return m ? m.label : code;
+  }
+  function markChoicesStale() {
+    messages.forEach(function (m) { if (Array.isArray(m.choices)) m.choices.forEach(function (c) { c.stale = true; }); });
+  }
+  function choiceCard(c) {
+    var card = el("div", "chatbot__choice" + (c.stale ? " is-stale" : ""));
+    var items = c.items || [];
+    var title = c.kind === "link"
+      ? "규제 성분 연결 확인 — ‘" + ((c.origin && (c.origin.kr_name || c.origin.eng_name)) || "선택한 성분") + "’과 연결할 규제 성분을 골라 주세요"
+      : "‘" + (c.query || "") + "’ 후보 " + (c.returned || items.length) + "건 — 국가와 성분을 직접 골라 주세요";
+    card.appendChild(el("p", "chatbot__choice-title", title));
+    if (c.truncated) card.appendChild(el("p", "chatbot__choice-note", "전체 " + c.total + "건 중 " + c.returned + "건만 표시했어요. 원하는 성분이 없으면 더 구체적으로 검색해 주세요."));
+    if (c.kind === "link" && c.origin && c.origin.link_conflict) card.appendChild(el("p", "chatbot__choice-note", c.origin.link_conflict));
+
+    var hint = el("p", "chatbot__choice-hint", "국가를 먼저 선택해 주세요.");
+    hint.hidden = true;
+    var select = null;
+    if (c.market_fixed) {
+      card.appendChild(el("p", "chatbot__choice-note", "조회 국가: " + marketLabel(c, c.market)));
+    } else {
+      var row = el("label", "chatbot__choice-market");
+      row.appendChild(el("span", null, "국가"));
+      select = el("select", "form-control form-control-sm");
+      select.appendChild(new Option("국가 선택", ""));
+      (c.markets || []).forEach(function (m) { select.appendChild(new Option(m.label + " (" + m.code + ")", m.code)); });
+      select.value = c.picked_market || c.market || "";
+      select.disabled = !!c.stale;
+      select.addEventListener("change", function () { c.picked_market = select.value; save(); hint.hidden = true; });
+      row.appendChild(select);
+      card.appendChild(row);
+    }
+
+    var list = el("ul", "chatbot__choice-list");
+    items.forEach(function (it) {
+      var li = el("li");
+      var btn = el("button", "chatbot__choice-btn");
+      btn.type = "button";
+      btn.disabled = !!c.stale || pending;
+      var name = el("span", "chatbot__choice-name", it.kr_name || it.eng_name || "이름 미제공");
+      if (it.kr_name && it.eng_name) name.appendChild(el("span", "chatbot__choice-eng", " (" + it.eng_name + ")"));
+      btn.appendChild(name);
+      var meta = el("span", "chatbot__choice-meta");
+      meta.appendChild(el("span", "badge " + (it.source === "규제정보" ? "badge-warning" : "badge-primary"), it.source || "출처 미상"));
+      meta.appendChild(el("span", null, it.match || ""));
+      btn.appendChild(meta);
+      btn.addEventListener("click", function () {
+        if (c.stale || pending) return;
+        var market = c.market_fixed ? c.market : (select ? select.value : "");
+        if (!market) { hint.hidden = false; if (select) select.focus(); return; }
+        var label = (it.kr_name || it.eng_name || "선택한 성분") + (it.kr_name && it.eng_name ? " (" + it.eng_name + ")" : "");
+        send("[후보 선택] " + label + " · " + (it.source || "") + " · " + marketLabel(c, market) + " 규제 조회",
+             { offer_id: c.offer_id, index: it.index, market: market });
+      });
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+    card.appendChild(hint);
+    if (c.stale) card.appendChild(el("p", "chatbot__choice-note", "이전 후보 목록이에요. 최신 목록에서 골라 주세요."));
+    return card;
   }
   function scrollBottom() { body.scrollTop = body.scrollHeight; }
 
@@ -119,10 +209,11 @@
     pending = on;
     sendBtn.disabled = on;
     input.disabled = on;
+    body.querySelectorAll(".chatbot__choice:not(.is-stale) .chatbot__choice-btn").forEach(function (b) { b.disabled = on; });
     if (on) showPending(); else hidePending();
   }
 
-  function send(text) {
+  function send(text, selection) {
     text = (text || "").trim();
     if (!text || pending) return;
     messages.push({ role: "user", content: text });
@@ -137,7 +228,11 @@
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ messages: messages }),
+      body: JSON.stringify({
+        messages: messages.map(function (m) { return { role: m.role, content: m.content }; }),   // 선택 카드는 보내지 않음
+        conversation_id: conversationId,
+        selection: selection || null,
+      }),
     }).then(function (res) {
       return res.json().catch(function () { return { ok: false, error: "서버 응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요." }; })
         .then(function (data) { return { status: res.status, data: data }; });
@@ -151,7 +246,9 @@
         showError((r.data && r.data.error) || "답변을 받지 못했어요. 잠시 후 다시 시도해 주세요.");
         return;
       }
-      messages.push({ role: "assistant", content: r.data.reply });
+      var choices = Array.isArray(r.data.choices) ? r.data.choices : [];
+      if (r.data.choices_reset || choices.length) markChoicesStale();      // 새 목록이 오거나 서버가 선택을 해제하면 이전 카드는 비활성
+      messages.push({ role: "assistant", content: r.data.reply, choices: choices });
       messages = messages.slice(-MAX_HISTORY);
       save();
       render();
@@ -167,6 +264,7 @@
   clearBtn.addEventListener("click", function () {
     if (pending) return;
     messages = [];
+    newConversationId();                 // 새 대화 — 이전 대화의 후보 선택 상태와 섞이지 않게
     save();
     render();
     input.focus();

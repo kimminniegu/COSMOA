@@ -1,7 +1,7 @@
 """국가별 인허가 규제 — 식약처 성분 DB + 규제 DB 통합 성분 검색 (읽기 전용, 담당자 B).
 
 규제 화면의 성분 검색·조회 모듈 — app.py [B] 의 /api/regulatory/search(search) · /api/regulatory/lookup(lookup_candidate) 가 쓴다.
-(이전 K-Beauty API 성분 검색을 대체. K-Beauty 모듈 regulatory_service.py 는 챗봇만 쓴다.) 외부 API 호출·API 키·자동 재수집 없음. DB 는 mode=ro 로만 연다.
+챗봇 성분 도구(src/06_chatbot/tools.py)도 같은 search·lookup_candidate 를 직접 쓴다. (이전 K-Beauty API 성분 검색을 대체 — 그 모듈은 2026-11-11 삭제) 외부 API 호출·API 키·자동 재수집 없음. DB 는 mode=ro 로만 연다.
 
 검색 대상 (완료된 수집본만: status completed | completed_with_warnings)
 - 성분 DB  (mfds_ingredients.py 수집, MFDS_INGREDIENT_DB_PATH): INGR_KOR_NAME · INGR_ENG_NAME · INGR_SYNONYM · CAS_NO
@@ -396,6 +396,26 @@ def resolve_key(key):
 def clear_cache():
     with _cache_lock:
         _cache.clear()
+
+
+def db_status():
+    """두 DB 의 이용 가능 상태 (진단용, 읽기 전용 — 색인을 만들지 않고 수집하지 않는다).
+    {source: {"available": True, "collected_at", "run_id"} | {"available": False, "kind", "message"}}"""
+    out = {}
+    for src, path in db_paths().items():
+        try:
+            conn = _open_ro(src, path)
+            try:
+                _check_dataset(conn, src)
+                snap = _snapshot(conn, src)
+            except sqlite3.Error as exc:
+                raise SearchError("db_error", "%s 를 읽지 못했어요 (%s)." % (SOURCE_LABELS[src], exc.__class__.__name__), src)
+            finally:
+                conn.close()
+            out[src] = {"available": True, "collected_at": snap["collected_at"], "run_id": snap["run_id"]}
+        except SearchError as exc:
+            out[src] = {"available": False, "kind": exc.kind, "message": exc.message}
+    return out
 
 
 # ---------------------------------------------------------------------------

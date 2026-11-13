@@ -658,7 +658,7 @@ python -m unittest discover -s src/05_requisition/tests -p "test_contract.py"   
 
 **규칙**
 - 파일·폴더 이름은 **소문자 snake_case** (`a-z`, `0-9`, `_`). 확장자는 그대로 둔다. 숫자 접두어도 유지한다.
-  - 예: `src/05_requisition/requisition_payload.js`, `src/common/img/apple_touch_icon.png`, `src/02_regulatory/test_data/regulations_5489_eu.json`
+  - 예: `src/05_requisition/requisition_payload.js`, `src/common/img/apple_touch_icon.png`, `src/02_regulatory/tests/fixtures/sample_multisheet_en.xlsx`
 - 브랜치는 분류 접두어(`feature/` 등)를 유지하고 뒤쪽 이름을 snake_case 로 한다. `main`·`develop` 은 그대로.
   - 예: `feature/common_foundation`, `feature/regulatory`, `feature/requisition`
 - 이번 통일의 범위는 **파일·폴더·브랜치 이름**이다. API URL, JSON 키, DB 테이블·열, 환경변수, 함수·클래스·CSS 선택자 이름은 이 규칙을 이유로 바꾸지 않는다. 제품·문서 코드(예: 시연 품목 `EU-SER-041`)처럼 이름이 아닌 식별값도 그대로 둔다.
@@ -746,7 +746,7 @@ python -m unittest discover -s src/05_requisition/tests -p "test_contract.py"   
 | DB·문서 | `db/migrations/0001~0004`(0004 는 test·dev 적용), `db/schemas/requisition.v1.example.json`, `docs/development.md`·`db_rules.md`·`data_contract.md`·`api_contract.md`·`team_onboarding.md`(신규), `docs/deploy_render.md`, `README.md` | |
 | 설정 | `app.py`(PM 영역: DB 설정·API 등록·로그인 CSRF·개발요청서 페이지에 필드 정의 전달, [E] 영역: 필드 정의 모듈 import 1줄), `requirements.txt`, `.env.example`, `.gitignore`(`.venv/`), `Dockerfile`(주석) | |
 | 개발요청서 (E 폴더 — 담당자 **미정**. PR #1 은 김민 PM·유정현이 검토, 담당자가 정해지면 이 범위 재확인) | `schema.py`, `service.py`, `contract.py`(신규), `requisition.js`, `requisition_payload.js`(신규), `requisition.html`, `requisition.css`, `tests/test_requisition.py`, `tests/test_contract.py`(신규), `implementation.md`, `requisition.md`(13장 안내) | 프로젝트 선택, FIX 필드, 저장 계약 v1 |
-| 다른 탭 테스트 | `src/02_regulatory/tests/test_mfds_lookup.py`, `test_regulatory_service.py`, `src/06_chatbot/tests/test_chatbot.py` | 각 1곳 — 예전 세션 주입을 `login_as` 로 교체. 기능 코드 변경 없음 |
+| 다른 탭 테스트 | `src/02_regulatory/tests/test_mfds_lookup.py`, `test_regulatory_service.py`(2026-11-11 `test_regulatory_routes.py`·`test_regulatory_extract.py` 로 나뉨), `src/06_chatbot/tests/test_chatbot.py` | 각 1곳 — 예전 세션 주입을 `login_as` 로 교체. 기능 코드 변경 없음 |
 
 ### 10-4. 후속 작업 (담당자는 팀에서 정함)
 

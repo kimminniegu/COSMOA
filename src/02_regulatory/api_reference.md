@@ -6,7 +6,7 @@
 - 처리 모듈 (app.py [B] 영역에서 파일 경로로 로드): `regulatory_search.py`(후보 검색·key 검증·성분 연결·조회) · `regulatory_mfds_lookup.py`(규제 DB 읽기, `MARKET_CODES`) · `regulatory_extract.py` / `regulatory_ocr.py`(파일 추출)
 - DB: 규제 DB `MFDS_DB_PATH`(기본 `instance/regulatory/mfds_use_restriction.sqlite`, 배포용 사본 `data/regulatory/`) · 성분 DB `MFDS_INGREDIENT_DB_PATH`(기본 `instance/regulatory/mfds_ingredients.sqlite`, 저장소 미포함). 서버는 `mode=ro` 로 읽기만 하며 **앱 시작·요청 때 수집하지 않는다.**
 - 수집: 별도 스크립트 `mfds_use_restriction.py`(규제 DB) · `mfds_ingredients.py`(성분 DB)를 사람이 실행한다. `MFDS_API_KEY` 는 이 수집에만 쓰고 화면 조회에는 필요 없다. 배포 환경의 성분 DB 준비는 별도 후속 작업이다.
-- `regulatory_service.py`(K-Beauty API)는 규제 화면·app.py 에서 쓰지 않는다. **챗봇 서버의 이전 성분·규제 도구**(`src/06_chatbot/tools.py`)만 쓰며 챗봇 전환(4-2단계) 뒤 정리한다 — 2장·부록 A.
+- 규제 화면과 챗봇(`src/06_chatbot/tools.py`)은 같은 `regulatory_search` 를 직접 쓴다. K-Beauty API(RapidAPI) 모듈·응답 기록·테스트·설정은 4-3단계(2026-11-11)에 삭제했다 — 외부 규제 API 호출과 그 키는 없다.
 - 테스트: `python -m unittest discover -s src/02_regulatory/tests -v` (외부 호출 없음)
 
 ## 1. 내부 Route (브라우저 → Flask)
@@ -31,8 +31,12 @@
 - 규제정보 후보: 검증된 identity 그대로 `regulatory_mfds_lookup.lookup_by_identity` (이름 재매칭 없음). `link.status = direct`.
 - 성분정보 후보: 서버가 복원한 한글명 = 규제 표준명, 영문명(쉼표 나열 항목 포함) = 규제 영문명 이 **직접 정확 일치**하고 그 규제 성분이 하나뿐이며 충돌이 없을 때만 연결(`linked`). 이명·고시원료명·접두·포함·유사도·'메칠→메틸' 치환으로 연결하지 않고, CAS 로 찾지 않는다(둘 다 있을 때 충돌 확인만). 복수 후보·한쪽 이름 불일치·CAS 불일치 → `ambiguous`. 일치 없음 → `none`.
 - `lookup_status`: `found`(선택 시장 기록 있음, 조건별 레코드 모두) · `no_market_record`(규제 성분은 있으나 선택 시장 기록 없음) · `link_required`(연결 확인 필요, `link_candidates[]` 에 규제 후보 key 포함) · `not_linked`(정확 일치 규제 성분 없음). 모두 200. 기록이 없다고 허용·안전·규제 없음으로 판정하지 않는다.
-- 응답은 규제 DB 조회 결과 필드(entries·related·markets_listed·collection_run·출처·날짜 — 형태는 부록 A-2 의 mfds 응답과 같다)에 더해 `selection`(고른 후보) · `link`{status·basis·identity·candidates·conflict} · `ingredient_source` / `regulation_source`(출처별 수집 시각 따로) · `regulation_ingredient`. `ingredient` 는 사용자가 고른 후보 이름이다. `related` 는 확정 규제와 분리된 포함 일치 항목.
+- 응답은 규제 DB 조회 결과 필드(`regulatory_mfds_lookup.lookup_by_identity`·`_common_result`: source·source_label·source_page·data_source·disclaimer·collected_at·acquired_at·queried_at·refresh_policy·law_dates(null)·source_updated_at(null)·collection_run·country·entries·related·markets_listed)에 더해 `selection`(고른 후보) · `link`{status·basis·identity·candidates·conflict} · `ingredient_source` / `regulation_source`(출처별 수집 시각 따로) · `regulation_ingredient`. `ingredient` 는 사용자가 고른 후보 이름이다. `related` 는 확정 규제와 분리된 포함 일치 항목.
 - 국가 검증: `regulatory_mfds_lookup.MARKET_CODES` (KR · EU · US · CN · JP · ASEAN, 소문자 입력은 대문자로).
+- `entries[]`: country·country_code·regulate_type(원문)·notice_ingr_name·proviso·limit_condition(원문 그대로)·limit_missing·source_type(`mfds`)·std_name·eng_name·cas·record_id·page_no. 같은 성분·시장의 조건별 레코드를 합치지 않고 모두 담는다.
+- `entries[].limit_missing`: ‘한도’인데 `LIMIT_COND` 가 비어 있음(화면 ‘상세 제한사항 미제공’). ‘금지’+null 은 `limit_missing=false` 이며 금지 항목으로 표시.
+- 시장 매핑: KR→한국, EU→EU(원본 ‘유럽’ 제외), US→미국, CN→중국, JP→일본, ASEAN→아세안.
+- `collected_at` 과 `acquired_at` 은 DB `runs.finished_at`(수집 완료 시각)이며 원천 갱신일이 아니다(값이 없으면 `null` → 화면 ‘수집 시각 미기록’). `queried_at` 은 DB 를 읽은 시각. `refresh_policy` = "수동 재수집 (자동 갱신 없음)", `law_dates` = `null`. `source_page` 는 공공데이터 안내 페이지(개별 법령 원문 링크 아님)이며 그 페이지의 수정일을 갱신일로 쓰지 않는다.
 - 오류: `validation` 400 (key·국가 누락·형식) · `stale_key` 409 (key 의 수집본이 현재와 다름 → 다시 검색·선택) · `not_found` 404 · `db_missing` / `db_incomplete` / `db_error` 503.
 
 ### POST `/api/regulatory/extract` (multipart/form-data)
@@ -76,45 +80,9 @@
 - 항목에 `inci_raw`(같은 행의 영문/INCI 이름 열 원문, 없으면 null)가 추가되었다. 한글 열이 비어 있으면 영문명이 `name_raw` 가 된다.
 - 응답의 `ocr` 객체: `{available, engine, applied_pages, skipped_pages, no_text_pages, message, psm, retried, header_found, outcome}`. `outcome` 은 이미지에서 `extracted` / `no_rows`(제목은 찾았으나 행 없음) / `no_header`(글자는 읽었으나 표 제목 없음, notes 에 인식된 줄 예시) / `no_text`(글자 인식 실패). PDF 는 텍스트가 20자 미만인 쪽만 OCR 하고(`scope.text_pages` / `scope.ocr_pages`), OCR 로 읽은 행은 모두 `needs_review = true` 에 사유 "OCR 인식 결과예요…" 가 붙는다. `file.kind` 는 `pdf` | `xlsx` | `image`.
 
-## 2. 외부 API (K-Beauty Cosmetic Ingredients / RapidAPI) — 규제 화면 미사용, 챗봇 이전 도구 전용
+## 2. 외부 API — 없음
 
-> 규제 화면·app.py 는 이 API 를 호출하지 않는다 (4-1단계). 아래는 `regulatory_service.py` 를 쓰는 **챗봇 서버 이전 도구**와 그 테스트(`tests/test_regulatory_service.py`, `test_data/*.json`)를 위한 기록이며, 챗봇 전환(4-2단계) 뒤 함께 정리한다. 키(`RAPIDAPI_KEY`·`RAPIDAPI_HOST`)는 챗봇 서버에만 필요하다.
-
-| 항목 | 내용 |
-|---|---|
-| 기본 주소 | `https://k-beauty-cosmetic-ingredients.p.rapidapi.com` (`RAPIDAPI_HOST`) |
-| 인증 헤더 | `x-rapidapi-key`, `x-rapidapi-host` — 서버만 보유 |
-| 타임아웃 | 연결 5초 / 읽기 15초 (`regulatory_service.py`) |
-| 재시도·캐시 | 없음 (화면의 '다시 시도' 버튼으로 수동 재조회) |
-
-### 확인된 호출 (2026-09-23 실제 호출, `test_data/`)
-
-| 파일 | 호출 | HTTP | 확인 내용 |
-|---|---|---|---|
-| `search_kr_retinol.json` | `GET /v1/ingredient/kr?q=레티놀` | 200 | `success=true, count=1`, `data[0].code=5489`, `kr_name=레티놀`, `inci_name=Retinol`, `regulation_status=Restricted`, `updated_at` 있음 |
-| `search_kr_partial_reti.json` | `GET /v1/ingredient/kr?q=레티` | 200 | `count=15`, 모두 `레티`로 **시작**하는 한글명 (레티놀·레티닐…·레티노일…). 부분(시작) 검색 지원 확인 |
-| `search_kr_partial_etan.json` | `GET /v1/ingredient/kr?q=에탄` | 200 | `count=8`, `에탄`(6203)·`에탄올`(2093)·`에탄올아민`… 명세 예시 확인 |
-| `search_kr_english_retinol.json` | `GET /v1/ingredient/kr?q=Retinol` | 200 | `success=true, count=0, data=[]` — 한글 엔드포인트는 영문 미지원 |
-| `search_inci_partial_retin.json` | `GET /v1/ingredient/inci?q=retin` | 200 | `count=17`, 소문자 입력으로 `Retinol`·`Retinal`·`Retinyl …` 반환 — 영문 시작 일치·대소문자 무시 확인 |
-| `regulations_5489_eu.json` | `GET /v1/ingredient/5489/regulations?country=EU` | 200 | `result_status=listed`, `count=1`, `data[0].limit_condition`에 제품 유형·최대 농도(0,05 % / 0,3 % RE)·표시 문구 원문, `source_type=limit`, `markets_listed=["EU"]` |
-| `regulations_5489_us.json` | `GET /v1/ingredient/5489/regulations?country=US` | 200 | `result_status=not_listed_in_country`, `count=0`, `data=[]`, `result_note="No entry for US in our source data. There are entries for other markets."` |
-| `regulations_1013_eu_plan_note.json` | `GET /v1/ingredient/1013/regulations?country=EU` (Glycerin) | 200 | `not_listed_in_country`, `markets_listed=[]`, `markets_outside_plan=1`, `result_note="No entry for EU in our source data. There are entries for markets outside your plan only."` — KR·CN 도 같은 응답(미저장) |
-| `regulations_1941_eu_not_listed.json` | `GET /v1/ingredient/1941/regulations?country=EU` (Niacinamide) | 200 | **`result_status=not_listed`**, `count=0`, `result_note="No restriction or prohibition is listed for this ingredient in our source data."`, `ingredient.regulation_status=Not Listed` |
-| (미저장) | `GET /v1/ingredient/3579/regulations?country=EU` (Phenoxyethanol) | 200 | `listed`, `count=1`, 최대 농도 1.0%, `markets_listed=[KR,EU,CN,JP,ASEAN]`, `markets_outside_plan=3` |
-
-응답 공통 필드: `data_source`(MFDS + EU CosIng), `disclaimer`, `available_country_codes = ["KR","EU","CN","US","JP","ASEAN"]`, `available_countries`(한글 표시명), `country.{requested, resolved, code}`.
-
-호출 제한 헤더(2026-09-23 관측): `X-RateLimit-Requests-Limit: 25000`, `X-RateLimit-Requests-Remaining: 24906`(4단계 확인 호출 4회 후). 월 단위 요청 한도로 보이나 요금제 문서로 재확인 필요.
-
-**엔드포인트 문서 출처**: API 제공자의 공개 저장소 README(github.com/han-tagg/Korean-cosmetic-ingredients-api). 검색 엔드포인트 `/v1/ingredient/{inci|kr|cas}?q=`는 모두 "starts with", `/v1/ingredient/search?q=&field=inci|kr|cas|all`은 "contains"이며 PRO+ 전용, 검색어 최소 2글자. 문서에 오류 응답 형식은 없다.
-
-### 아직 확인하지 않은 것 (4단계 이후)
-
-- 중간 포함 검색 `/v1/ingredient/search`(PRO+)의 실제 동작·현재 요금제 사용 가능 여부 (미호출). 동의어 검색 지원 여부
-- `result_status` 전체 값 목록(확인: listed / not_listed_in_country / not_listed), 오류 응답(4xx/5xx) 본문 형식. 요금제 밖 시장·미구독 엔드포인트가 403 인지 200+안내문인지는 미확인(Glycerin 사례는 200)
-- `ASEAN` 조회가 아세안 공통 기준인지 개별 국가 규정을 포함하는지
-- `markets_outside_plan` 의미, 규제 자료 갱신일 제공 여부
-- 429 초과 시 응답 형식. 자동완성은 300ms 디바운스·조합 중 미요청으로 호출을 줄이며 캐시는 없음
+규제 화면·챗봇 모두 외부 규제 API 를 호출하지 않는다. 이전에 쓰던 K-Beauty Cosmetic Ingredients API(RapidAPI)의 호출 방식·응답 기록은 4-3단계(2026-11-11)에 코드와 함께 삭제했다 (필요하면 Git 이력의 커밋 `b68f5bb` 이전 판을 본다).
 
 ## 3. 화면 흐름 (직접 검색, 2단계 — 식약처 수집 DB 전용)
 
@@ -144,147 +112,27 @@
    - 결과 표: 성분명(추출 원문·선택 원료·조회한 규제 성분·연결 근거·문서 함량) · 선택 시장(규제정보 수집 시각) · 조회 상태(직접 검색과 같은 문구: 규제 정보 조회됨 / 선택 국가 기록 없음 / 성분 연결 확인 필요 / 규제 성분 연결 미확인 / 조회 오류, 그리고 미조회 상태: 추천 · 선택 전 / 후보 선택 필요 / 검색 결과 없음 / 검색 오류 / 후보 다시 선택 필요) · 규제 유형 · 상세. 성분 연결 확인 필요 행은 직접 검색과 같은 연결 후보 목록 + '이 규제 성분으로 조회' — 그 행의 선택·결과만 바뀌고(처음 고른 원료는 `selected.from` 으로 보존) 직접 검색 탭·다른 행은 그대로. 관련 항목은 건수만 따로(상세에서).
    - 집계(KPI): 조회 포함 / 조회됨 / 선택 국가 기록 없음 / 규제 성분 연결 확인(필요+미확인) / 조회 오류 / 미조회. 미조회 행이 있으면 '일부 성분만 규제를 조회했어요 — 전체 성분 검토가 끝난 것이 아니에요' 안내. 출처·시각은 성분정보(고른 성분정보 후보의 수집본)와 규제정보(조회 결과)를 따로 표시. 함량은 문서·사용자 입력값만, 적합 판정 없음. 상세 Modal 은 직접 검색과 공유(`input-amount`·`input-location` 추가).
 8. **3단계에서 제거한 것**: 파일 탭 출처 radio(`regulatory-file-source`) · `fileSource()`·`groupSource()`·`syncSourceCards()` · `regulationsUrl()` · `findExactMatch()`·`confirmMatch()`·'정확 일치 자동 확정' · `candidateLabel()`·`confirmedRows()`·`BATCH_LABEL` · code 기반 선택·요청 묶기·캐시·`batchKey` · 'API 매칭'·'확정 성분' 문구 · KPI '접근 제한'·'API 오류'(→ 조회 오류) · rate_limit 기준 중단.
-9. **4-1단계에서 정리한 것 (2026-11-11)** — 규제 화면 범위만. 프로젝트 전체 K-Beauty 제거는 아직 끝나지 않았다 (10항).
+9. **4-1단계에서 정리한 것 (2026-11-11)** — 규제 화면 범위. 챗봇은 10항(4-2단계)에서 전환했다.
    - app.py: `/api/regulatory/ingredients`·`/api/regulatory/regulations` Route 와 처리 함수, `_regulatory_error`, `regulatory_service` 로드 삭제. `/lookup` 국가 검증은 `regulatory_mfds_lookup.MARKET_CODES` 로 전환 (지원 시장 6개 그대로).
    - regulatory.js: `SOURCE_LABEL.api` · `LOOKUP_LABEL` 의 `no_data`·`access` · `ACCESS_KINDS` 와 접근 제한 분기 · `note_mentions_plan`(요금제 안내) · api 출처 분기(`acquiredText`·`refreshText`·`sourceText`·`scopeText`·`noDataReason`·`statusLabel`·`sourceDescriptionNode`·`renderSingle`) · 상세 창의 `sel.code`·`record_updated_at`·'K뷰티 API 는 성분 code 로 조회' · `ingredientKr` 의 code 표시 · 외부 API HTTP 상태 표시. `not_listed` 는 식약처 문구('출처에서 일치 항목 없음')로, `hold` 는 확인되지 않은 상태값 방어용으로 남김.
    - regulatory.html: 상세 창 라벨('조회 안내 문구'·'성분 후보 출처·수집 시각')과 주석. regulatory.css: 쓰지 않는 출처 선택 카드(`.regulatory-source*`) 스타일.
-   - 테스트: 삭제한 Route 테스트 제거, 삭제 확인(404·외부 HTTP 0회) 추가. K-Beauty 정규화·HTTP 분류 테스트는 모듈을 직접 로드해 유지(챗봇용).
-10. **4-2단계(챗봇 전환)로 남긴 것** — 챗봇 담당과 합의 후 진행 (다른 담당 파일은 임의로 수정하지 않음)
-   - `src/06_chatbot/tools.py`: `regulatory_service.search_ingredients`·`get_regulations`·`MARKET_CODES`·`MIN_QUERY_LENGTH`·`RegulatoryApiError`, `regulatory_mfds_lookup.lookup()` 사용 → `regulatory_search`(search·lookup_candidate)로 전환. 도구 스키마의 `code` 기반 인자·출처 안내 포함.
-   - `src/06_chatbot/server.py`: `RAPIDAPI_*` 설정 확인과 "식약처 DB 와 K-Beauty API" 출처 안내. `chatbot.md` 의 데이터 출처 표.
-   - 전환 후 삭제 후보: `regulatory_service.py` · `tests/test_regulatory_service.py` 의 K-Beauty 테스트(추출·OCR 테스트는 남김) · `test_data/*.json` · `regulatory_mfds_lookup.lookup()` 과 그 테스트 · 이 문서 2장·부록 A · `RAPIDAPI_*` 안내(README·`.env.example`·`docs/deploy_render.md`·`docs/team_onboarding.md`)·배포 환경변수.
+   - 테스트: 삭제한 Route 테스트 제거, 삭제 확인(404·외부 HTTP 0회) 추가. K-Beauty 정규화·HTTP 분류 테스트는 모듈을 직접 로드해 유지(4-1 당시 챗봇용, 다음 정리 단계에서 삭제).
+10. **4-2단계(챗봇 전환, 2026-11-11) — 완료.** `src/06_chatbot/tools.py` 가 `regulatory_search.search`·`lookup_candidate`(`resolve_key`)와 `regulatory_mfds_lookup.MARKET_CODES` 를 직접 쓴다. 후보는 채팅창 선택 카드로 보여 주고, 서버가 (로그인 사용자, 대화)별 최신 후보 목록과 사용자의 버튼 선택을 대조한 뒤에만 조회한다. `server.py` 는 `RAPIDAPI_*` 대신 두 DB 의 실제 상태로 안내한다. 상세: `src/06_chatbot/chatbot.md` 7-1.
+11. **4-3단계(2026-11-11)에 삭제·정리한 것**
+   - 코드: `regulatory_service.py` · `regulatory_mfds_lookup.lookup()`·`identify()`·`cas_tokens()`·`CAS_RE` · `test_data/*.json`(K-Beauty 응답 기록 9건).
+   - 테스트: `tests/test_regulatory_service.py` 를 나눠 화면·자산·소스 보호·Route 목록은 `test_regulatory_routes.py`, 추출·시트 선택·OCR 은 `test_regulatory_extract.py` 로 옮기고 K-Beauty 정규화·HTTP 분류 테스트만 삭제. `lookup()` 테스트는 `test_mfds_lookup.py` 에서 `lookup_by_identity` 기준으로 옮김.
+   - 설정·문서: `.env.example`·README·`docs/deploy_render.md`·`docs/team_onboarding.md`·`regulatory.md`·`chatbot.md` 의 K-Beauty 설정 안내, 이 문서 2장·부록 A 의 K-Beauty 계약. 로컬 `.env` 의 `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 항목 삭제.
+   - 유지: `regulatory_mfds_lookup` 의 `MARKET_CODES`·`MARKET_TO_COUNTRY`·`COMPLETED`·`MfdsLookupError`·`lookup_by_identity`·`related_items`·`open_readonly`·`latest_completed_run`·`db_status`(현재 호출처 없음, K-Beauty 무관이라 남김)·`_common_result`·`_entry`·`_identity`·`norm_name`, `regulatory_search`·`regulatory_extract`·`regulatory_ocr` 전체.
+12. **남은 일 (배포 단계)**: 배포용 성분 DB(`MFDS_INGREDIENT_DB_PATH`) 준비 · 운영 서버(Render 메인·챗봇)에서 `RAPIDAPI_KEY`·`RAPIDAPI_HOST` 환경변수 제거 — 4-3단계에서는 운영 설정을 바꾸지 않았다.
 
 **공통 CSS 관련 PM 협의 사항**: `src/common/style.css`에 `[hidden] { display: none }` 규칙이 없어 `.loading`, `.state`, `.badge`, `.alert`처럼 class로 `display`를 지정하는 요소는 `hidden` 속성이 무시된다(로딩·오류·후보 상태가 동시에 보이던 원인). 공통 파일은 수정하지 않고 `regulatory.css`에서 이 페이지 영역(`#regulatory-panel-search`, `#regulatory-panel-file`, `#regulatory-results`, `#regulatory-detail-modal`)에만 `[hidden] { display: none !important }`를 적용했다. 공통 CSS에 같은 규칙을 추가하면 페이지 규칙은 제거해도 된다.
 
 
-## 부록 A. 삭제한 이전 Route 기록 (4-1단계, 2026-11-11 삭제)
+## 부록 A. 삭제 기록 (과거)
 
-> 아래 Route 는 **더 이상 존재하지 않는다** (요청 시 404). 같은 처리 함수를 챗봇 이전 도구가 쓰므로 4-2단계까지 동작 기록으로 남긴다. 현재 화면 계약은 1장.
-
-### A-1. (삭제) GET `/api/regulatory/ingredients?q=<성분명>`
-
-처리 함수 `regulatory_service.search_ingredients` 는 챗봇 `search_ingredients` 도구가 계속 쓴다. 아래는 삭제 전 계약 기록.
-
-한글명·영문 INCI명 후보 검색. **규제 조회를 하지 않는다.** 자동완성(입력 멈춤 300ms 후)과 검색 버튼 모두 이 Route를 사용한다.
-
-| 항목 | 내용 |
+| 단계 | 삭제한 것 |
 |---|---|
-| 파라미터 | `q` 필수. 앞뒤 공백 제거 후 빈 값 또는 2글자 미만이면 400 (API 문서의 min 2 chars) |
-| 외부 호출 | 입력에 한글이 있으면 `GET /v1/ingredient/kr?q=<q>`, 없으면 `GET /v1/ingredient/inci?q=<q>` — **항상 1회** |
-| 성공 200 | 아래 JSON |
-| 검증 실패 400 | `{"ok": false, "error": {"kind": "validation", "message": "..."}}` |
-| 설정 오류 503 | `error.kind = "config"` — Key/Host 미설정. 외부 호출 없음 |
-| 외부 API 오류 502 | `error.kind = timeout / connection / auth(401) / access(403: 인증·구독·요금제 확인 필요) / rate_limit(429) / http / invalid_response` |
+| 4-1 (2026-11-11) | Route `GET /api/regulatory/ingredients` (K-Beauty 성분 검색) · `GET /api/regulatory/regulations` (`source=api` K-Beauty 규제 조회 / `source=mfds` 이름·CAS 재매칭 조회) — 요청 시 404 |
+| 4-3 (2026-11-11) | 위 Route 의 처리 모듈 `regulatory_service.py` · `regulatory_mfds_lookup.lookup()` 과 그 계약·응답 설명 · K-Beauty 응답 기록 `test_data/` |
 
-```json
-{
-  "ok": true,
-  "query": "레티놀",
-  "candidates": [
-    {
-      "code": 5489,
-      "kr_name": "레티놀",
-      "inci_name": "Retinol",
-      "old_name": null,
-      "cas_numbers": "11103-57-4, 68-26-8",
-      "record_updated_at": "2026-08-26 23:44:59",
-      "match_rank": 0
-    }
-  ],
-  "total": 1,
-  "truncated": false,
-  "search_field": "kr",
-  "match_mode": "starts_with",
-  "data_source": "Ministry of Food and Drug Safety (MFDS, ...), European Commission CosIng Database (...)",
-  "queried_at": "2026-09-23T10:21:49+09:00"
-}
-```
-
-- `candidates`는 `code` 기준 중복 제거 후 `match_rank`(0 정확 일치 → 1 시작 일치 → 2 포함 일치 → 3 그 외) 순, 같은 순위는 API 순서. 최대 10개, 초과 시 `truncated: true`.
-- `kr_name`이 비어 있으면 `null` — 화면은 영문명만 표시하고 한글명을 만들지 않는다.
-- `record_updated_at`은 API 레코드의 `updated_at`이다. **규제 자료 갱신일이 아니다.**
-- 매칭은 앞뒤 공백 제거 + `casefold()`(영문 대소문자 무시). 순위 계산에는 `kr_name`·`inci_name`·`old_name`을 사용한다.
-- `search_field`는 실제 호출한 엔드포인트(`kr` | `inci`), `match_mode`는 API 일치 방식(`starts_with`). 두 엔드포인트 모두 **시작 일치**라 중간 포함 입력(예: `티놀`)은 후보가 없다.
-- 한글 엔드포인트에 영문을 넣으면 0건(`test_data/search_kr_english_retinol.json`)이므로 언어별로 엔드포인트를 고른다. 혼합 입력(한글+영문)은 한글 엔드포인트로 보낸다.
-
-### A-2. (삭제) GET `/api/regulatory/regulations?code=<성분코드>&country=<시장코드>&source=mfds|api`
-
-`source=api` 의 `regulatory_service.get_regulations` 와 `source=mfds` 의 `regulatory_mfds_lookup.lookup()`(이름·CAS 재매칭)은 챗봇 규제 도구가 계속 쓴다. 아래는 삭제 전 계약 기록.
-
-규제 조회. 화면에서 성분이 확정된 뒤 검색 버튼(직접 검색) 또는 ‘확정 성분 규제 조회’(일괄)에서 호출한다. **`source` 기본값 `mfds`.** 선택한 출처만 조회하며 실패해도 다른 출처로 바꾸지 않는다.
-
-| 항목 | 내용 |
-|---|---|
-| 공통 | `country` ∈ `KR, EU, CN, US, JP, ASEAN`, `source` ∈ `mfds`(기본) / `api` |
-| `source=api` | `code` 숫자 필수. 외부 호출 `GET /v1/ingredient/{code}/regulations?country=` 1회. 응답에 `source: "api"` 추가. 오류 400/502/503 기존과 동일 |
-| `source=mfds` | `kr_name` / `inci_name` 중 하나 필수, `cas` 선택(쉼표·줄바꿈 구분 여러 개 가능), `code` 는 표시용. 외부 호출 없음 — `instance/regulatory/mfds_use_restriction.sqlite` 를 읽기 전용으로 조회 |
-| mfds 오류 | 400 `validation`(이름 없음·미연결 시장) / 503 `db_missing`(DB 파일 없음) / 503 `db_incomplete`(완료된 수집 실행 없음) / 503 `db_error`(열기·스키마 오류). `error.source = "mfds"` |
-
-`source=mfds` 응답 (기존 응답 형태 + 추가 필드):
-
-```json
-{
-  "ok": true, "source": "mfds", "source_label": "식약처 화장품 사용제한 원료정보 (공공데이터포털) 수집 DB",
-  "source_page": "https://www.data.go.kr/data/15111772/openapi.do", "collected_at": "2026-09-23T10:53:54+00:00",
-  "collection_run": {"run_id": 1, "status": "completed", "records": 31191},
-  "ingredient": {"code": 5489, "kr_name": "레티놀", "inci_name": "Retinol", "cas_numbers": "11103-57-4, 68-26-8"},
-  "country": {"requested": "EU", "resolved": "EU", "code": "EU", "country_names": ["EU"]},
-  "link_status": "confirmed", "link_basis": ["CAS", "영문명", "표준명"], "link_conflict": null, "link_candidates": [...],
-  "matched_identity": {"std_name": "레티놀", "eng_name": "Retinol"},
-  "lookup_status": "found", "result_status": "mfds_found", "result_note": null,
-  "entries": [{"country": "EU", "country_code": "EU", "regulate_type": "한도", "notice_ingr_name": "...", "proviso": null,
-               "limit_condition": "* 【Restrictions】...", "limit_missing": false, "source_type": "mfds", "std_name": "레티놀", "eng_name": "Retinol", "cas": "..."}],
-  "related": [{"std_name": "레티닐아세테이트", "eng_name": "Retinyl Acetate", "country": "EU", "regulate_type": "한도", "matched_in": "이명"}],
-  "markets_listed": ["EU", "캐나다"], "data_source": "...", "disclaimer": "...", "source_updated_at": null, "queried_at": "..."
-}
-```
-
-- `lookup_status`: `found`(조건별 레코드 모두 `entries`) / `not_listed`(이 출처에서 이름·CAS 정확 일치 없음 — 화면 ‘출처에서 일치 항목 없음’) / `link_required`(식별 불가 — `link_candidates` 표시, 자동 확정 없음).
-- `link_status`: `confirmed` / `ambiguous` / `none`. 확정 조건은 이름(표준명 또는 영문명) 정확 일치 식별자가 하나뿐이고 CAS 가 충돌하지 않을 때. CAS 만 일치하면 `ambiguous`.
-- `entries[].limit_missing`: ‘한도’인데 `LIMIT_COND` 가 비어 있음(화면 ‘상세 제한사항 미제공’). ‘금지’+null 은 `limit_missing=false` 이며 금지 항목으로 표시.
-- 시장 매핑: KR→한국, EU→EU(원본 ‘유럽’ 제외), US→미국, CN→중국, JP→일본, ASEAN→아세안.
-- `collected_at` 과 `acquired_at` 은 DB `runs.finished_at`(수집 완료 시각)이며 원천 갱신일이 아니다(값이 없으면 `null` → 화면 ‘수집 시각 미기록’). `queried_at` 은 DB 를 읽은 시각. `refresh_policy` = "수동 재수집 (자동 갱신 없음)", `law_dates` = `null`. `source_page` 는 공공데이터 안내 페이지(개별 법령 원문 링크 아님)이며 그 페이지의 수정일을 갱신일로 쓰지 않는다.
-
-```json
-{
-  "ok": true,
-  "ingredient": {"code": 5489, "kr_name": "레티놀", "inci_name": "Retinol"},
-  "country": {"requested": "EU", "resolved": "EU", "code": "EU"},
-  "lookup_status": "found",
-  "result_status": "listed",
-  "result_note": null,
-  "entries": [
-    {
-      "country": "EU",
-      "country_code": "EU",
-      "regulate_type": "제한",
-      "notice_ingr_name": "(2E,4E,6E,8E)-3,7-dimethyl-...",
-      "proviso": null,
-      "limit_condition": "* 【Restrictions】\nProduct Type, body parts : (a) Body lotion\n... (원문 그대로)",
-      "source_type": "limit"
-    }
-  ],
-  "markets_listed": ["EU"],
-  "data_source": "Ministry of Food and Drug Safety (MFDS, ...), European Commission CosIng Database (...)",
-  "disclaimer": "Regulatory reference data only. ...",
-  "source_updated_at": null,
-  "queried_at": "2026-09-23T10:21:56+09:00"
-}
-```
-
-### A-3. K-Beauty 응답 정규화 (`regulatory_service.get_regulations`, 챗봇 사용)
-
-**`lookup_status` 판정 규칙** (응답의 `data`와 `result_status`만 사용)
-
-| 값 | 조건 | (삭제 전) 화면 조회 상태 |
-|---|---|---|
-| `found` | `result_status = "listed"` 이고 `data`가 비어 있지 않음 | 규제 정보 조회됨 |
-| `no_data` | `result_status = "not_listed_in_country"` 이고 `data = []` — 요청 시장 항목 없음. `result_note` 가 "다른 시장에 있음" 또는 "요금제 밖 시장에만 있음(markets outside your plan)" 을 안내 | 규제 데이터 미확인 (허용·안전 아님). 화면은 안내문 원문과 `note_mentions_plan` 여부만 표시 |
-| `not_listed` | `result_status = "not_listed"` 이고 `data = []` — "No restriction or prohibition is listed for this ingredient in our source data" (2026-09-23 확인, `regulations_1941_eu_not_listed.json`) | 규제 목록 미등재 (허용·안전 아님) |
-| `hold` | 확인하지 않은 `result_status` 값, 또는 `listed`인데 `data = []` 등 예상 밖 조합 | 판단 보류 · 추가 확인 필요 |
-| (오류) | HTTP 오류·연결 실패·`success != true`·형식 불일치 → 502 `error` | `error.kind` 가 `access`(403)·`auth`(401)·`rate_limit`(429) 이면 화면 ‘접근 제한’, 그 외는 ‘API 오류’ (미확인으로 바꾸지 않음) |
-
-- `ingredient.regulation_status`(예: `Restricted`)는 성분 전체 속성이라 **선택 시장의 상태로 쓰지 않으며 응답에서 제외**한다.
-- `markets_outside_plan` 은 원문 값을 그대로 전달하지만 의미가 문서에 없어 화면에서 해석하지 않는다. `note_mentions_plan` 은 `result_note` 에 "outside your plan" 문구가 있는지 여부만 나타낸다(요금제 제한으로 단정하지 않음). 응답에 `note_mentions_plan`, `markets_outside_plan` 필드가 추가되었다.
-- `limit_condition`, `proviso`, `notice_ingr_name`은 가공 없이 원문 그대로 전달한다.
-- `source_updated_at`은 응답에 규제 자료 갱신일이 없어 항상 `null`(화면 '미제공'). `queried_at`은 서버가 외부 API 응답을 받은 시각이며 `acquired_at`(데이터 확보 시각)과 같다. `law_dates` 는 항상 `null`(법령 개정·적용일 미제공). `refresh_policy` = "월 1회 (제공자 안내 기준)", `refresh_basis` = 제공자 공개 README “Update Frequency | Monthly”(2026-09-23 확인) — 마지막 갱신일은 제공되지 않으므로 화면은 역산하지 않는다.
+이전 계약·응답 형식은 현재 동작이 아니다. 필요하면 Git 이력(커밋 `b68f5bb` 이전 판의 이 문서)을 본다.

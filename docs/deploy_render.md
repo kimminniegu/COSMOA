@@ -101,7 +101,7 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 | **양쪽** | `OPENAI_API_KEY` | 메인은 개발요청서 자동변환, 챗봇은 답변 생성. **메인에서 빼지 않는다** |
 | | `CHATBOT_SECRET` | 두 서비스에 **같은 값**. 운영 전용으로 새로 만든 긴 임의 문자열 (로컬 값·주소·예시 값 재사용 금지) |
 | | `EXIM_API_KEY`, `DATA_GO_KR_KEY` | 홈 데이터 (두 서비스가 각자 수집) |
-| | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | 챗봇의 이전 성분 검색·규제 도구가 사용. 메인 규제 화면은 2026-11-11(4-1단계)부터 쓰지 않음 — 메인 값 정리는 챗봇 전환·배포 점검 때 함께 |
+| **넣지 않음 (정리 대상)** | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | K-Beauty API 용 — 2026-11-11 코드·설정 안내에서 삭제. 이미 운영 서비스에 있으면 다음 배포 점검 때 메인·챗봇 양쪽에서 제거 (이번에는 운영 값을 바꾸지 않음) |
 | | `COSMETIC_HS_CODES`, `KOTRA_NEWS_URL` | 선택 |
 | **넣지 않음** | `TESSERACT_CMD`, `TESSDATA_PREFIX` | 로컬 Windows 경로. Docker 는 PATH·기본 tessdata 사용 |
 | | `FLASK_DEBUG`, `FLASK_PORT`, `CHATBOT_PORT` | Gunicorn 에서 쓰지 않음 (포트는 Render `PORT`). `FLASK_DEBUG` 는 챗봇 debug 를 켜므로 넣지 않는다 |
@@ -128,8 +128,8 @@ Free 서비스는 **재배포·재시작·절전(15분 무요청) 때마다 로�
 1. **챗봇 배포** — 2장 설정, 환경변수: 챗봇 + 양쪽.
 2. **챗봇 상태 확인** — `https://<챗봇>.onrender.com/health`
    - 200 이면 서버 실행만 확인된 것
-   - 본문 `configured: true` (OpenAI 키·시크릿이 **있음**), `sources.mfds_db: true` (식약처 DB 파일을 **실제로 열어 확인**)
-   - `rapidapi`·`exim_rates`·`trade_stats` 는 키가 **있는지만** 본다 (키가 맞는지는 6번에서 확인)
+   - 본문 `configured: true` (OpenAI 키·시크릿이 **있음**), `sources.mfds_restriction_db`·`sources.mfds_ingredient_db: true` (식약처 규제 DB·성분 DB 를 **실제로 열어 완료된 수집본 확인**). 현재 배포본에는 성분 DB 가 없어 `mfds_ingredient_db: false` 가 정상 — 배포용 성분 DB 준비 후 true
+   - `exim_rates`·`trade_stats` 는 키가 **있는지만** 본다 (키가 맞는지는 6번에서 확인)
 3. **메인 배포** — 1장 설정, 환경변수: 메인 + 양쪽. `CHATBOT_URL` 은 2번 주소, `CHATBOT_SECRET` 은 챗봇과 같은 값.
 4. 메인 로그에 `데모 계정을 만들지 않았습니다` 경고가 없는지 확인 → `/login` 에서 `COSMOA_DEMO_*` 계정으로 로그인.
 5. **규제 조회** — 규제 화면에서 성분 조회, 출처가 식약처 DB 로 표시되는지.

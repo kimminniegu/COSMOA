@@ -349,7 +349,7 @@ def home_api_validation():
 
 # [B] 국가별 인허가 규제 — 접두사: /api/regulatory/...  (search · lookup · extract)
 #     처리 로직은 src/02_regulatory/ 의 모듈(식약처 성분 DB·규제 DB 읽기 전용 검색·조회, 파일 추출)에 있고 여기에는 Route만 둡니다.
-#     규제 화면은 K-Beauty API(regulatory_service.py)를 쓰지 않습니다 — 그 모듈은 챗봇(src/06_chatbot/tools.py)이 직접 로드합니다.
+#     외부 규제 API 는 쓰지 않습니다 (이전 K-Beauty API 모듈은 2026-11-11 삭제). 챗봇도 같은 regulatory_search 를 직접 씁니다.
 #     계약: src/02_regulatory/api_reference.md
 import importlib.util as _regulatory_importlib
 from flask import jsonify as _regulatory_jsonify, request as _regulatory_request
@@ -522,7 +522,11 @@ def chatbot_message():
     if not base_url or not secret:
         return jsonify({"ok": False, "error": "AI 비서가 아직 연결되지 않았어요. 서버의 CHATBOT_URL / CHATBOT_SECRET 을 설정해 주세요."}), 503
     body = request.get_json(silent=True) or {}
-    payload = {"messages": body.get("messages"), "user": {"name": user.get("name"), "team": user.get("team")}}
+    # user.id 는 로그인 세션에서만 넣는다 — 챗봇 서버는 (user.id, conversation_id) 별로 성분 후보 선택 상태를 분리한다
+    selection = body.get("selection") if isinstance(body.get("selection"), dict) else None
+    payload = {"messages": body.get("messages"), "user": {"id": user.get("id"), "name": user.get("name"), "team": user.get("team")},
+               "conversation_id": body.get("conversation_id") if isinstance(body.get("conversation_id"), str) else None,
+               "selection": {k: selection.get(k) for k in ("offer_id", "index", "market")} if selection else None}
     try:
         upstream = _chatbot_requests.post(base_url + "/chat", json=payload, headers={"X-Chatbot-Secret": secret}, timeout=(5, 90))
     except _chatbot_requests.exceptions.Timeout:

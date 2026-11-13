@@ -44,7 +44,7 @@
 |---|---|---|
 | 로그인 | 업무 DB(Neon PostgreSQL) `users` 계정, 로그인·로그아웃, 세션 유지, 본인 비밀번호 변경 | 계정은 공통 DB 담당(유정현)이 관리 명령으로 생성. 서버가 계정·데모 계정을 자동 생성하지 않음 |
 | 홈 | 환율·수출입 통계, 바이어 현지 시각, 뉴스·규제 소식 및 더보기 | 외부 데이터 수집·캐시 사용, 알림 버튼 미구현 |
-| 국가별 인허가 규제 | 식약처 성분 DB·규제 DB 후보 검색 → 사용자 선택 → 국가별 규제 조회 (직접 검색·파일 일괄 조회), PDF·Excel·이미지 성분 추출과 OCR | 식약처 수집 DB 읽기 전용, **K-Beauty API 키 불필요**. 함량 기준 비교·시장 자동 선택 등은 미구현. 조회 결과와 최종 규제 판단을 구분 |
+| 국가별 인허가 규제 | 식약처 성분 DB·규제 DB 후보 검색 → 사용자 선택 → 국가별 규제 조회 (직접 검색·파일 일괄 조회), PDF·Excel·이미지 성분 추출과 OCR | 식약처 수집 DB 읽기 전용 (외부 규제 API·키 없음, 조회에는 수집이 끝난 DB 파일 필요 — 4장). 챗봇 성분 규제도 같은 DB·선택 흐름. 함량 기준 비교·시장 자동 선택 등은 미구현. 조회 결과와 최종 규제 판단을 구분 |
 | 원가·마진 | 견적·역제안·수량별 단가·환율 영향 계산, 견적서 PDF·영문 메일 본문 | ERP는 예시 품목 1개의 시연 데이터. 견적 입력값은 영구 저장하지 않음 |
 | AI 제형/샘플 | 배합·점도·용기 호환도 시뮬레이션, 개발요청서 AI 분석·적용 | 점수는 브라우저 계산식, Canvas는 시연용 표현. 실측 유체 해석이 아님 |
 | 개발요청서 | 파일 자동변환·다국어 처리, 직접작성·수정, 브라우저 인쇄로 PDF 저장 | 현재 페이지 메모리에 보관. 전달 대상은 문서 정보이며 실제 발송 기능은 없음 |
@@ -94,11 +94,9 @@ COSMOA/
     │   ├── regulatory_search.py / regulatory_mfds_lookup.py   # 식약처 성분·규제 DB 검색·조회 (읽기 전용)
     │   ├── regulatory_extract.py / regulatory_ocr.py
     │   ├── mfds_use_restriction.py / mfds_ingredients.py      # 별도 수집 스크립트 (규제 DB · 성분 DB)
-    │   ├── regulatory_service.py   # K-Beauty API — 규제 화면 미사용, 챗봇 이전 도구만 사용 (챗봇 전환 후 정리)
     │   ├── api_reference.md / demo_verification.md
     │   ├── samples/        # 시연용 PDF·Excel·이미지
-    │   ├── test_data/      # K-Beauty API 응답 기록 (regulatory_service 테스트용)
-    │   └── tests/          # 단위·Route 테스트, fixtures/ 추출 자료
+    │   └── tests/          # 검색·조회·화면·추출·OCR·수집 테스트, fixtures/ 추출 자료
     ├── 03_margin/          # [C] 마진 계산·견적서
     │   ├── margin.html / margin.css / margin.js / margin.md
     │   └── service.py / margin_quote_document.html / margin_user_guide.md
@@ -155,7 +153,6 @@ Bash에서는 `cp .env.example .env`를 사용합니다. 전체 항목은 [`.env
 | 로그인 | `DATABASE_URL` (+ 아래 업무 DB 변수) | 로그인 계정은 업무 DB `users`. `COSMOA_DEMO_*` 는 더 이상 쓰지 않음 (데모 계정 자동 생성 없음) |
 | 홈·환율 | `EXIM_API_KEY`, `DATA_GO_KR_KEY` | 수출입은행 환율, 관세청 수출입·KOTRA 데이터 |
 | 홈 선택 설정 | `KOTRA_NEWS_URL`, `COSMETIC_HS_CODES` | KOTRA 요청 주소, 화장품 HS 코드(기본 3304) |
-| K-Beauty API (챗봇 이전 도구) | `RAPIDAPI_KEY`, `RAPIDAPI_HOST` | **챗봇 서버**의 이전 성분 검색·규제 도구에서만 사용. 규제 화면(메인 서버)은 식약처 수집 DB 만 읽으므로 필요 없음. 챗봇 전환 후 정리 예정 |
 | 식약처 DB | `MFDS_DB_PATH`, `MFDS_INGREDIENT_DB_PATH` | 읽을 규제 DB(사용제한 원료정보)·성분 DB(원료성분정보) 경로. 아래 로컬 설정 참고 |
 | 식약처 수집 | `MFDS_API_KEY` | 별도 수집 스크립트(규제 DB·성분 DB)용 Decoding 인증키. 서버 실행·화면 조회에는 불필요 (서버는 자동 수집하지 않음) |
 | 규제 OCR | `TESSERACT_CMD`, `TESSDATA_PREFIX` | Tesseract 실행 파일·언어 데이터 경로. 자동 탐색으로 찾을 수 있으면 생략 |

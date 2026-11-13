@@ -1,6 +1,7 @@
 """AI 챗봇 테스트 (담당자 F). 실행: python -m unittest src/06_chatbot/tests/test_chatbot.py -v
 
-외부 API(OpenAI·RapidAPI)는 호출하지 않습니다. OpenAI 는 로컬 가짜 서버로 대체해 도구 호출 왕복을 검증합니다.
+외부 API(OpenAI 등)는 호출하지 않습니다. OpenAI 는 로컬 가짜 서버로 대체해 도구 호출 왕복을 검증합니다.
+성분 검색·사용자 선택·규제 조회(식약처 수집 DB) 흐름은 test_chatbot_regulatory.py 에서 검증합니다.
 """
 
 from __future__ import annotations
@@ -91,22 +92,24 @@ class ToolsTest(unittest.TestCase):
         self.assertEqual(out["items"][0]["city"], "호찌민")
         self.assertEqual(out["items"][0]["offset_from_kst_hours"], -2.0)
 
-    def test_lookup_regulation_validation(self):
-        out = json.loads(tools.execute("lookup_ingredient_regulation", json.dumps({"name": "", "market": "EU", "source": "mfds"})))
-        self.assertEqual(out["error"]["kind"], "validation")
-        out = json.loads(tools.execute("lookup_ingredient_regulation", json.dumps({"name": "레티놀", "market": "XX", "source": "mfds"})))
-        self.assertEqual(out["error"]["kind"], "validation")
+    def test_model_cannot_run_lookup_directly(self):
+        """모델이 만든 인자(이름·시장·임의 값)로는 조회하지 않는다 — 사용자 선택이 필요"""
+        for args in ({"market": "EU"}, {"market": "EU", "key": "mfds_restriction:0123456789abcdef:1", "confirmed": True}):
+            out = json.loads(tools.execute("lookup_ingredient_regulation", json.dumps(args)))
+            self.assertEqual(out["error"]["kind"], "selection_required")
 
-    def test_lookup_regulation_mfds_missing_db_gives_hint(self):
-        with mock.patch.dict(os.environ, {"MFDS_DB_PATH": str(Path(tempfile.mkdtemp()) / "none.sqlite")}):
-            out = json.loads(tools.execute("lookup_ingredient_regulation", json.dumps({"name": "레티놀", "market": "EU", "source": "mfds"})))
+    def test_search_ingredient_missing_db_is_error_without_kbeauty_hint(self):
+        with mock.patch.dict(os.environ, {"MFDS_INGREDIENT_DB_PATH": str(Path(tempfile.mkdtemp()) / "none.sqlite")}):
+            tools.regulatory_search.clear_cache()
+            out = json.loads(tools.execute("search_ingredient", json.dumps({"query": "레티놀", "market": None})))
+        tools.regulatory_search.clear_cache()
         self.assertEqual(out["error"]["kind"], "db_missing")
-        self.assertIn("api", out["hint"])
+        self.assertNotIn("api", out["hint"].lower())
+        self.assertNotIn("K-Beauty", json.dumps(out, ensure_ascii=False))
 
-    def test_search_ingredient_without_api_config(self):
-        with mock.patch.dict(os.environ, {"RAPIDAPI_KEY": "", "RAPIDAPI_HOST": ""}):
-            out = json.loads(tools.execute("search_ingredient", json.dumps({"query": "레티놀"})))
-        self.assertEqual(out["error"]["kind"], "config")
+    def test_no_kbeauty_module_loaded(self):
+        self.assertFalse(hasattr(tools, "regulatory_service"))
+        self.assertEqual(set(tools.MARKETS), set(tools.regulatory_mfds.MARKET_CODES))
 
     def test_regulation_news_on_empty_cache(self):
         empty = {"items": [], "checked_at": None}
@@ -162,20 +165,23 @@ class ServerTest(unittest.TestCase):
 
     def test_health_reports_sources_without_values(self):
         fake_key = "FAKE-RAPID-KEY-98765"
-        with mock.patch.dict(os.environ, {"RAPIDAPI_KEY": fake_key, "RAPIDAPI_HOST": "h.example", "MFDS_DB_PATH": str(Path(tempfile.mkdtemp()) / "none.sqlite")}):
+        with mock.patch.dict(os.environ, {"RAPIDAPI_KEY": fake_key, "RAPIDAPI_HOST": "h.example", "EXIM_API_KEY": "FAKE-EXIM-1",
+                                          "MFDS_DB_PATH": str(Path(tempfile.mkdtemp()) / "none.sqlite")}):
             data = self.client.get("/health").get_json()
-        self.assertTrue(data["sources"]["rapidapi"])
-        self.assertFalse(data["sources"]["mfds_db"])
+        self.assertNotIn("rapidapi", data["sources"])                 # K-Beauty 키는 규제 기능 판단에 쓰지 않음
+        self.assertFalse(data["sources"]["mfds_restriction_db"])      # 실제 DB 상태로 판단
+        self.assertTrue(data["sources"]["exim_rates"])
         self.assertNotIn(fake_key, json.dumps(data))      # 키 값은 절대 노출하지 않음
+        self.assertNotIn("FAKE-EXIM-1", json.dumps(data))
         self.assertNotIn("h.example", json.dumps(data))
 
-    def test_system_prompt_tells_model_which_source_to_use(self):
+    def test_system_prompt_reflects_db_status_not_rapidapi(self):
         with mock.patch.dict(os.environ, {"RAPIDAPI_KEY": "k", "RAPIDAPI_HOST": "h", "MFDS_DB_PATH": str(Path(tempfile.mkdtemp()) / "none.sqlite")}):
             prompt = server_mod._system_prompt(None)
-        self.assertIn("source='api'", prompt)
-        with mock.patch.dict(os.environ, {"RAPIDAPI_KEY": "", "RAPIDAPI_HOST": "", "MFDS_DB_PATH": str(Path(tempfile.mkdtemp()) / "none.sqlite")}):
-            prompt = server_mod._system_prompt(None)
-        self.assertIn("규제 조회 도구를 호출하지 말고", prompt)
+        self.assertIn("쓸 수 없음", prompt)                             # 키가 있어도 DB 가 없으면 이용 불가로 안내
+        for banned in ("source='api'", "K-Beauty", "RAPIDAPI"):
+            self.assertNotIn(banned, prompt)
+        self.assertIn("버튼", prompt)                                   # 사용자 선택 흐름 안내
 
     def test_tool_round_trip(self):
         FakeOpenAI.requests.clear()
