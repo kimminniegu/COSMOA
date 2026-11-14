@@ -71,11 +71,11 @@ class ContractTest(unittest.TestCase):
     def test_every_key_is_required(self):
         for path in ["context.project_id", "context.source_file_name", "inputs.target_prices", "inputs.rnd_check_requests",
                      "inputs.product_development.spf", "inputs.product_development.viscosity_level", "inputs.ingredients.concept",
-                     "inputs.quality.additional_notes", "meta.reference_files", "meta.field_provenance",
+                     "inputs.ingredients.concept_notes", "inputs.quality.additional_notes", "meta.reference_files", "meta.field_provenance",
                      "inputs.ingredients.concept.0.must_contain", "inputs.target_prices.0.currency"]:
             with self.subTest(path=path):
                 self.assertRejected(changed(path, delete=True), "missing_field")
-        self.assertRejected(changed("inputs.ingredients", {"concept": []}), "missing_field", "inputs.ingredients.other_notes")
+        self.assertRejected(changed("inputs.ingredients", {"concept": [], "concept_notes": ""}), "missing_field", "inputs.ingredients.other_notes")
 
     def test_unknown_keys_rejected(self):
         for path in ("inputs.customer", "inputs.target_price_tier", "inputs.product_development.color", "context.recipients",
@@ -92,7 +92,8 @@ class ContractTest(unittest.TestCase):
             ("inputs.export_countries", ["미국", " "], "invalid_payload"), ("inputs.export_countries", ["미국", "미국 "], "duplicate_value"),
             ("inputs.product_type", "마스크", "invalid_value"), ("inputs.request_source", "기타", "invalid_value"),
             ("inputs.product_type_detail", "에센스", "invalid_value"), ("inputs.product_development.application_type", "Spray", "invalid_value"),
-            ("inputs.product_development.viscosity_level", "중간", "invalid_value"),     # 선택값 미정 — 빈 값만
+            ("inputs.product_development.viscosity_level", "중간", "invalid_value"),     # 구간 key 만 허용
+            ("inputs.product_development.texture_tags", ["부드러움"], "invalid_value"), ("inputs.product_development.texture_tags", "산뜻함", "invalid_payload"),
             ("inputs.product_development.spf", "S" * 51, "invalid_payload"), ("inputs.product_name", "가" * 10001, "invalid_payload"),
             ("context.customer_id", "7", "invalid_value"), ("context.project_id", 0, "invalid_value"), ("context.project_id", True, "invalid_value"),
             ("context.creation_method", "copy", "invalid_value"), ("context.target_language", "xx", "invalid_value"),
@@ -233,6 +234,69 @@ class ScreenPayloadTest(unittest.TestCase):
         payload = self.build(doc)["payload"]
         self.assertNotIn("legacy_fields", payload["meta"])
         self.assertTrue(validate(payload).validation()["fully_validated"])
+
+    def gaps(self, previous, current):
+        script = ("const b = require(process.argv[1]); const [p, c] = JSON.parse(process.argv[2]);"
+                  "console.log(JSON.stringify(b.carryoverGaps(p, c)));")
+        run = subprocess.run(["node", "-e", script, str(ROOT / "src/05_requisition/requisition_payload.js"),
+                              json.dumps([previous, current], ensure_ascii=False)],
+                             capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return json.loads(run.stdout)
+
+    def test_carryover_gaps(self):
+        previous = copy.deepcopy(EXAMPLE["inputs"])
+        self.assertEqual(self.gaps(previous, copy.deepcopy(previous)), [])
+        current = copy.deepcopy(previous)
+        current["product_development"]["spf"] = " "
+        current["ingredients"]["concept"] = [dict(previous["ingredients"]["concept"][0], must_contain=None)]
+        self.assertEqual(self.gaps(previous, current),
+                         ["SPF (SPF50+)", "컨셉 원료 Ascorbic Acid의 함유 필수", "컨셉 원료 Niacinamide"])
+        renamed_case = copy.deepcopy(previous)                    # 대소문자만 달라도 같은 원료
+        renamed_case["ingredients"]["concept"][1]["name"] = "NIACINAMIDE"
+        self.assertEqual(self.gaps(previous, renamed_case), [])
+        self.assertEqual(self.gaps(current, previous), [])        # 새로 추가된 값은 경고 대상이 아님
+
+    def restore(self, payload):
+        script = ("const b = require(process.argv[1]); const [p, o] = JSON.parse(process.argv[2]);"
+                  "console.log(JSON.stringify(b.restore(p, o)));")
+        run = subprocess.run(["node", "-e", script, str(ROOT / "src/05_requisition/requisition_payload.js"),
+                              json.dumps([payload, schema.page_options()], ensure_ascii=False)],
+                             capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return json.loads(run.stdout)
+
+    def test_saved_version_round_trip(self):
+        doc = self.restore(EXAMPLE)                               # 저장본 → 화면 문서 → 다시 저장 payload
+        self.assertEqual(doc["customer"], "A사")
+        self.assertEqual(doc["reference_files"], [{"name": "benchmark.png", "size": 183204, "type": "image/png"}])
+        rebuilt = self.build(doc)["payload"]
+        self.assertEqual(rebuilt["inputs"], EXAMPLE["inputs"])
+        self.assertEqual(rebuilt["meta"], EXAMPLE["meta"])
+        self.assertTrue(validate(rebuilt).validation()["fully_validated"])
+
+    def test_old_or_broken_saved_version_loads_without_error(self):
+        old = copy.deepcopy(EXAMPLE)                              # 예전 저장본: 키 없음·자료형 다름
+        del old["inputs"]["ingredients"]["concept_notes"]
+        del old["inputs"]["product_development"]
+        old["inputs"]["target_prices"] = [{"amount": "1300", "currency": "KRW"}, "mid"]
+        old["inputs"]["export_countries"] = "미국"
+        old["inputs"]["ingredients"]["concept"] = [{"name": "Retinol"}, "x"]
+        doc = self.restore(old)
+        self.assertEqual(doc["product_development"]["texture_tags"], [])
+        self.assertEqual(doc["ingredients"]["concept_notes"], "")
+        self.assertEqual(doc["product_development"]["viscosity"], "")
+        self.assertEqual((doc["target_prices"], doc["export_countries"]), ([], []))
+        self.assertEqual(doc["ingredients"]["concept"], [{"name": "Retinol", "kind": "necessary", "must_contain": None, "efficacy_tags": []}])
+        empty = self.restore({"inputs": {}})
+        self.assertEqual((empty["creation_method"], empty["target_language"], empty["reference_files"]), ("manual", "ko", []))
+
+    def test_old_free_text_viscosity_moves_to_buyer_text_only(self):
+        old = copy.deepcopy(EXAMPLE)
+        old["inputs"]["product_development"].update(viscosity="되직한 크림", viscosity_level="꽤 되직함")
+        del old["inputs"]["product_development"]["texture_tags"]
+        development = self.restore(old)["product_development"]
+        self.assertEqual((development["viscosity"], development["viscosity_level"], development["texture_tags"]), ("되직한 크림", "", []))
 
     def test_unlinked_document_cannot_build_payload(self):
         doc = self.converted_and_edited()

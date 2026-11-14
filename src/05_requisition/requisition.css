@@ -156,3 +156,58 @@
 #requisition-app .requisition-concept-title { margin: 0 0 var(--space-2); color: var(--color-text-body); font-weight: var(--font-weight-bold); }
 .requisition-legacy-note { margin-top: var(--space-2); }
 .requisition-panel #requisition-save-help { margin: 0; }
+
+/* 정보 배치 정리: 제목 중복 제거, 패널 동작 순서, 복합 입력 칸 */
+#requisition-title:focus { outline: none; }
+.requisition-section > h2 { display: none; }
+#requisition-basic-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.requisition-paper > .card-header { padding: var(--space-6) var(--space-8) var(--space-3); }
+.requisition-drop + .form-help { margin-top: var(--space-4); }
+.requisition-panel { max-height: calc(100vh - var(--space-6) * 2); overflow-y: auto; }
+.requisition-panel-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.requisition-panel-actions > * { grid-column: 1 / -1; }
+.requisition-panel-actions > #requisition-primary { order: -1; }
+.requisition-panel-actions > #requisition-secondary, .requisition-panel-actions > #requisition-erp { grid-column: auto; }
+.requisition-panel-actions:has(#requisition-erp[hidden]) > #requisition-secondary { grid-column: 1 / -1; }
+.requisition-panel-actions > #requisition-pdf-help { order: 1; }
+.requisition-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: var(--space-1); padding: 0 5px; border-radius: 9px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 0.6875rem; font-weight: var(--font-weight-bold); }
+.requisition-review-link { display: inline; margin: 0 var(--space-2) 0 0; padding: 0; border: 0; background: none; color: var(--color-primary); font: inherit; text-decoration: underline; cursor: pointer; }
+.requisition-composite { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: var(--space-3); }
+.requisition-texture-text { margin-top: var(--space-3); }
+.requisition-empty-note { margin: var(--space-5) 0 0; }
+.requisition-section-nav { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-6); padding-top: var(--space-5); border-top: var(--border-default); }
+.requisition-section-nav > #requisition-section-next { margin-left: auto; }
+@container page (max-width: 560px) { .requisition-composite { grid-template-columns: minmax(0, 1fr); } }
+
+/* 탭 안 묶음 배치 */
+.requisition-group + .requisition-group { margin-top: var(--space-6); padding-top: var(--space-6); border-top: var(--border-default); }
+#requisition-app .requisition-group-title { margin: 0 0 var(--space-4); color: var(--color-text-primary); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.requisition-chips:empty + .requisition-chip-entry { margin-top: 0; }
+.requisition-reference-grid:empty + .requisition-reference-upload { margin-top: 0; }
+.requisition-price-row > input.form-control { flex: 1 1 110px; }
+.requisition-concept-group { padding: var(--space-4); border: var(--border-default); border-radius: var(--radius-lg); }
+.requisition-concept-group > .form-help { margin: 0 0 var(--space-2); }
+#requisition-field-product_type .requisition-field-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3) var(--space-5); align-items: end; }
+#requisition-field-product_type .requisition-field-content > .form-help,
+#requisition-field-product_type .requisition-field-content > .form-error,
+#requisition-field-product_type .requisition-field-content > small { grid-column: 1 / -1; }
+#requisition-field-product_type .requisition-field-content > div { margin-top: 0; }
+@container page (min-width: 700px) {   /* 2열일 때 세부 유형 라벨을 제품 유형 라벨과 같은 줄에 */
+  #requisition-detail-wrap, #requisition-custom-wrap { position: relative; }
+  #requisition-detail-wrap > .form-label, #requisition-custom-wrap > .form-label { position: absolute; bottom: 100%; left: 0; margin-bottom: var(--space-2); }
+}
+
+/* 저장·불러오기·최종본 */
+.requisition-save-box { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: var(--border-default); }
+.requisition-save-box .form-group { margin: 0; }
+.requisition-save-box p { margin: 0; overflow-wrap: anywhere; }
+.requisition-load-list { display: grid; gap: var(--space-2); max-height: 360px; margin: var(--space-3) 0; overflow-y: auto; }
+.requisition-load-item { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: var(--border-default); border-radius: var(--radius-md); cursor: pointer; }
+.requisition-load-item:has(input:checked) { border-color: var(--color-primary-bright); background: var(--color-primary-soft); }
+.requisition-load-item span { min-width: 0; overflow-wrap: anywhere; }
+.requisition-load-item strong, .requisition-load-item small { display: block; }
+.requisition-load-item small { color: var(--color-text-secondary); }
+
+/* 모달은 body 로 옮겨지므로 숨김 규칙을 따로 둡니다. */
+#requisition-load-modal [hidden] { display: none !important; }
+#requisition-export-review { margin: 0; }
