@@ -804,9 +804,16 @@ function renderStatus() {
     ? `${work.version.title || '이름 없음'}${work.linked ? ` · ${projectLabel(work.linked)}` : ''}`
     : '아직 저장하지 않은 모델링이에요. 버전 번호는 저장할 때 서버가 정해요.';
   const toggle = $('final-toggle');
-  toggle.disabled = !work.version || !work.linked;
+  const reason = finalBlockReason();
+  toggle.setAttribute('aria-disabled', reason ? 'true' : 'false');
   toggle.textContent = isFinal ? '최종본 해제' : '최종본 지정';
-  toggle.title = toggle.disabled ? '저장하거나 불러온 모델링 저장본이 있을 때 지정할 수 있어요' : '';
+  toggle.title = reason;
+}
+// 최종본 버튼을 못 쓰는 이유 (비어 있으면 사용 가능). 비활성으로 두지 않고 누르면 이유를 알려 줍니다.
+function finalBlockReason() {
+  if (!work.linked) return '화면 위 프로젝트 바에서 고객사와 프로젝트를 먼저 선택해 주세요.';
+  if (!work.version) return '최종본은 저장된 모델링에만 지정할 수 있어요. 먼저 저장해 주세요.';
+  return '';
 }
 
 // 배합·코멘트·불러온 요청서를 기본 프리셋으로 되돌립니다 (연결된 작업 중 다른 프로젝트로 바꿀 때).
@@ -965,7 +972,8 @@ async function refreshFinal() {
 }
 $('final-toggle').addEventListener('click', async () => {
   const button = $('final-toggle');
-  if (!work.version || !work.linked || button.disabled) return;
+  const blocked = finalBlockReason();
+  if (blocked) { showToast('아직 최종본으로 지정할 수 없어요', blocked, { tone: 'notice', duration: 5000 }); return; }
   const isFinal = work.final?.version?.id === work.version.id;
   const expected = work.final ? work.final.final_history_id : null;
   const body = isFinal
@@ -1170,6 +1178,13 @@ async function renderCompare() {
     setError('compare-error', error.message || '비교하지 못했어요. 잠시 후 다시 시도해 주세요.');
   }
 }
+// 비교할 수 없을 때는 빈 선택 칸 대신 이유와 다음 행동만 보여 줍니다.
+function showCompareEmpty(message) {
+  $('compare-empty').textContent = message;
+  $('compare-empty').hidden = !message;
+  $('compare-pick').hidden = Boolean(message);
+  $('compare-intro').hidden = Boolean(message);
+}
 function fillCompareSelects(defaultB) {
   const options = [['current', '현재 작업 중'], ...compareItems.map(item => [String(item.id), `v${item.version_no} · ${item.title || '이름 없음'}${item.is_final ? ' ★' : ''}`])];
   ['a', 'b'].forEach(side => $(`compare-${side}`).replaceChildren(...options.map(([value, text]) => Object.assign(document.createElement('option'), { value, textContent: text }))));
@@ -1183,10 +1198,11 @@ $('compare-open').addEventListener('click', async () => {
   fillCompareSelects('current');
   $('compare-table').replaceChildren();
   setError('compare-error', '');
+  showCompareEmpty('');
   window.Common.openModal('simulation-compare-modal');
   if (!project) {
     $('compare-project').textContent = '';
-    setError('compare-error', '먼저 화면 위 프로젝트 바에서 고객사와 프로젝트를 선택해 주세요.');
+    showCompareEmpty('비교하려면 먼저 화면 위 프로젝트 바에서 고객사와 프로젝트를 선택해 주세요. 그 프로젝트에 저장한 배합끼리 비교할 수 있어요.');
     return;
   }
   $('compare-project').textContent = projectLabel(project);
@@ -1194,7 +1210,7 @@ $('compare-open').addEventListener('click', async () => {
   if (request !== compareOpenRequest) return;
   if (!r.ok) { setError('compare-error', apiMessage(r)); return; }
   compareItems = r.data.items;
-  if (!compareItems.length) { setError('compare-error', '비교할 저장본이 없어요. 배합을 저장하면 여기서 나란히 볼 수 있어요.'); return; }
+  if (!compareItems.length) { showCompareEmpty('아직 이 프로젝트에 저장한 배합이 없어요. 배합을 조절해 저장한 뒤, 다른 안을 만들어 다시 저장하면 두 안을 여기서 나란히 비교할 수 있어요.'); return; }
   const preferred = compareItems.find(item => item.is_final) || compareItems[0];
   fillCompareSelects(String(preferred.id));
   renderCompare();

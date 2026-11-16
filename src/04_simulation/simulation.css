@@ -421,6 +421,10 @@
 .simulation-compare-modal .modal-body { display: grid; gap: var(--space-3); }
 .simulation-compare-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .simulation-compare-pick .form-group { margin: 0; }
+.simulation-compare-pick[hidden] { display: none; }
+.simulation-compare-empty { margin: var(--space-3) 0 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text-body); }
+.simulation-compare-empty[hidden] { display: none; }
+.simulation-work-actions .btn[aria-disabled=true] { opacity: .55; cursor: not-allowed; }
 .simulation-compare-table { width: 100%; }
 .simulation-compare-table th, .simulation-compare-table td { font-size: 13px; vertical-align: top; word-break: keep-all; }
 .simulation-compare-table tbody th { font-weight: var(--font-weight-regular); color: var(--color-text-secondary); white-space: nowrap; }
