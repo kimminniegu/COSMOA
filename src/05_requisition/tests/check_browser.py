@@ -63,6 +63,7 @@ window.Common = {
   api: async (method, url, body) => {
     __calls.push({method, url, body});
     if (method === 'POST' && url.endsWith('/versions')) {
+      if (window.__gate) await window.__gate;                // 저장 응답을 늦추는 검사용
       const version = {id: 100 + __rows.length, project_id: 12, tab: 'requisition', version_no: __rows.length + 1, title: body.title, schema_version: 1,
         based_on_id: body.based_on_id, created_by: {id: 1, name: '나'}, created_at: new Date().toISOString(), payload: JSON.parse(JSON.stringify(body.payload))};
       __rows.push(version);
@@ -216,6 +217,39 @@ try {
   by('secondary').click(); enter('product_name', '새 이름'); submit();
   by('version-save').click(); await wait();
   assert(__rows[2].based_on_id === 100, 'based_on loaded version');
+
+  // 이탈 경고 — 저장본과 같으면 생략, 본문이 브라우저에만 있는 참고자료가 있으면 저장 후에도 경고
+  const leaving = () => { const event = new Event('beforeunload', {cancelable: true}); window.dispatchEvent(event); return event.defaultPrevented; };
+  assert(!leaving(), 'no leave warning when stored');
+  by('secondary').click();
+  const attached = new DataTransfer();
+  attached.items.add(new File(['png'], 'ref.png', {type: 'image/png'}));
+  const picker = document.getElementById('requisition-reference-input');
+  picker.files = attached.files; picker.dispatchEvent(new Event('change', {bubbles: true}));
+  await wait(40);
+  submit();
+  by('version-save').click(); await wait();
+  assert(by('save-status').textContent === 'v4' && !JSON.stringify(__rows[3]).includes('data_url'), 'save with local reference');
+  assert(by('version-feedback').textContent.includes('떠나면') && leaving(), 'local reference keeps leave warning');
+
+  // 저장 응답을 기다리는 동안 수정하면 저장 후에도 '이후 수정됨'
+  let release;
+  window.__gate = new Promise((resolve) => { release = resolve; });
+  by('secondary').click(); enter('product_name', '대기 전'); submit();
+  by('version-save').click();
+  by('secondary').click(); enter('product_name', '대기 중'); submit();
+  release(); window.__gate = null; await wait();
+  assert(JSON.stringify(__rows[4].payload).includes('대기 전') && !JSON.stringify(__rows[4].payload).includes('대기 중'), 'save keeps content at request time');
+  assert(by('save-status').textContent === 'v5 · 이후 수정됨' && !by('version-save').disabled && by('version-feedback').textContent.includes('저장하는 동안'), 'edit during save stays dirty');
+
+  // 저장 응답을 기다리는 동안 새 문서를 시작하면 늦게 온 응답을 버림
+  window.__gate = new Promise((resolve) => { release = resolve; });
+  by('version-save').click();
+  by('new').click(); by('manual').click();
+  fillRequired(); enter('product_name', '새 문서'); pending('export_countries', '미국'); pending('quality.tests', '안정도 시험');
+  submit();
+  release(); window.__gate = null; await wait();
+  assert(__rows.length === 6 && by('save-status').textContent === '저장 전' && !by('version-save').disabled, 'late save response ignored');
   document.body.dataset.testResult = 'PASS';
 } catch (error) { document.body.dataset.testResult = 'FAIL: ' + error.message; }
 })();

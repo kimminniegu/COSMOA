@@ -55,6 +55,8 @@
   let project = null, documentProject = null;
   // 저장본 상태: currentVersion = 마지막으로 저장·불러온 버전, versionDirty = 그 뒤 내용이 바뀜, finalState = 프로젝트의 현재 최종본 기록
   let currentVersion = null, versionDirty = false, documentTitle = "", finalState = null, versionBusy = false;
+  // editCount = 수정 완료로 내용이 바뀐 횟수, versionEpoch = 문서가 바뀐 횟수(새 문서·불러오기). 늦게 도착한 저장 응답을 가려냅니다.
+  let editCount = 0, versionEpoch = 0;
   let printFrame = null;
   let activeSection = 0;
   const sectionTitles = [...sections.map(([title]) => title), "05 참고자료"];
@@ -726,6 +728,7 @@
       if (keys.some((key) => JSON.stringify(get(draft, key)) !== JSON.stringify(get(saved, key)))) {
         draft.creation_method = saved.creation_method.startsWith("auto") ? "auto_edited" : "manual_edited";
         versionDirty = true;
+        editCount += 1;
       }
     }
     saved = clone(draft);
@@ -933,7 +936,7 @@
     }
   }
   window.addEventListener("beforeunload", (event) => {
-    const stored = currentVersion && !versionDirty && !originalFile && state === "result";   // 저장본과 같은 내용이면 잃을 것이 없음
+    const stored = currentVersion && !versionDirty && !originalFile && !hasLocalFiles() && state === "result";   // 저장본과 같은 내용이면 잃을 것이 없음
     if (!stored && (saved || editing() || state === "loading" || originalFile)) { event.preventDefault(); event.returnValue = ""; }
   });
   /* 저장·불러오기·최종본 — 공통 저장 API (docs/api_contract.md 2장). 저장은 항상 새 버전이고 번호는 서버가 정합니다. */
@@ -942,8 +945,11 @@
   const finalUrl = (projectId) => "/api/projects/" + projectId + "/tabs/requisition/final";
   const selectedProject = () => project || (window.ProjectBar ? ProjectBar.current() : null);
   const isCurrentFinal = () => Boolean(currentVersion && finalState && finalState.version && finalState.version.id === currentVersion.id);
+  // 본문(data_url)이 브라우저에만 있는 참고자료 — 서버에는 이름·크기만 저장되므로 화면을 떠나면 사라집니다.
+  const hasLocalFiles = () => Boolean(saved && saved.reference_files.some((file) => file.data_url));
   function clearVersion() {
     currentVersion = null; versionDirty = false; documentTitle = ""; finalState = null;
+    versionEpoch += 1;
     $("version-title").value = "";
     versionFeedback();
   }
@@ -984,19 +990,21 @@
     versionBusy = true;
     versionFeedback("저장하고 있어요…");
     renderVersion();
-    const target = documentProject;
+    const target = documentProject, epoch = versionEpoch, edits = editCount;
     const result = await Common.api("POST", versionsUrl(target.id), {
       schema_version: built.schema_version, title, based_on_id: currentVersion ? currentVersion.id : null, payload: built.payload,
     });
     versionBusy = false;
-    if (target !== documentProject) return;
+    if (target !== documentProject || epoch !== versionEpoch) return renderVersion();   // 그사이 다른 문서로 바뀌었으면 응답을 버립니다.
     if (!result.ok) { versionFeedback("저장하지 못했어요. " + result.error.message); return renderVersion(); }
     currentVersion = result.data.version;
-    versionDirty = false;
+    versionDirty = edits !== editCount;                     // 응답을 기다리는 동안 수정한 내용은 저장되지 않았습니다.
     documentTitle = title;
     const base = result.data.base || {};
     versionFeedback("v" + currentVersion.version_no + "로 저장했어요." + (base.is_stale
-      ? " v" + base.based_on_version_no + "에서 시작했는데 그사이 v" + base.latest_version_no_before_save + "까지 저장돼 있었어요. 다른 버전의 내용을 확인해 주세요." : ""));
+      ? " v" + base.based_on_version_no + "에서 시작했는데 그사이 v" + base.latest_version_no_before_save + "까지 저장돼 있었어요. 다른 버전의 내용을 확인해 주세요." : "") +
+      (versionDirty ? " 저장하는 동안 수정한 내용은 아직 저장되지 않았어요." : "") +
+      (hasLocalFiles() ? " 참고자료 본문은 저장되지 않아 이 화면을 떠나면 사라져요." : ""));
     renderVersion();
     await refreshFinal();
   }
@@ -1061,7 +1069,7 @@
     const checked = document.querySelector('input[name="requisition-load-version"]:checked');
     if (!checked || !loadTarget) return;
     const target = loadTarget;
-    const safe = !hasDocument() || (state === "result" && currentVersion && !versionDirty && !originalFile);
+    const safe = !hasDocument() || (state === "result" && currentVersion && !versionDirty && !originalFile && !hasLocalFiles());
     if (!safe && !confirm("지금 작성 중인 내용이 불러온 저장본으로 바뀌어요. 계속할까요?")) return;
     $("load-confirm").disabled = true;
     const result = await Common.api("GET", "/api/versions/" + Number(checked.value));
@@ -1078,6 +1086,7 @@
     documentProject = target;
     currentVersion = version;
     versionDirty = false;
+    versionEpoch += 1;
     documentTitle = version.title || "";
     finalState = null;
     activeSection = 0;
