@@ -42,7 +42,7 @@
 
 | 영역 | 주요 기능 | 지원 범위·이용 안내 |
 |---|---|---|
-| 로그인 | 업무 DB(Neon PostgreSQL) `users` 계정, 로그인·로그아웃, 세션 유지, 본인 비밀번호 변경 | 계정은 공통 DB 담당(유정현)이 관리 명령으로 생성. 서버가 계정·데모 계정을 자동 생성하지 않음 |
+| 로그인 | 업무 DB(Neon PostgreSQL) `users` 계정, 로그인·로그아웃, 세션 유지, 본인 비밀번호 변경 | 계정은 공통 DB 담당(유정현·김민)이 관리 명령으로 생성. 서버가 계정·데모 계정을 자동 생성하지 않음 |
 | 홈 | 환율·수출입 통계, 바이어 현지 시각, 뉴스·규제 소식 및 더보기 | 외부 데이터 수집·캐시 사용, 알림 버튼 미구현 |
 | 국가별 인허가 규제 | 식약처 성분 DB·규제 DB 후보 검색 → 사용자 선택 → 국가별 규제 조회 (직접 검색·파일 일괄 조회), PDF·Excel·이미지 성분 추출과 OCR | 식약처 수집 DB 읽기 전용 (외부 규제 API·키 없음, 조회에는 수집이 끝난 DB 파일 필요 — 4장). 챗봇 성분 규제도 같은 DB·선택 흐름. 함량 기준 비교·시장 자동 선택 등은 미구현. 조회 결과와 최종 규제 판단을 구분 |
 | 원가·마진 | 견적·역제안·수량별 단가·환율 영향 계산, 견적서 PDF·영문 메일 본문 | ERP는 예시 품목 1개의 시연 데이터. 견적 입력값은 영구 저장하지 않음 |
@@ -161,7 +161,7 @@ Bash에서는 `cp .env.example .env`를 사용합니다. 전체 항목은 [`.env
 | AI 모델 선택 | `SIMULATION_OPENAI_MODEL`, `REQUISITION_OPENAI_MODEL`, `CHATBOT_OPENAI_MODEL` | 각 기능의 모델. 기본 gpt-4.1 |
 | 챗봇 연결 | `CHATBOT_URL`, `CHATBOT_SECRET` | 메인에서 호출할 챗봇 서버 주소, 양쪽 서버에 동일하게 설정할 공유 비밀값 (임의의 긴 문자열, 주소와 다른 값. 예: `python -c "import secrets; print(secrets.token_urlsafe(32))"`) |
 | 챗봇 로컬 설정 | `CHATBOT_PORT`, `CHATBOT_DB_PATH` | 기본 포트 5100, 기본 캐시 DB는 `instance/cosmoa.db`. 경로를 바꾸지 않으면 DB 변수 생략 |
-| 업무 DB (Neon) | `DATABASE_URL`, `DATABASE_URL_DIRECT`, `DEV_DATABASE_ENDPOINT_ID`, `TEST_DATABASE_URL`, `TEST_DATABASE_ENDPOINT_ID`, `TEST_APP_DATABASE_URL` | **로그인에 `DATABASE_URL`(dev 풀링 주소) 필수.** 팀원은 본인 앱 역할 주소를 받음 (dev 적용 완료, 팀원 역할은 생성 예정 — [DB 규칙 8장](docs/db_rules.md)). 마이그레이션·관리 명령은 `DATABASE_URL_DIRECT`·`DEV_DATABASE_ENDPOINT_ID`, 업무 DB 테스트는 `TEST_*`. 값은 공통 DB 담당 유정현에게 받음. [개발 안내 4-2](docs/development.md) |
+| 업무 DB (Neon) | `DATABASE_URL`, `DATABASE_URL_DIRECT`, `DEV_DATABASE_ENDPOINT_ID`, `TEST_DATABASE_URL`, `TEST_DATABASE_ENDPOINT_ID`, `TEST_APP_DATABASE_URL` | **로그인에 `DATABASE_URL`(dev 풀링 주소) 필수.** 팀원은 본인 앱 역할 주소를 받음 (dev 적용 완료, 팀원 역할은 생성 예정 — [DB 규칙 8장](docs/db_rules.md)). 마이그레이션·관리 명령은 `DATABASE_URL_DIRECT`·`DEV_DATABASE_ENDPOINT_ID`, 업무 DB 테스트는 `TEST_*`. 값은 공통 DB 담당에게 받음. [개발 안내 4-2](docs/development.md) |
 | 홈 캐시 | `HOME_CACHE_DB_PATH` | 홈 캐시 SQLite 경로. 기본 `instance/cosmoa.db` (상대 경로는 저장소 루트 기준) |
 
 `OTHER_API_KEY`는 예비 항목입니다. 필요한 기능의 키를 위 표에 따라 설정합니다.
@@ -207,7 +207,7 @@ python app.py
 
 로그인 전에는 `/login`으로 이동합니다. **로그인 계정은 업무 DB(Neon PostgreSQL) `users`** 에 있습니다. 서버 시작 시 계정·테이블을 자동으로 만들지 않으며, SQLite 로 대체하지 않습니다. 업무 DB 에 연결할 수 없으면 로그인 화면에 "일시적으로 연결할 수 없습니다"가 표시됩니다(비밀번호 오류와 구분).
 
-로컬 실행에 필요한 것: `.env` 의 `DATABASE_URL`(dev 풀링 주소), 그리고 dev DB 에 계정. 계정은 공통 DB 담당(유정현)이 관리 명령으로 만듭니다. 계정이 하나도 없을 때만 **최초 계정**을 한 번 만듭니다. 비밀번호는 화면에 표시되지 않는 입력으로 두 번 받습니다 (PowerShell 등 대화형 터미널에서 실행).
+로컬 실행에 필요한 것: `.env` 의 `DATABASE_URL`(dev 풀링 주소), 그리고 dev DB 에 계정. 계정은 공통 DB 담당(유정현·김민)이 관리 명령으로 만듭니다. 계정이 하나도 없을 때만 **최초 계정**을 한 번 만듭니다. 비밀번호는 화면에 표시되지 않는 입력으로 두 번 받습니다 (PowerShell 등 대화형 터미널에서 실행).
 
 ```powershell
 python -m src.common.db_admin create-first-user --target dev --email <이메일> --name <이름> --team <팀>
@@ -219,7 +219,7 @@ python -m src.common.db_admin create-first-user --target dev --email <이메일>
 python -m src.common.db_admin set-password --target dev --email <이메일>
 ```
 
-두 명령 모두 `DEV_DATABASE_ENDPOINT_ID` 확인을 통과해야 하고, 운영 환경(`COSMOA_ENV=production`·Render)에서는 거부됩니다. 팀원 계정은 공통 DB 담당(유정현)이 `create-user` 로 만들고([개발 안내 5-2](docs/development.md)), 팀원은 로그인 후 "내 계정" → [비밀번호 변경] 화면(`/account/password`)에서 본인 비밀번호를 바꿉니다. 예전 SQLite 로그인 세션은 다시 로그인해야 합니다. 홈 캐시는 SQLite `HOME_CACHE_DB_PATH`(기본 `instance/cosmoa.db`)에 그대로 저장됩니다. `FLASK_PORT`를 바꿨다면 접속 주소도 해당 포트로 바꿉니다.
+두 명령 모두 `DEV_DATABASE_ENDPOINT_ID` 확인을 통과해야 하고, 운영 환경(`COSMOA_ENV=production`·Render)에서는 거부됩니다. 팀원 계정은 공통 DB 담당(유정현·김민)이 `create-user` 로 만들고([개발 안내 5-2](docs/development.md)), 팀원은 로그인 후 "내 계정" → [비밀번호 변경] 화면(`/account/password`)에서 본인 비밀번호를 바꿉니다. 예전 SQLite 로그인 세션은 다시 로그인해야 합니다. 홈 캐시는 SQLite `HOME_CACHE_DB_PATH`(기본 `instance/cosmoa.db`)에 그대로 저장됩니다. `FLASK_PORT`를 바꿨다면 접속 주소도 해당 포트로 바꿉니다.
 
 업무 DB 마이그레이션·테스트 DB 표식·최초 계정 명령은 서버 실행과 분리된 관리 명령입니다. 사용법은 [개발 안내 5장](docs/development.md)을 따르며, 서버 시작 시 자동으로 실행되지 않습니다.
 
@@ -332,10 +332,11 @@ render_template("02_regulatory/regulatory.html")
 
 | 업무 | 담당 |
 |---|---|
-| DB 계정·접속 역할·마이그레이션 (공통 DB 담당) | 유정현 |
+| DB 계정·접속 역할·마이그레이션 (공통 DB 담당) | 유정현·김민 (공동) |
 | PR 검토·병합 | 김민 PM·유정현 |
 
-- 공통 DB 담당(유정현)은 업무 DB 계정·앱 접속 역할 발급과 마이그레이션 적용을 맡습니다. PR 검토·병합(김민 PM·유정현)과는 별개의 역할입니다.
+- 공통 DB 담당(유정현·김민)은 업무 DB 계정·앱 접속 역할 발급과 마이그레이션 적용을 함께 맡습니다. 두 사람 모두 DB 변경을 작성·검토·적용할 수 있고, 같은 변경 건에서는 작성자가 아닌 담당자가 검토하며 실제 명령은 그 건의 실행 담당자 한 명이 실행합니다 ([DB 규칙 7-5](docs/db_rules.md)). PR 검토·병합(김민 PM·유정현)과는 별개의 역할입니다.
+- 공동 담당 지정은 역할 규칙입니다. 담당자별 관리 접속 계정·권한이 준비되었다는 뜻은 아닙니다.
 - **개발요청서(E) 담당은 현재 미정**입니다. 공통 기반 PR(#1)에 포함된 개발요청서 변경도 김민 PM·유정현이 검토하고, 담당자가 정해지면 그 범위([개발 안내 10-3](docs/development.md))를 다시 확인합니다.
 
 - 각 담당자는 `app.py` 하단의 **자신의 영역**(`# [B] …` 주석 아래)에 Backend Route와 필요한 모듈 연결 코드를 추가합니다. 개발요청서는 기존 Blueprint 구조를 유지합니다.
@@ -489,11 +490,11 @@ python src/05_requisition/tests/check_browser.py
   - 기능 Branch는 PR로 `develop`에 병합합니다. PR 검토·병합은 김민 PM·유정현이 합니다. `develop` → `main` 병합(시연·배포 반영)은 김민 PM이 합니다.
   - `develop`·`main`에 직접 커밋하지 않습니다.
 - 작업 시작 전 `git pull origin develop`, PR 전에 `develop`을 자신의 Branch에 병합해 충돌을 먼저 해결합니다.
-- Git 브랜치와 Neon DB 브랜치(production / dev / test)는 별개입니다. 업무 DB 변경 PR은 공통 DB 담당 유정현의 승인이 필요합니다. ([DB 규칙 7장](docs/db_rules.md))
+- Git 브랜치와 Neon DB 브랜치(production / dev / test)는 별개입니다. 업무 DB 변경 PR은 공통 DB 담당(유정현·김민) 중 작성자가 아닌 담당자의 승인이 필요합니다. ([DB 규칙 7장](docs/db_rules.md))
 - `git add .` 대신 자신의 폴더만 추가합니다: `git add src/02_regulatory/ app.py`
 - 커밋 전 `git status`로 **자신의 폴더 밖 파일이 바뀌지 않았는지** 확인합니다. (AI 도구가 공통 파일을 건드리는 경우가 있습니다)
 - **커밋·푸시·머지는 담당자가 직접 합니다.** AI 도구는 `git add / commit / push / merge`를 실행하지 않고 변경 내용·검증 결과·커밋 제목 제안만 제공합니다.
-- `.env`, `instance/`, `tdenv/`, `__pycache__/`는 커밋하지 않습니다. DB는 기본적으로 제외하며 배포용 `data/regulatory/mfds_use_restriction.sqlite`·`data/regulatory/mfds_ingredients.sqlite` 두 파일만 예외입니다. Key를 실수로 커밋했다면 즉시 김민 PM에게 알리고(업무 DB 접속정보라면 공통 DB 담당 유정현에게도) Key를 재발급합니다.
+- `.env`, `instance/`, `tdenv/`, `__pycache__/`는 커밋하지 않습니다. DB는 기본적으로 제외하며 배포용 `data/regulatory/mfds_use_restriction.sqlite`·`data/regulatory/mfds_ingredients.sqlite` 두 파일만 예외입니다. Key를 실수로 커밋했다면 즉시 김민 PM에게 알리고(업무 DB 접속정보라면 공통 DB 담당 유정현·김민에게도) Key를 재발급합니다.
 
 **충돌 가능성이 높은 파일**
 
