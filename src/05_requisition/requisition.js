@@ -1012,17 +1012,22 @@
     if (!currentVersion || versionBusy || versionDirty) return;
     versionBusy = true;
     renderVersion();
-    const target = documentProject;
+    const target = documentProject, epoch = versionEpoch;
     const ready = finalState || await refreshFinal();
     let result = null;
-    if (ready && target === documentProject) {
+    if (ready && target === documentProject && epoch === versionEpoch) {
       const expected = finalState.final_history_id ?? null;
       result = await Common.api("POST", finalUrl(target.id), isCurrentFinal()
         ? { action: "unset", expected_final_history_id: expected }
         : { action: "set", version_id: currentVersion.id, expected_final_history_id: expected });
     }
     versionBusy = false;
-    if (target !== documentProject) return;
+    if (target !== documentProject) return renderVersion();
+    if (epoch !== versionEpoch) {                           // 그사이 다른 문서로 바뀌었으면 안내 없이 프로젝트의 최종본 상태만 반영합니다.
+      if (result && result.ok) finalState = result.data.final;
+      else if (result && result.status === 409) finalState = result.error.current;
+      return renderVersion();
+    }
     if (result && result.ok) {
       finalState = result.data.final;
       versionFeedback(isCurrentFinal() ? "최종본으로 지정했어요." : "최종본을 해제했어요.");

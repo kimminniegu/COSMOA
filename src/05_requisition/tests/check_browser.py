@@ -74,6 +74,7 @@ window.Common = {
     if (method === 'GET' && url.startsWith('/api/versions/')) return {ok: true, status: 200, data: {version: __rows.find((v) => v.id === Number(url.split('/').pop()))}};
     if (url.endsWith('/final') && method === 'GET') return {ok: true, status: 200, data: {final: finalNow()}};
     if (url.endsWith('/final')) {
+      if (window.__gate) await window.__gate;
       if (__conflict) { __conflict = false; __finals.push({id: 99, action: 'set', version_id: 100}); return {ok: false, status: 409, error: {code: 'final_conflict', message: 'x', current: finalNow()}}; }
       if (body.expected_final_history_id !== finalNow().final_history_id) throw new Error('expected_final_history_id mismatch');
       __finals.push({id: __finals.length + 1, action: body.action, version_id: body.version_id});
@@ -250,6 +251,17 @@ try {
   submit();
   release(); window.__gate = null; await wait();
   assert(__rows.length === 6 && by('save-status').textContent === '저장 전' && !by('version-save').disabled, 'late save response ignored');
+
+  // 최종본 지정 응답을 기다리는 동안 새 문서를 시작하면 늦게 온 응답의 안내를 띄우지 않음
+  by('version-save').click(); await wait();
+  assert(by('save-status').textContent === 'v7', 'saved before final race');
+  window.__gate = new Promise((resolve) => { release = resolve; });
+  by('version-final').click();
+  by('new').click(); by('manual').click();
+  fillRequired(); enter('product_name', '또 새 문서'); pending('export_countries', '미국'); pending('quality.tests', '안정도 시험');
+  submit();
+  release(); window.__gate = null; await wait();
+  assert(__finals.at(-1).version_id === 106 && by('version-feedback').hidden && by('save-status').textContent === '저장 전' && !by('version-save').disabled, 'late final response ignored');
   document.body.dataset.testResult = 'PASS';
 } catch (error) { document.body.dataset.testResult = 'FAIL: ' + error.message; }
 })();
