@@ -321,6 +321,8 @@
 /* 원료 카드: 왼쪽 색 띠로 출처를 구분 (자주 쓰는 원료·직접 입력 = 회색, AI = 주황, 개발요청서 = 파랑) */
 .simulation-concept-chips { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .simulation-concept-chips:empty { display: none; }
+.simulation-concept-chips > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: stretch; }
+.simulation-concept-reg { align-self: stretch; display: inline-flex; align-items: center; white-space: nowrap; }
 .simulation-concept-card { --card-accent: var(--color-border-strong); display: grid; gap: 6px; width: 100%; padding: 10px 12px 10px 14px; border: 0; border-left: 3px solid var(--card-accent); border-radius: var(--radius-sm); background: var(--color-surface-muted); text-align: left; font: inherit; color: inherit; cursor: pointer; transition: background var(--transition-base); }
 .simulation-concept-card:hover { background: var(--color-background); }
 .simulation-concept-card:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }

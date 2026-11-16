@@ -1473,7 +1473,15 @@ function renderConceptSummary() {
         target?.querySelector('textarea')?.focus({ preventScroll: true });
       });
     });
-    li.append(card);
+    // 원료 옆 바로가기: 영업이 이 원료의 국가별 규제를 바로 확인하러 갈 수 있게 인허가 탭을 새 탭으로 엽니다
+    // (작업 중인 배합이 사라지지 않게 새 탭). 인허가 탭이 원료명 검색 연결을 받기 전까지는 탭 이동만 합니다.
+    const reg = el('a', 'btn btn-secondary btn-sm simulation-concept-reg', '규제 확인');
+    reg.href = '/regulatory';
+    reg.target = '_blank';
+    reg.rel = 'noopener';
+    reg.title = `${item.name}의 국가별 인허가·규제는 인허가 탭에서 확인해요 (새 탭)`;
+    reg.setAttribute('aria-label', `${item.name} 규제 확인 (인허가 탭, 새 탭에서 열기)`);
+    li.append(card, reg);
     return li;
   }));
   $('concept-overall').textContent = overallComment;
