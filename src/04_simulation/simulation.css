@@ -3,8 +3,8 @@
 .simulation-shell { --layout-page-padding-y: var(--space-6); --layout-footer-height: var(--space-6); }
 .simulation-page { --simulation-columns: minmax(0, 1fr) clamp(236px, 20%, 272px); --layout-card-padding: var(--space-5); --layout-section-gap: var(--layout-card-gap); min-width: 0; }
 /* 머리글도 본문과 같은 두 칸: 개발요청서 버튼은 샘플 제형 카드 오른쪽 위, 초기화·시연 버튼은 배합 조절 카드 오른쪽 위에 맞춥니다. */
-.simulation-page .page-header { display: grid; grid-template-columns: var(--simulation-columns); align-items: center; gap: var(--layout-card-gap); }
-.simulation-header-main { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); min-width: 0; }
+.simulation-page .page-header { display: flex; align-items: center; gap: var(--layout-card-gap); }
+.simulation-header-main { flex: 1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); min-width: 0; }
 /* 제목 옆 저장 상태 칩: 저장 전 / vN / vN · ★ 최종본 */
 .simulation-title-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .simulation-version-chip { flex: none; padding: 2px 10px; border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text-secondary); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -396,16 +396,17 @@
 
 /* 질감·목표 점도로 맞추기 */
 .simulation-target { flex: 0 0 auto; display: grid; gap: var(--space-2); }
-.simulation-target-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.simulation-target-chips .btn { height: 28px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; }
 .simulation-target-row { display: flex; align-items: center; gap: var(--space-2); }
-.simulation-target-row .form-control { flex: none; width: 96px; height: 32px; padding: 0 12px; font-size: 14px; }
-.simulation-target-row .btn { flex: none; height: 32px; margin-left: auto; padding: 0 12px; font-size: 13px; }
-.simulation-target-hint { word-break: keep-all; }
+.simulation-target-row > * { flex: none; white-space: nowrap; }
+.simulation-target-row .form-control { flex: 1 1 0; min-width: 0; height: 32px; padding: 0 12px; font-size: 14px; }
+.simulation-target-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.simulation-controls .card-body { overflow-x: hidden; }
 
 /* 용기 용량 · 내용물 호환 참고 */
 .simulation-packaging .card-header { flex-wrap: wrap; gap: var(--space-2); }
-.simulation-volume { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.simulation-pack-controls { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 0; }
+.simulation-pack-controls select { flex: 1 1 140px; min-width: 0; max-width: 200px; }
+.simulation-volume { display: flex; flex: none; align-items: center; gap: 4px; }
 .simulation-volume .form-control { width: 72px; height: 32px; padding: 0 10px; font-size: 14px; }
 .simulation-packaging .simulation-compat { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-warning-soft); color: var(--color-warning); font-size: 12px; line-height: 1.5; white-space: pre-line; word-break: keep-all; }
 
@@ -423,3 +424,19 @@
 .simulation-compare-table tbody th { font-weight: var(--font-weight-regular); color: var(--color-text-secondary); white-space: nowrap; }
 .simulation-compare-table tr.is-diff td { background: var(--color-primary-soft); color: var(--color-text-primary); font-weight: var(--font-weight-bold); }
 @media (max-width: 640px) { .simulation-compare-pick { grid-template-columns: minmax(0, 1fr); } }
+
+/* 아이콘 정사각 버튼 (시뮬레이션 도구 · 섹션 복사) */
+.simulation-icon-btn { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm); background: var(--color-surface-muted); color: var(--color-text-secondary); cursor: pointer; transition: background var(--transition-base), color var(--transition-base); }
+.simulation-icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.simulation-icon-btn:hover { background: var(--color-background); color: var(--color-text-primary); }
+.simulation-icon-btn:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }
+.simulation-icon-btn.is-copied { color: var(--color-success); }
+.simulation-chamber-tools { position: absolute; z-index: 2; top: 50%; right: 16px; display: flex; flex-direction: column; gap: var(--space-2); transform: translateY(-50%); }
+.simulation-chamber-tools .simulation-icon-btn { width: 36px; height: 36px; background: var(--color-surface); box-shadow: var(--shadow-card); }
+#simulation-motion .icon-play { display: none; }
+#simulation-motion[aria-pressed=true] .icon-pause { display: none; }
+#simulation-motion[aria-pressed=true] .icon-play { display: block; }
+.simulation-report-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.simulation-report-head h3 { margin: 0; }
+.simulation-report-head .simulation-icon-btn { width: 24px; height: 24px; background: transparent; }
+.simulation-report-head .simulation-icon-btn svg { width: 14px; height: 14px; }

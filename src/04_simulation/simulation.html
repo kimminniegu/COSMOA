@@ -24,10 +24,6 @@
         <button class="btn btn-primary btn-sm" id="simulation-save-open" type="button">저장</button>
       </div>
     </div>
-    <div class="page-actions">
-      <button class="btn btn-surface btn-sm" id="simulation-reset" type="button">초기화</button>
-      <button class="btn btn-surface btn-sm" id="simulation-motion" type="button" aria-pressed="false">시연 일시정지</button>
-    </div>
   </header>
   <div class="simulation-top-grid">
     <section class="card simulation-preview" aria-label="실시간 샘플 미리보기">
@@ -39,6 +35,10 @@
         <div class="simulation-chamber">
           <div class="simulation-chamber-hud"><span>OPTICAL CHAMBER <small>배합 기반 시뮬레이션 · 기준 눈금</small></span><span id="simulation-lab-status">● ANALYZING</span></div>
           <div class="simulation-chamber-data"><span>FLOW INDEX <b id="simulation-lab-flow"></b></span><span>CYCLE <b id="simulation-lab-cycle"></b></span></div>
+          <div class="simulation-chamber-tools">
+            <button class="simulation-icon-btn" id="simulation-reset" type="button" aria-label="초기화" title="초기화"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10a6 6 0 1 0 2-4.5"/><path d="M4 3.5v3h3"/></svg></button>
+            <button class="simulation-icon-btn" id="simulation-motion" type="button" aria-pressed="false" aria-label="시연 일시정지" title="시연 일시정지"><svg class="icon-pause" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5v10M13 5v10"/></svg><svg class="icon-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4.5v11l9-5.5z"/></svg></button>
+          </div>
           <div class="simulation-stage"><canvas id="simulation-canvas">배합에 따른 점도와 유동성은 아래 지표에서 확인할 수 있습니다.</canvas></div></div>
         <div class="simulation-sim-foot"><span id="simulation-phase-status">실시간 배합 100% 동기화</span><span id="simulation-flow-caption"></span></div>
 
@@ -48,18 +48,10 @@
       <div class="card-header"><h2 class="card-title">배합 조절</h2></div>
       <div class="card-body">
         <div class="simulation-target" aria-label="질감·목표 점도로 맞추기">
-          <div class="simulation-target-chips" role="group" aria-label="질감으로 맞추기">
-            <span class="text-caption">질감</span>
-            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="1500">묽게</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="5000">산뜻하게</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="15000">리치하게</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="40000">되직하게</button>
-          </div>
           <form class="simulation-target-row" id="simulation-target-form">
-            <label class="text-caption" for="simulation-target-input">목표 점도</label>
-            <input class="form-control form-control-sm" id="simulation-target-input" type="number" min="1" max="100000" step="100" inputmode="numeric" placeholder="예: 3000" autocomplete="off">
+            <label class="text-caption" for="simulation-target-input">목표</label>
+            <input class="form-control form-control-sm" id="simulation-target-input" type="number" min="1" max="100000" step="any" inputmode="numeric" placeholder="예: 3000" autocomplete="off">
             <span class="text-caption">cPs</span>
-            <button type="submit" class="btn btn-soft btn-sm" id="simulation-target-apply" disabled>점증제로 맞추기</button>
           </form>
           <p class="text-caption simulation-target-hint" id="simulation-target-hint" role="status" hidden></p>
         </div>
@@ -97,7 +89,7 @@
   </div>
   <div class="card simulation-bottom-grid" aria-label="패키징 검토 및 제안 리포트">
     <section class="simulation-packaging" aria-label="용기 적합성 확인">
-      <div class="card-header"><h2 class="card-title">용기 적합성 확인</h2><label class="simulation-volume"><span class="text-caption">용량</span><input class="form-control form-control-sm" id="simulation-volume" type="number" min="1" max="2000" step="1" inputmode="numeric" placeholder="선택" autocomplete="off" aria-label="용기 용량(mL)"><span class="text-caption">mL</span></label><select class="form-control form-control-sm" id="simulation-pack" aria-label="타깃 용기"><option value="dropper">스포이드 (Dropper Pipette)</option><option value="onetouch">원터치 디스펜서 보틀 (One-Touch Dispenser)</option><option value="mist">파인 미스트 스프레이 (Fine Mist Spray)</option><option value="pump">디스펜서 펌프 (Standard Dispenser Pump)</option><option value="airless">에어리스 펌프 (Airless Pump)</option><option value="jar">크림 자 (Cream Jar)</option></select></div>
+      <div class="card-header"><h2 class="card-title">용기 적합성 확인</h2><div class="simulation-pack-controls"><label class="simulation-volume"><span class="text-caption">용량</span><input class="form-control form-control-sm" id="simulation-volume" type="number" min="1" max="2000" step="1" inputmode="numeric" placeholder="선택" autocomplete="off" aria-label="용기 용량(mL)"><span class="text-caption">mL</span></label><select class="form-control form-control-sm" id="simulation-pack" aria-label="타깃 용기"><option value="dropper">스포이드 (Dropper Pipette)</option><option value="onetouch">원터치 디스펜서 보틀 (One-Touch Dispenser)</option><option value="mist">파인 미스트 스프레이 (Fine Mist Spray)</option><option value="pump">디스펜서 펌프 (Standard Dispenser Pump)</option><option value="airless">에어리스 펌프 (Airless Pump)</option><option value="jar">크림 자 (Cream Jar)</option></select></div></div>
       <div class="card-body">
         <div id="simulation-status-card" class="simulation-status-card" role="status" aria-live="polite" data-state="optimal">
           <div class="simulation-score-ring" id="simulation-score-ring" role="img" aria-label="용기 호환도"><div><strong id="simulation-status-score"></strong><small>/ 100</small></div></div>
@@ -112,10 +104,10 @@
       </div>
     </section>
     <section class="simulation-pitch" aria-label="바이어 제안 가이드">
-      <div class="card-header"><h2 class="card-title">바이어 제안 가이드</h2><div class="tabs simulation-lang" role="group" aria-label="가이드 언어"><button type="button" class="tab is-active" data-pitch-lang="ko" aria-pressed="true">한국어</button><button type="button" class="tab" data-pitch-lang="en" aria-pressed="false">English</button></div><button id="simulation-copy-pitch-btn" class="btn btn-soft btn-sm" type="button"><span aria-live="polite">스크립트 복사</span></button></div>
+      <div class="card-header"><h2 class="card-title">바이어 제안 가이드</h2><div class="tabs simulation-lang" role="group" aria-label="가이드 언어"><button type="button" class="tab is-active" data-pitch-lang="ko" aria-pressed="true">한국어</button><button type="button" class="tab" data-pitch-lang="en" aria-pressed="false">English</button></div></div>
       <div class="card-body simulation-report-list">
-        <section class="simulation-report" aria-labelledby="simulation-rd-title"><h3 id="simulation-rd-title">R&amp;D 연구소 리포트</h3><p id="simulation-rd-report"></p><p class="simulation-report-action" id="simulation-rd-action"></p></section>
-        <section class="simulation-report" aria-labelledby="simulation-sales-title"><h3 id="simulation-sales-title">바이어 세일즈 피칭</h3><p id="simulation-pitch-script"></p></section>
+        <section class="simulation-report" aria-labelledby="simulation-rd-title"><div class="simulation-report-head"><h3 id="simulation-rd-title">R&amp;D 연구소 리포트</h3><button type="button" class="simulation-icon-btn simulation-copy-btn" data-copy-target="rd" aria-label="R&amp;D 연구소 리포트 복사" title="복사"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg></button></div><p id="simulation-rd-report"></p><p class="simulation-report-action" id="simulation-rd-action"></p></section>
+        <section class="simulation-report" aria-labelledby="simulation-sales-title"><div class="simulation-report-head"><h3 id="simulation-sales-title">바이어 세일즈 피칭</h3><button type="button" class="simulation-icon-btn simulation-copy-btn" data-copy-target="sales" aria-label="바이어 세일즈 피칭 복사" title="복사"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg></button></div><p id="simulation-pitch-script"></p></section>
       </div>
     </section>
     <section class="simulation-concept" aria-label="컨셉원료 코멘트">

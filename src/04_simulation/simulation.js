@@ -334,7 +334,6 @@ function update() {
   lastReports = generateReports(v, key, state, score, brief);
   renderPitch();
   updateCompat();
-  updateTargetHint();
 
   if (paused) drawScene();
 }
@@ -657,19 +656,18 @@ $('reset').addEventListener('click', () => {
   markDirty();
 });
 
-// 피칭 스크립트 복사 기능
-$('copy-pitch-btn').addEventListener('click', () => {
-  const text = `[${PITCH_TEXT[pitchLang].rd}]\n${$('rd-report').textContent}\n${$('rd-action').textContent}\n\n[${PITCH_TEXT[pitchLang].sales}]\n${$('pitch-script').textContent}`;
+// 섹션별 복사 (R&D 리포트 / 바이어 세일즈 피칭) — 지금 보이는 언어로 복사합니다.
+document.querySelectorAll('[data-copy-target]').forEach(button => button.addEventListener('click', () => {
+  const text = button.dataset.copyTarget === 'rd' ? `${$('rd-report').textContent}
+${$('rd-action').textContent}` : $('pitch-script').textContent;
   Promise.resolve().then(() => navigator.clipboard.writeText(text)).then(() => {
-    const btnSpan = $('copy-pitch-btn').querySelector('span');
-    btnSpan.textContent = '복사했어요';
-    setTimeout(() => { btnSpan.textContent = '스크립트 복사'; }, 2000);
-  }).catch(() => {
-    $('copy-pitch-btn').querySelector('span').textContent = '복사하지 못했어요. 다시 시도해 주세요';
-  });
-});
+    button.classList.add('is-copied');
+    button.title = '복사했어요';
+    setTimeout(() => { button.classList.remove('is-copied'); button.title = '복사'; }, 1600);
+  }).catch(() => showToast('복사하지 못했어요', '브라우저 권한을 확인한 뒤 다시 시도해 주세요.', { tone: 'notice' }));
+}));
 
-// 가이드 언어 전환 (한국어 / English) — 복사 버튼은 지금 보이는 언어로 복사합니다.
+// 가이드 언어 전환 (한국어 / English) — 복사 아이콘은 지금 보이는 언어로 복사합니다.
 document.querySelectorAll('[data-pitch-lang]').forEach(tab => tab.addEventListener('click', () => {
   pitchLang = tab.dataset.pitchLang;
   document.querySelectorAll('[data-pitch-lang]').forEach(other => {
@@ -679,7 +677,7 @@ document.querySelectorAll('[data-pitch-lang]').forEach(tab => tab.addEventListen
   renderPitch();
 }));
 
-// 질감·목표 점도로 맞추기: 다른 배합은 그대로 두고 점증제(카보머) 함량만 조절해 가장 가까운 값을 찾습니다.
+// 목표 점도로 맞추기: 다른 배합은 그대로 두고 점증제(카보머) 함량만 조절해 가장 가까운 값을 찾습니다.
 function fitCarbomer(target) {
   const a = +$('active').value, o = +$('oil').value, h = +$('hum').value;
   let best = 0, gap = Infinity;
@@ -694,25 +692,12 @@ function readTarget() {
   const t = Number($('target-input').value);
   return $('target-input').value.trim() !== '' && Number.isFinite(t) && t >= 1 && t <= 100000 ? t : null;
 }
-function updateTargetHint() {
+function showTargetHint(message) {
   const hint = $('target-hint');
-  const button = $('target-apply');
-  const t = readTarget();
-  if (t == null) { hint.hidden = true; button.disabled = true; return; }
-  const cur = computeState().v;
-  const fit = fitCarbomer(t);
-  hint.hidden = false;
-  if (Math.abs(fit.v - t) / t > 0.05) {
-    hint.textContent = `점증제만으로는 목표에 닿기 어려워요 (가능 범위 ${fmt(fit.min)}~${fmt(fit.max)} cPs). ${t < fit.min ? '오일·보습·유효 성분을 낮춰 보세요.' : '오일·보습·유효 성분을 높여 보세요.'}`;
-    button.disabled = true;
-  } else if (Math.abs(cur - t) / t < 0.03) {
-    hint.textContent = `이미 목표에 가까워요 (현재 ${fmt(cur)} cPs).`;
-    button.disabled = true;
-  } else {
-    hint.textContent = `현재 ${fmt(cur)} cPs → 점증제를 ${fit.c.toFixed(2)}%로 ${cur < t ? '올리면' : '낮추면'} 약 ${fmt(fit.v)} cPs예요.`;
-    button.disabled = false;
-  }
+  hint.textContent = message || '';
+  hint.hidden = !message;
 }
+// 값을 입력하고 Enter(또는 칸을 벗어날 때) 점증제만 조절해 가장 가까운 값으로 맞춥니다.
 function applyTarget(t) {
   const fit = fitCarbomer(t);
   stopBriefAnimation();
@@ -720,21 +705,18 @@ function applyTarget(t) {
   $('carb').value = fit.c;
   update();
   markDirty();
-  if (Math.abs(fit.v - t) / t > 0.05) {
-    showToast('점증제만으로는 목표에 닿지 않았어요', `가장 가까운 ${fmt(fit.v)} cPs로 맞췄어요. 오일·보습·유효 성분도 함께 조절해 보세요.`, { tone: 'notice', duration: 5000 });
-  }
+  showTargetHint(Math.abs(fit.v - t) / t > 0.05 ? `점증제로는 ${fmt(fit.min)}~${fmt(fit.max)} cPs까지 가능해요` : '');
 }
-$('target-input').addEventListener('input', updateTargetHint);
+$('target-input').addEventListener('input', () => showTargetHint(''));
+$('target-input').addEventListener('change', () => {
+  const t = readTarget();
+  if (t != null) applyTarget(t);
+});
 $('target-form').addEventListener('submit', event => {
   event.preventDefault();
   const t = readTarget();
-  if (t != null && !$('target-apply').disabled) applyTarget(t);
+  if (t != null) applyTarget(t);
 });
-document.querySelectorAll('[data-texture-target]').forEach(chip => chip.addEventListener('click', () => {
-  const t = Number(chip.dataset.textureTarget);
-  $('target-input').value = String(t);
-  applyTarget(t);
-}));
 
 // 용기 용량·내용물 호환 참고: 일반적인 구성 범위와 원료 특성만 안내합니다 (확정 판단 아님).
 const PACK_VOLUME = { dropper: [10, 50], onetouch: [30, 200], mist: [30, 200], pump: [30, 250], airless: [15, 100], jar: [10, 100] };
@@ -1778,7 +1760,7 @@ function drawScene(){
 }
 function tick(time){frame=0;if(paused||document.hidden){last=0;return;}const dt=last?Math.min((time-last)/1000,.05):0;last=time;const next=(phase+dt*(.9/(1+current.v/9000)+.08))%1;if(next<phase&&!geometry().hanging)spawnImpact();phase=next;stepImpact(dt);drawScene();frame=requestAnimationFrame(tick);}
 function start(){if(!paused&&!document.hidden&&!frame)frame=requestAnimationFrame(tick);}
-function motionLabel(){$('lab-status').textContent=paused?'Ⅱ PAUSED':'● ANALYZING';$('motion').textContent=paused?'시연 재생':'시연 일시정지';$('motion').setAttribute('aria-pressed',String(paused));}
+function motionLabel(){$('lab-status').textContent=paused?'Ⅱ PAUSED':'● ANALYZING';{const label=paused?'시연 재생':'시연 일시정지';$('motion').title=label;$('motion').setAttribute('aria-label',label);}$('motion').setAttribute('aria-pressed',String(paused));}
 $('motion').addEventListener('click',()=>{paused=!paused;motionLabel();if(paused){cancelAnimationFrame(frame);frame=0;last=0;}else start();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0;last=0;}else start();});
 loadPreset();motionLabel();new ResizeObserver(resize).observe(canvas);resize();start();
