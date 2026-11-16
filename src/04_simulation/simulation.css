@@ -1,6 +1,8 @@
 /* 이 페이지에 한정한 밀도/배치. 공통 파일은 수정하지 않습니다. */
 /* 여백은 원가·마진 탭 기준에 맞춥니다: 좌우는 공통값(56px), 위 24px, 카드 간격 16px, 카드 안쪽 20px. */
 .simulation-shell { --layout-page-padding-y: var(--space-6); --layout-footer-height: var(--space-6); }
+/* 본문을 가운데에 두어 좌우 여백이 같게 합니다 (공통 컨테이너는 왼쪽에 붙고 최대 너비까지만 늘어나 넓은 화면에서 오른쪽만 비었음). */
+.simulation-shell .app-main .container, .simulation-shell .app-main .app-footer { max-width: min(100%, 1760px); margin-inline: auto; }
 .simulation-page { --simulation-columns: minmax(0, 1fr) clamp(236px, 20%, 272px); --layout-card-padding: var(--space-5); --layout-section-gap: var(--layout-card-gap); min-width: 0; }
 /* 머리글도 본문과 같은 두 칸: 개발요청서 버튼은 샘플 제형 카드 오른쪽 위, 초기화·시연 버튼은 배합 조절 카드 오른쪽 위에 맞춥니다. */
 .simulation-page .page-header { display: flex; align-items: center; gap: var(--layout-card-gap); }

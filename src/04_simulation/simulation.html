@@ -19,7 +19,7 @@
       <div class="simulation-work-actions">
         <button class="btn btn-soft btn-sm simulation-brief-open" id="simulation-brief-open" type="button" data-modal-open="simulation-brief-modal"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5H6a1.5 1.5 0 0 0-1.5 1.5v12A1.5 1.5 0 0 0 6 17.5h8a1.5 1.5 0 0 0 1.5-1.5V6.5z"/><path d="M11.5 2.5v4h4M7.5 10.5h5M7.5 13.5h3"/></svg>개발요청서 분석/적용</button>
         <button class="btn btn-secondary btn-sm" id="simulation-load-open" type="button">불러오기</button>
-        <button class="btn btn-secondary btn-sm" id="simulation-compare-open" type="button">안 비교</button>
+        <button class="btn btn-secondary btn-sm" id="simulation-compare-open" type="button">비교</button>
         <button class="btn btn-secondary btn-sm" id="simulation-final-toggle" type="button" disabled title="저장하거나 불러온 모델링 저장본이 있을 때 지정할 수 있어요">최종본 지정</button>
         <button class="btn btn-primary btn-sm" id="simulation-save-open" type="button">저장</button>
       </div>
@@ -176,7 +176,7 @@
   <div class="modal modal-lg simulation-compare-modal" role="dialog" aria-modal="true" aria-labelledby="simulation-compare-title">
     <div class="modal-header">
       <div>
-        <h2 class="modal-title" id="simulation-compare-title">안 비교</h2>
+        <h2 class="modal-title" id="simulation-compare-title">비교</h2>
         <p class="text-caption" id="simulation-compare-project"></p>
       </div>
       <button type="button" class="modal-close" data-modal-close aria-label="닫기">×</button>
@@ -184,8 +184,8 @@
     <div class="modal-body">
       <p class="text-caption">현재 작업 중인 배합과 같은 프로젝트의 저장본, 또는 저장본끼리 나란히 비교해요. 저장본은 저장된 배합으로 다시 계산해서 보여 줘요.</p>
       <div class="simulation-compare-pick">
-        <div class="form-group"><label class="form-label" for="simulation-compare-a">A안</label><select class="form-control form-control-sm" id="simulation-compare-a"></select></div>
-        <div class="form-group"><label class="form-label" for="simulation-compare-b">B안</label><select class="form-control form-control-sm" id="simulation-compare-b"></select></div>
+        <div class="form-group"><label class="form-label" for="simulation-compare-a">A</label><select class="form-control form-control-sm" id="simulation-compare-a"></select></div>
+        <div class="form-group"><label class="form-label" for="simulation-compare-b">B</label><select class="form-control form-control-sm" id="simulation-compare-b"></select></div>
       </div>
       <div class="table-wrap"><table class="table simulation-compare-table" id="simulation-compare-table" aria-live="polite"></table></div>
       <p class="form-error" id="simulation-compare-error" role="alert" hidden></p>

@@ -1088,7 +1088,7 @@ $('load-submit').addEventListener('click', async () => {
 const num = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
 const str = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
 
-// ---- 안 비교: 현재 작업과 저장본(또는 저장본끼리)을 나란히 봅니다. 읽기 전용이라 DB에 쓰지 않습니다. ----
+// ---- 비교: 현재 작업과 저장본(또는 저장본끼리)을 나란히 봅니다. 읽기 전용이라 DB에 쓰지 않습니다. ----
 const stabilityOf = (water, o, c) => (water < 45 || (o >= 20 && c < 0.2) ? 'unstable' : water < 60 || (o >= 12 && c < 0.2) ? 'review' : 'stable');
 const COMPARE_ROWS = [
   ['예측 점도', s => `${fmt(s.v)} cPs`],
