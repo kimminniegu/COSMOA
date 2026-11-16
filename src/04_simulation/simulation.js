@@ -77,8 +77,8 @@ const PACKS = {
 };
 
 const STATES = {
-  excellent: { label: '최적 적합', color: 'var(--color-success)' },
-  optimal: { label: '최적 적합', color: 'var(--color-primary)' },
+  excellent: { label: '적합 범위', color: 'var(--color-success)' },
+  optimal: { label: '적합 범위', color: 'var(--color-primary)' },
   caution: { label: '주의', color: 'var(--color-warning)' },
   incompatible: { label: '부적합', color: 'var(--color-danger)' }
 };
@@ -194,10 +194,42 @@ function generateReports(v, key, state, score, brief) {
     ? '현 용기 유지 후 실제 토출량·안정성 시험 권장.'
     : names ? `${names}로 패키징 변경 권장.` : '배합 점도와 용기 사양의 동시 재검토 권장.';
   const sales = state === 'optimal'
-    ? `현재 제형의 예측 물성에 적합한 ${name}를 매칭했습니다. 사용감과 토출 성능을 함께 고려한 프리미엄 제품 구성을 제안합니다.`
-    : names ? `현재 배합의 사용감을 살리기 위해 ${names} 적용을 제안합니다. 제형에 맞는 패키징으로 제품 완성도를 높일 수 있습니다.`
-    : '목표 사용감에 맞춘 배합과 전용 용기 사양을 함께 조정하는 방향을 제안합니다.';
-  return { report, action, sales };
+    ? `현재 제형의 예측 물성 기준으로 ${name} 적용을 검토해 볼 수 있습니다. 사용감과 토출 성능을 함께 고려한 구성을 제안드리며, 연구소 실측과 시험 후 확정됩니다.`
+    : names ? `현재 배합의 사용감을 살리기 위해 ${names} 적용을 검토해 볼 수 있습니다. 용기 적합 여부는 연구소 실측과 시험 후 확정됩니다.`
+    : '목표 사용감에 맞춘 배합과 전용 용기 사양을 함께 조정하는 방향을 검토해 볼 수 있습니다.';
+  // 영문본: 해외 바이어·연구소 해외 담당에게 바로 붙여 넣을 수 있는 같은 내용
+  const en = candidate => (PACKS[candidate].name.match(/\((.+)\)/) || [])[1] || PACKS[candidate].name;
+  const nameEn = en(key);
+  const namesEn = (brief ? brief.recs : getEligiblePacks(v)).filter(candidate => candidate !== key).map(en).join(' or ');
+  const riskEn = state === 'optimal' ? 'predicted viscosity is within the suitable range'
+    : v < PACKS[key].min ? 'low viscosity may cause leakage or splashing' : 'poor suction, dispensing resistance or nozzle clogging may occur';
+  const enReport = `Viscosity ${fmt(v)} cPs · ${nameEn}: ${riskEn} (compatibility score ${score}).`;
+  const enAction = state === 'optimal'
+    ? 'Keep the current container and confirm dispensing volume and stability through lab testing.'
+    : namesEn ? `Consider switching the packaging to ${namesEn}.` : 'Review the formula viscosity and the container specification together.';
+  const enSales = state === 'optimal'
+    ? `Based on the predicted properties of the current formula, ${nameEn} can be considered. We propose a configuration that balances skin feel and dispensing performance; final suitability will be confirmed through lab measurement and testing.`
+    : namesEn ? `To preserve the intended skin feel, ${namesEn} can be considered. Container suitability will be confirmed through lab measurement and testing.`
+    : 'We suggest reviewing the formula and a dedicated container specification together to match the target skin feel.';
+  return { report, action, sales, en: { report: enReport, action: enAction, sales: enSales } };
+}
+
+// 바이어 제안 가이드 표시 언어 (ko / en)
+let pitchLang = 'ko';
+let lastReports = null;
+const PITCH_TEXT = {
+  ko: { rd: 'R&D 연구소 리포트', sales: '바이어 세일즈 피칭' },
+  en: { rd: 'R&D Lab Report', sales: 'Buyer Sales Pitch' }
+};
+function renderPitch() {
+  if (!lastReports) return;
+  const r = pitchLang === 'en' ? lastReports.en : lastReports;
+  $('rd-report').textContent = r.report;
+  $('rd-action').textContent = r.action;
+  $('pitch-script').textContent = r.sales;
+  $('rd-title').textContent = PITCH_TEXT[pitchLang].rd;
+  $('sales-title').textContent = PITCH_TEXT[pitchLang].sales;
+  $('rd-report').lang = $('rd-action').lang = $('pitch-script').lang = pitchLang;
 }
 
 // 현재 슬라이더·용기·의뢰서 스펙으로 계산한 상태 (애니메이션 중간값이 아닌 최종값). 화면 표시와 저장이 함께 씁니다.
@@ -252,7 +284,8 @@ function update() {
   $('carb-out').textContent = c.toFixed(2) + '%';
   $('oil-out').textContent = o.toFixed(0) + '%';$('hum-out').textContent = h.toFixed(0) + '%';
 
-  $('viscosity').textContent = fmt(v);$('flow').textContent = flow + ' / 100';
+  $('viscosity').textContent = fmt(v);
+  $('flow').textContent = flow + ' / 100';
   $('flow-gauge').value = flow;
   const parts = { active: a, carb: c, oil: o, hum: h, water };
   Object.entries(parts).forEach(([id, pct]) => {
@@ -298,10 +331,10 @@ function update() {
   emptyMsg.hidden = eligible.length > 0;
 
   // 기술 영업 피칭 가이드 업데이트
-  const reports = generateReports(v, key, state, score, brief);
-  $('rd-report').textContent = reports.report;
-  $('rd-action').textContent = reports.action;
-  $('pitch-script').textContent = reports.sales;
+  lastReports = generateReports(v, key, state, score, brief);
+  renderPitch();
+  updateCompat();
+  updateTargetHint();
 
   if (paused) drawScene();
 }
@@ -626,7 +659,7 @@ $('reset').addEventListener('click', () => {
 
 // 피칭 스크립트 복사 기능
 $('copy-pitch-btn').addEventListener('click', () => {
-  const text = `[R&D 연구소 리포트]\n${$('rd-report').textContent}\n${$('rd-action').textContent}\n\n[바이어 세일즈 피칭]\n${$('pitch-script').textContent}`;
+  const text = `[${PITCH_TEXT[pitchLang].rd}]\n${$('rd-report').textContent}\n${$('rd-action').textContent}\n\n[${PITCH_TEXT[pitchLang].sales}]\n${$('pitch-script').textContent}`;
   Promise.resolve().then(() => navigator.clipboard.writeText(text)).then(() => {
     const btnSpan = $('copy-pitch-btn').querySelector('span');
     btnSpan.textContent = '복사했어요';
@@ -635,6 +668,96 @@ $('copy-pitch-btn').addEventListener('click', () => {
     $('copy-pitch-btn').querySelector('span').textContent = '복사하지 못했어요. 다시 시도해 주세요';
   });
 });
+
+// 가이드 언어 전환 (한국어 / English) — 복사 버튼은 지금 보이는 언어로 복사합니다.
+document.querySelectorAll('[data-pitch-lang]').forEach(tab => tab.addEventListener('click', () => {
+  pitchLang = tab.dataset.pitchLang;
+  document.querySelectorAll('[data-pitch-lang]').forEach(other => {
+    other.classList.toggle('is-active', other === tab);
+    other.setAttribute('aria-pressed', String(other === tab));
+  });
+  renderPitch();
+}));
+
+// 질감·목표 점도로 맞추기: 다른 배합은 그대로 두고 점증제(카보머) 함량만 조절해 가장 가까운 값을 찾습니다.
+function fitCarbomer(target) {
+  const a = +$('active').value, o = +$('oil').value, h = +$('hum').value;
+  let best = 0, gap = Infinity;
+  for (let i = 0; i <= 100; i++) {
+    const c = i / 100;
+    const d = Math.abs(calculateViscosity(a, c, o, h) - target);
+    if (d < gap) { gap = d; best = c; }
+  }
+  return { c: best, v: calculateViscosity(a, best, o, h), min: calculateViscosity(a, 0, o, h), max: calculateViscosity(a, 1, o, h) };
+}
+function readTarget() {
+  const t = Number($('target-input').value);
+  return $('target-input').value.trim() !== '' && Number.isFinite(t) && t >= 1 && t <= 100000 ? t : null;
+}
+function updateTargetHint() {
+  const hint = $('target-hint');
+  const button = $('target-apply');
+  const t = readTarget();
+  if (t == null) { hint.hidden = true; button.disabled = true; return; }
+  const cur = computeState().v;
+  const fit = fitCarbomer(t);
+  hint.hidden = false;
+  if (Math.abs(fit.v - t) / t > 0.05) {
+    hint.textContent = `점증제만으로는 목표에 닿기 어려워요 (가능 범위 ${fmt(fit.min)}~${fmt(fit.max)} cPs). ${t < fit.min ? '오일·보습·유효 성분을 낮춰 보세요.' : '오일·보습·유효 성분을 높여 보세요.'}`;
+    button.disabled = true;
+  } else if (Math.abs(cur - t) / t < 0.03) {
+    hint.textContent = `이미 목표에 가까워요 (현재 ${fmt(cur)} cPs).`;
+    button.disabled = true;
+  } else {
+    hint.textContent = `현재 ${fmt(cur)} cPs → 점증제를 ${fit.c.toFixed(2)}%로 ${cur < t ? '올리면' : '낮추면'} 약 ${fmt(fit.v)} cPs예요.`;
+    button.disabled = false;
+  }
+}
+function applyTarget(t) {
+  const fit = fitCarbomer(t);
+  stopBriefAnimation();
+  briefLocked = false;
+  $('carb').value = fit.c;
+  update();
+  markDirty();
+  if (Math.abs(fit.v - t) / t > 0.05) {
+    showToast('점증제만으로는 목표에 닿지 않았어요', `가장 가까운 ${fmt(fit.v)} cPs로 맞췄어요. 오일·보습·유효 성분도 함께 조절해 보세요.`, { tone: 'notice', duration: 5000 });
+  }
+}
+$('target-input').addEventListener('input', updateTargetHint);
+$('target-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const t = readTarget();
+  if (t != null && !$('target-apply').disabled) applyTarget(t);
+});
+document.querySelectorAll('[data-texture-target]').forEach(chip => chip.addEventListener('click', () => {
+  const t = Number(chip.dataset.textureTarget);
+  $('target-input').value = String(t);
+  applyTarget(t);
+}));
+
+// 용기 용량·내용물 호환 참고: 일반적인 구성 범위와 원료 특성만 안내합니다 (확정 판단 아님).
+const PACK_VOLUME = { dropper: [10, 50], onetouch: [30, 200], mist: [30, 200], pump: [30, 250], airless: [15, 100], jar: [10, 100] };
+const SENSITIVE_RE = /레티놀|retinol|아스코빅|ascorbic|비타민\s*c|vitamin\s*c/i;
+const ALCOHOL_RE = /에탄올|알코올|ethanol|alcohol/i;
+function updateCompat() {
+  const notes = [];
+  const key = $('pack').value;
+  const volume = Number($('volume').value);
+  const range = PACK_VOLUME[key];
+  if ($('volume').value.trim() !== '' && volume > 0 && range && (volume < range[0] || volume > range[1])) {
+    notes.push(`${PACKS[key].name.split(' (')[0]}는 보통 ${range[0]}~${range[1]}mL 구성이 많아요. ${volume}mL는 용기 사양을 따로 확인해 주세요.`);
+  }
+  const names = concepts.map(item => item.name);
+  const sensitive = names.find(name => SENSITIVE_RE.test(name));
+  if (sensitive && key !== 'airless') notes.push(`${sensitive}은(는) 산화·광에 민감해 차광 또는 에어리스 용기 확인이 필요해요.`);
+  if (names.some(name => ALCOHOL_RE.test(name))) notes.push('알코올 계열 원료는 펌프·노즐 패킹 소재 호환 확인이 필요해요.');
+  if (+$('oil').value >= 15) notes.push('유상 성분이 많아 PET·PS 등 용기 소재와의 호환 시험이 필요해요.');
+  const node = $('compat');
+  node.textContent = notes.join('\n');
+  node.hidden = notes.length === 0;
+}
+$('volume').addEventListener('input', () => { updateCompat(); markDirty(); });
 
 /* ==========================================================================
    프로젝트 연결 · 저장 · 불러오기 · 최종본 (simulation.md 9장)
@@ -682,7 +805,7 @@ function setBusy(button, busy, label) {
     button.textContent = button.dataset.label;
   }
 }
-document.body.append($('save-modal'), $('load-modal'), $('concept-modal'));
+document.body.append($('save-modal'), $('load-modal'), $('compare-modal'), $('concept-modal'));
 
 function markDirty() {
   work.dirty = true;
@@ -713,6 +836,7 @@ function resetWork() {
   loadPreset();
   concepts = [];
   overallComment = '';
+  $('volume').value = '';
   Object.assign(work, { linked: null, version: null, final: null, requisition: null, method: 'manual', dirty: false });
   renderConcepts();
   renderStatus();
@@ -772,6 +896,7 @@ function buildPayload(project) {
       preset: $('preset').value,
       formula: { active: s.a, carbomer: s.c, oil: s.o, humectant: s.h },
       package: s.key,
+      package_volume_ml: Number($('volume').value) > 0 ? Math.round(Number($('volume').value)) : null,
       target_spec: brief ? {
         title: brief.title, code: brief.code, kind: brief.kind, applied: briefLocked,
         formula: { active: brief.a, carbomer: brief.c, oil: brief.o, humectant: brief.h },
@@ -981,6 +1106,120 @@ $('load-submit').addEventListener('click', async () => {
 const num = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
 const str = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
 
+// ---- 안 비교: 현재 작업과 저장본(또는 저장본끼리)을 나란히 봅니다. 읽기 전용이라 DB에 쓰지 않습니다. ----
+const stabilityOf = (water, o, c) => (water < 45 || (o >= 20 && c < 0.2) ? 'unstable' : water < 60 || (o >= 12 && c < 0.2) ? 'review' : 'stable');
+const COMPARE_ROWS = [
+  ['예측 점도', s => `${fmt(s.v)} cPs`],
+  ['예상 질감', s => s.texture],
+  ['상대 유동성', s => `${s.flow} / 100`],
+  ['유효 활성 성분', s => `${s.a}%`],
+  ['점증제 (카보머)', s => `${s.c}%`],
+  ['유상 오일 성분', s => `${s.o}%`],
+  ['수분 유지 성분', s => `${s.h}%`],
+  ['정제수', s => `${Number(s.water.toFixed(2))}%`],
+  ['용기', s => PACKS[s.key].name.split(' (')[0]],
+  ['용기 호환도', s => `${s.score}점 · ${s.label}`],
+  ['포뮬러 안정성', s => ({ stable: '안정', review: '검토', unstable: '주의' })[s.stability]],
+  ['컨셉원료', s => (s.concepts.length ? s.concepts.map(item => item.name).join(', ') : '없음')]
+];
+function snapshotFromState(s) {
+  return { a: s.a, c: s.c, o: s.o, h: s.h, key: s.key, v: s.v, score: s.score, label: s.label, flow: s.flow, texture: s.texture, stability: s.stability, water: s.water, concepts };
+}
+function snapshotFromPayload(payload) {
+  const inputs = payload.inputs || {}, outputs = payload.outputs || {}, f = inputs.formula || {};
+  const a = num(f.active, 0), c = num(f.carbomer, 0), o = num(f.oil, 0), h = num(f.humectant, 0);
+  const key = PACKS[inputs.package] ? inputs.package : 'dropper';
+  const stated = outputs.viscosity_basis === 'stated' && typeof outputs.predicted_viscosity_cps === 'number';
+  const v = stated ? outputs.predicted_viscosity_cps : calculateViscosity(a, c, o, h);
+  const state = evaluatePackage(v, key);
+  const score = calculateScore(v, key, state);
+  const tone = state === 'optimal' && score >= 95 ? 'excellent' : state;
+  const water = Math.max(0, 100 - a - c - o - h);
+  return {
+    a, c, o, h, key, v, score, label: STATES[tone].label, flow: Math.round(100 / (1 + v / 6500)), water,
+    texture: stated && typeof outputs.texture === 'string' ? outputs.texture : textureLabel(v),
+    stability: stabilityOf(water, o, c), concepts: sanitizeConcepts(inputs.concept_comments)
+  };
+}
+const compareCache = new Map();
+let compareItems = [];
+let compareRender = 0;
+let compareOpenRequest = 0;
+async function compareSnapshot(value, project) {
+  if (value === 'current') { settleAnimation(); return { title: '현재 작업 중', snap: snapshotFromState(computeState()) }; }
+  const item = compareItems.find(entry => String(entry.id) === value);
+  const title = item ? `v${item.version_no} ${item.title || '이름 없음'}` : '저장본';
+  if (!compareCache.has(value)) {
+    const r = await window.Common.api('GET', `/api/versions/${value}`);
+    if (!r.ok) throw new Error(apiMessage(r));
+    const version = r.data.version;
+    if (version.project_id !== project.id || version.tab !== 'simulation' || !version.payload || typeof version.payload.inputs !== 'object') {
+      throw new Error('이 저장본은 비교할 수 없는 형식이에요.');
+    }
+    compareCache.set(value, snapshotFromPayload(version.payload));
+  }
+  return { title, snap: compareCache.get(value) };
+}
+async function renderCompare() {
+  const project = currentProject();
+  const table = $('compare-table');
+  const request = ++compareRender;
+  setError('compare-error', '');
+  if (!project || $('compare-a').value === '' || $('compare-b').value === '') { table.replaceChildren(); return; }
+  table.replaceChildren(el('caption', 'text-caption', '불러오는 중이에요'));
+  try {
+    const [a, b] = await Promise.all([compareSnapshot($('compare-a').value, project), compareSnapshot($('compare-b').value, project)]);
+    if (request !== compareRender) return;
+    const head = el('tr');
+    head.append(el('th', null, '항목'), el('th', null, `A · ${a.title}`), el('th', null, `B · ${b.title}`));
+    const rows = COMPARE_ROWS.map(([label, read]) => {
+      const left = read(a.snap), right = read(b.snap);
+      const tr = el('tr', left === right ? '' : 'is-diff');
+      tr.append(el('th', null, label), el('td', null, left), el('td', null, right));
+      return tr;
+    });
+    const thead = el('thead'), tbody = el('tbody');
+    thead.append(head);
+    tbody.append(...rows);
+    table.replaceChildren(thead, tbody);
+  } catch (error) {
+    if (request !== compareRender) return;
+    table.replaceChildren();
+    setError('compare-error', error.message || '비교하지 못했어요. 잠시 후 다시 시도해 주세요.');
+  }
+}
+function fillCompareSelects(defaultB) {
+  const options = [['current', '현재 작업 중'], ...compareItems.map(item => [String(item.id), `v${item.version_no} · ${item.title || '이름 없음'}${item.is_final ? ' ★' : ''}`])];
+  ['a', 'b'].forEach(side => $(`compare-${side}`).replaceChildren(...options.map(([value, text]) => Object.assign(document.createElement('option'), { value, textContent: text }))));
+  $('compare-a').value = 'current';
+  $('compare-b').value = defaultB;
+}
+$('compare-open').addEventListener('click', async () => {
+  const project = currentProject();
+  const request = ++compareOpenRequest;
+  compareItems = [];
+  fillCompareSelects('current');
+  $('compare-table').replaceChildren();
+  setError('compare-error', '');
+  window.Common.openModal('simulation-compare-modal');
+  if (!project) {
+    $('compare-project').textContent = '';
+    setError('compare-error', '먼저 화면 위 프로젝트 바에서 고객사와 프로젝트를 선택해 주세요.');
+    return;
+  }
+  $('compare-project').textContent = projectLabel(project);
+  const r = await window.Common.api('GET', `/api/projects/${project.id}/tabs/simulation/versions?limit=50`);
+  if (request !== compareOpenRequest) return;
+  if (!r.ok) { setError('compare-error', apiMessage(r)); return; }
+  compareItems = r.data.items;
+  if (!compareItems.length) { setError('compare-error', '비교할 저장본이 없어요. 배합을 저장하면 여기서 나란히 볼 수 있어요.'); return; }
+  const preferred = compareItems.find(item => item.is_final) || compareItems[0];
+  fillCompareSelects(String(preferred.id));
+  renderCompare();
+});
+$('compare-a').addEventListener('change', renderCompare);
+$('compare-b').addEventListener('change', renderCompare);
+
 // (1) 모델링 저장본 복원: 저장된 inputs 로 다시 계산하고, 저장 당시 결과와 다르면 함께 안내합니다.
 function restoreModeling(version, project) {
   const { context = {}, inputs, outputs = {} } = version.payload;
@@ -998,6 +1237,8 @@ function restoreModeling(version, project) {
   const f = inputs.formula || {};
   SLIDERS.forEach((id, i) => { $(id).value = num([f.active, f.carbomer, f.oil, f.humectant][i], +$(id).value); });
   if (PACKS[inputs.package]) $('pack').value = inputs.package;
+  const savedVolume = num(inputs.package_volume_ml, null);
+  $('volume').value = savedVolume == null ? '' : String(savedVolume);
   concepts = sanitizeConcepts(inputs.concept_comments);
   overallComment = str(inputs.comment, 3000);
   const req = context.source_requisition;
@@ -1165,6 +1406,7 @@ function renderConcepts() {
     button.className = `btn ${added ? 'btn-soft' : 'btn-secondary'} btn-sm`;
   });
   $('concept-count').textContent = concepts.length ? `${concepts.length}개` : '';
+  updateCompat();
   $('concept-list').replaceChildren(...(concepts.length ? concepts.map((item, index) => {
     const li = el('li', 'simulation-concept-item');
     li.dataset.conceptName = item.name;

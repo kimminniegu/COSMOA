@@ -393,3 +393,33 @@
   .simulation-concept-search { flex-wrap: wrap; }
   .simulation-concept-search .btn { flex: 1 1 100%; }
 }
+
+/* 질감·목표 점도로 맞추기 */
+.simulation-target { flex: 0 0 auto; display: grid; gap: var(--space-2); }
+.simulation-target-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.simulation-target-chips .btn { height: 28px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; }
+.simulation-target-row { display: flex; align-items: center; gap: var(--space-2); }
+.simulation-target-row .form-control { flex: none; width: 96px; height: 32px; padding: 0 12px; font-size: 14px; }
+.simulation-target-row .btn { flex: none; height: 32px; margin-left: auto; padding: 0 12px; font-size: 13px; }
+.simulation-target-hint { word-break: keep-all; }
+
+/* 용기 용량 · 내용물 호환 참고 */
+.simulation-packaging .card-header { flex-wrap: wrap; gap: var(--space-2); }
+.simulation-volume { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.simulation-volume .form-control { width: 72px; height: 32px; padding: 0 10px; font-size: 14px; }
+.simulation-packaging .simulation-compat { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-warning-soft); color: var(--color-warning); font-size: 12px; line-height: 1.5; white-space: pre-line; word-break: keep-all; }
+
+/* 바이어 제안 가이드 언어 전환 */
+.simulation-pitch .card-header { flex-wrap: wrap; gap: var(--space-2); }
+.simulation-lang { margin-left: auto; }
+.simulation-lang .tab { height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* 안 비교 모달 */
+.simulation-compare-modal .modal-body { display: grid; gap: var(--space-3); }
+.simulation-compare-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.simulation-compare-pick .form-group { margin: 0; }
+.simulation-compare-table { width: 100%; }
+.simulation-compare-table th, .simulation-compare-table td { font-size: 13px; vertical-align: top; word-break: keep-all; }
+.simulation-compare-table tbody th { font-weight: var(--font-weight-regular); color: var(--color-text-secondary); white-space: nowrap; }
+.simulation-compare-table tr.is-diff td { background: var(--color-primary-soft); color: var(--color-text-primary); font-weight: var(--font-weight-bold); }
+@media (max-width: 640px) { .simulation-compare-pick { grid-template-columns: minmax(0, 1fr); } }

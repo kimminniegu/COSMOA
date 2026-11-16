@@ -19,6 +19,7 @@
       <div class="simulation-work-actions">
         <button class="btn btn-soft btn-sm simulation-brief-open" id="simulation-brief-open" type="button" data-modal-open="simulation-brief-modal"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5H6a1.5 1.5 0 0 0-1.5 1.5v12A1.5 1.5 0 0 0 6 17.5h8a1.5 1.5 0 0 0 1.5-1.5V6.5z"/><path d="M11.5 2.5v4h4M7.5 10.5h5M7.5 13.5h3"/></svg>개발요청서 분석/적용</button>
         <button class="btn btn-secondary btn-sm" id="simulation-load-open" type="button">불러오기</button>
+        <button class="btn btn-secondary btn-sm" id="simulation-compare-open" type="button">안 비교</button>
         <button class="btn btn-secondary btn-sm" id="simulation-final-toggle" type="button" disabled title="저장하거나 불러온 모델링 저장본이 있을 때 지정할 수 있어요">최종본 지정</button>
         <button class="btn btn-primary btn-sm" id="simulation-save-open" type="button">저장</button>
       </div>
@@ -46,13 +47,28 @@
     <section class="card simulation-controls" aria-label="배합 조절">
       <div class="card-header"><h2 class="card-title">배합 조절</h2></div>
       <div class="card-body">
-
+        <div class="simulation-target" aria-label="질감·목표 점도로 맞추기">
+          <div class="simulation-target-chips" role="group" aria-label="질감으로 맞추기">
+            <span class="text-caption">질감</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="1500">묽게</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="5000">산뜻하게</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="15000">리치하게</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-texture-target="40000">되직하게</button>
+          </div>
+          <form class="simulation-target-row" id="simulation-target-form">
+            <label class="text-caption" for="simulation-target-input">목표 점도</label>
+            <input class="form-control form-control-sm" id="simulation-target-input" type="number" min="1" max="100000" step="100" inputmode="numeric" placeholder="예: 3000" autocomplete="off">
+            <span class="text-caption">cPs</span>
+            <button type="submit" class="btn btn-soft btn-sm" id="simulation-target-apply" disabled>점증제로 맞추기</button>
+          </form>
+          <p class="text-caption simulation-target-hint" id="simulation-target-hint" role="status" hidden></p>
+        </div>
         <div class="simulation-sliders">
           {% for id, label, min, max, step, value, description in [
-            ('active', '유효 활성 성분', 0, 15, 0.5, 3, '제품의 주요 목적에 맞춰 넣는 성분군입니다. 예: 나이아신아마이드, 아데노신, 펩타이드류. 원료마다 적정 함량과 안정성 조건은 다릅니다.'),
-            ('carb', '점증제 (카보머)', 0, 1, 0.01, 0.35, '점도와 겔 구조를 만드는 성분군입니다. 이 모델은 카보머를 기준으로 계산합니다. 다른 점증제 예: 잔탄검, 하이드록시에틸셀룰로오스. 동일 함량으로 대체되는 것은 아닙니다.'),
-            ('oil', '유상 오일 성분', 0, 45, 1, 8, '유상에 배합해 발림성과 유분감을 조절하는 성분군입니다. 예: 스쿠알란, 호호바씨오일, 카프릴릭/카프릭트라이글리세라이드.'),
-            ('hum', '수분 유지 성분', 0, 25, 1, 10, '수분을 끌어당기고 유지하는 데 쓰는 보습 성분군입니다. 예: 글리세린, 부틸렌글라이콜, 프로판다이올. 일부 성분은 용매 역할도 합니다.')
+            ('active', '기능 성분 (유효 활성)', 0, 15, 0.5, 3, '제품의 주요 목적에 맞춰 넣는 성분군입니다. 예: 나이아신아마이드, 아데노신, 펩타이드류. 원료마다 적정 함량과 안정성 조건은 다릅니다.'),
+            ('carb', '되직함 (점증제·카보머)', 0, 1, 0.01, 0.35, '점도와 겔 구조를 만드는 성분군입니다. 이 모델은 카보머를 기준으로 계산합니다. 다른 점증제 예: 잔탄검, 하이드록시에틸셀룰로오스. 동일 함량으로 대체되는 것은 아닙니다.'),
+            ('oil', '유분감 (유상 오일)', 0, 45, 1, 8, '유상에 배합해 발림성과 유분감을 조절하는 성분군입니다. 예: 스쿠알란, 호호바씨오일, 카프릴릭/카프릭트라이글리세라이드.'),
+            ('hum', '촉촉함 (수분 유지)', 0, 25, 1, 10, '수분을 끌어당기고 유지하는 데 쓰는 보습 성분군입니다. 예: 글리세린, 부틸렌글라이콜, 프로판다이올. 일부 성분은 용매 역할도 합니다.')
           ] %}
           <div class="simulation-slider">
             <div class="simulation-slider-heading"><div><label for="simulation-{{ id }}">{{ label }}</label>{{ help(id, label, description, true) }}</div><output id="simulation-{{ id }}-out" for="simulation-{{ id }}"></output></div>
@@ -81,13 +97,14 @@
   </div>
   <div class="card simulation-bottom-grid" aria-label="패키징 검토 및 제안 리포트">
     <section class="simulation-packaging" aria-label="용기 적합성 확인">
-      <div class="card-header"><h2 class="card-title">용기 적합성 확인</h2><select class="form-control form-control-sm" id="simulation-pack" aria-label="타깃 용기"><option value="dropper">스포이드 (Dropper Pipette)</option><option value="onetouch">원터치 디스펜서 보틀 (One-Touch Dispenser)</option><option value="mist">파인 미스트 스프레이 (Fine Mist Spray)</option><option value="pump">디스펜서 펌프 (Standard Dispenser Pump)</option><option value="airless">에어리스 펌프 (Airless Pump)</option><option value="jar">크림 자 (Cream Jar)</option></select></div>
+      <div class="card-header"><h2 class="card-title">용기 적합성 확인</h2><label class="simulation-volume"><span class="text-caption">용량</span><input class="form-control form-control-sm" id="simulation-volume" type="number" min="1" max="2000" step="1" inputmode="numeric" placeholder="선택" autocomplete="off" aria-label="용기 용량(mL)"><span class="text-caption">mL</span></label><select class="form-control form-control-sm" id="simulation-pack" aria-label="타깃 용기"><option value="dropper">스포이드 (Dropper Pipette)</option><option value="onetouch">원터치 디스펜서 보틀 (One-Touch Dispenser)</option><option value="mist">파인 미스트 스프레이 (Fine Mist Spray)</option><option value="pump">디스펜서 펌프 (Standard Dispenser Pump)</option><option value="airless">에어리스 펌프 (Airless Pump)</option><option value="jar">크림 자 (Cream Jar)</option></select></div>
       <div class="card-body">
         <div id="simulation-status-card" class="simulation-status-card" role="status" aria-live="polite" data-state="optimal">
           <div class="simulation-score-ring" id="simulation-score-ring" role="img" aria-label="용기 호환도"><div><strong id="simulation-status-score"></strong><small>/ 100</small></div></div>
           <div class="simulation-diagnosis">
             <div class="simulation-diagnosis-heading"><span>패키징 진단</span><span class="simulation-state-chip"><span id="simulation-status-icon" aria-hidden="true">✓</span><strong id="simulation-status-label">적합</strong></span></div>
             <p id="simulation-diagnosis"></p>
+            <p class="simulation-compat" id="simulation-compat" hidden></p>
             <div class="simulation-recommendation"><span class="text-caption">대체 권장 용기</span><div id="simulation-recommendations" class="simulation-recommendations"></div></div>
           </div>
         </div>
@@ -95,7 +112,7 @@
       </div>
     </section>
     <section class="simulation-pitch" aria-label="바이어 제안 가이드">
-      <div class="card-header"><h2 class="card-title">바이어 제안 가이드</h2><button id="simulation-copy-pitch-btn" class="btn btn-soft btn-sm" type="button"><span aria-live="polite">스크립트 복사</span></button></div>
+      <div class="card-header"><h2 class="card-title">바이어 제안 가이드</h2><div class="tabs simulation-lang" role="group" aria-label="가이드 언어"><button type="button" class="tab is-active" data-pitch-lang="ko" aria-pressed="true">한국어</button><button type="button" class="tab" data-pitch-lang="en" aria-pressed="false">English</button></div><button id="simulation-copy-pitch-btn" class="btn btn-soft btn-sm" type="button"><span aria-live="polite">스크립트 복사</span></button></div>
       <div class="card-body simulation-report-list">
         <section class="simulation-report" aria-labelledby="simulation-rd-title"><h3 id="simulation-rd-title">R&amp;D 연구소 리포트</h3><p id="simulation-rd-report"></p><p class="simulation-report-action" id="simulation-rd-action"></p></section>
         <section class="simulation-report" aria-labelledby="simulation-sales-title"><h3 id="simulation-sales-title">바이어 세일즈 피칭</h3><p id="simulation-pitch-script"></p></section>
@@ -160,6 +177,29 @@
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" data-modal-close>취소</button>
       <button type="button" class="btn btn-primary" id="simulation-load-submit" disabled>불러오기</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="simulation-compare-modal">
+  <div class="modal modal-lg simulation-compare-modal" role="dialog" aria-modal="true" aria-labelledby="simulation-compare-title">
+    <div class="modal-header">
+      <div>
+        <h2 class="modal-title" id="simulation-compare-title">안 비교</h2>
+        <p class="text-caption" id="simulation-compare-project"></p>
+      </div>
+      <button type="button" class="modal-close" data-modal-close aria-label="닫기">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-caption">현재 작업 중인 배합과 같은 프로젝트의 저장본, 또는 저장본끼리 나란히 비교해요. 저장본은 저장된 배합으로 다시 계산해서 보여 줘요.</p>
+      <div class="simulation-compare-pick">
+        <div class="form-group"><label class="form-label" for="simulation-compare-a">A안</label><select class="form-control form-control-sm" id="simulation-compare-a"></select></div>
+        <div class="form-group"><label class="form-label" for="simulation-compare-b">B안</label><select class="form-control form-control-sm" id="simulation-compare-b"></select></div>
+      </div>
+      <div class="table-wrap"><table class="table simulation-compare-table" id="simulation-compare-table" aria-live="polite"></table></div>
+      <p class="form-error" id="simulation-compare-error" role="alert" hidden></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-modal-close>닫기</button>
     </div>
   </div>
 </div>
