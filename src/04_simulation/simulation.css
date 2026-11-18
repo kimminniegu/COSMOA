@@ -440,8 +440,11 @@
 .simulation-icon-btn:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }
 .simulation-icon-btn.is-copied { color: var(--color-success); }
 .simulation-chamber-tools { position: absolute; z-index: 2; top: 12px; right: 12px; display: flex; flex-direction: column; gap: var(--space-2); }
-.simulation-chamber-hud { right: 64px; }
-.simulation-chamber-tools .simulation-icon-btn { width: 36px; height: 36px; background: var(--color-surface); box-shadow: var(--shadow-card); }
+.simulation-chamber-hud { right: 58px; }
+/* 앵글(시뮬레이션 화면)을 가리지 않도록 배경·그림자 없이 아이콘만 두고, 올렸을 때만 옅게 표시 */
+.simulation-chamber-tools { top: 20px; right: 22px; gap: 4px; }
+.simulation-chamber-tools .simulation-icon-btn { width: 26px; height: 26px; background: transparent; box-shadow: none; color: #64748b; }
+.simulation-chamber-tools .simulation-icon-btn:hover, .simulation-chamber-tools .simulation-icon-btn:focus-visible { background: rgba(255, 255, 255, .7); color: var(--color-text-primary); }
 #simulation-motion .icon-play { display: none; }
 #simulation-motion[aria-pressed=true] .icon-pause { display: none; }
 #simulation-motion[aria-pressed=true] .icon-play { display: block; }
