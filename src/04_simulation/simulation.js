@@ -1396,6 +1396,30 @@ function infoBlock(info, source) {
   if (info.caution) block.append(el('p', 'simulation-concept-caution', `주의 · ${info.caution}`));
   return block;
 }
+// 원료의 [규제 확인]: 인허가 탭을 새 탭으로 열고, 같은 사이트라서 열린 창의 성분명 칸에 원료명을 채워 줍니다.
+// 인허가 탭 코드는 건드리지 않고 그 화면의 입력칸(id)만 읽어 채우며, 칸을 못 찾으면 탭만 열린 채로 둡니다.
+// 입력 이벤트를 보내므로 인허가 탭의 후보 목록이 그대로 뜨고, 후보 선택·시장 선택·검색은 사용자가 합니다.
+function openRegulatory(name, event) {
+  const keyword = String(name || '').replace(/\s*[(（].*$/, '').trim() || String(name || '').trim();
+  const win = window.open('/regulatory', '_blank');
+  if (!win) return;            // 팝업이 막히면 링크의 기본 동작(새 탭 열기)에 맡깁니다.
+  event?.preventDefault();
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries += 1;
+    try {
+      const input = win.document.getElementById('regulatory-search-ingredient');
+      if (input && win.document.readyState !== 'loading') {
+        clearInterval(timer);
+        input.value = keyword;
+        input.dispatchEvent(new win.Event('input', { bubbles: true }));
+        input.focus();
+        return;
+      }
+    } catch (error) { clearInterval(timer); return; }
+    if (tries > 50 || win.closed) clearInterval(timer);
+  }, 150);
+}
 function renderConcepts() {
   // 자주 쓰는 원료 칩: 이미 추가한 원료는 눌린 상태로 표시
   $('concept-presets').querySelectorAll('button').forEach(button => {
@@ -1417,8 +1441,8 @@ function renderConcepts() {
     const regLink = el('a', 'btn btn-secondary btn-sm', '규제 확인');
     regLink.href = '/regulatory';
     regLink.target = '_blank';
-    regLink.rel = 'noopener';
     regLink.title = '인허가 탭에서 국가별 규제 확인 (새 탭)';
+    regLink.addEventListener('click', event => openRegulatory(item.name, event));
     head.append(name, el('span', 'badge', SOURCE_LABELS[item.source]), regLink, remove);
     li.append(head);
     if (item.info) li.append(infoBlock(item.info, item.source));
@@ -1479,11 +1503,11 @@ function renderConceptSummary() {
       });
     });
     // 원료 옆 바로가기: 영업이 이 원료의 국가별 규제를 바로 확인하러 갈 수 있게 인허가 탭을 새 탭으로 엽니다
-    // (작업 중인 배합이 사라지지 않게 새 탭). 인허가 탭이 원료명 검색 연결을 받기 전까지는 탭 이동만 합니다.
+    // (작업 중인 배합이 사라지지 않게 새 탭). 원료명 채우기는 openRegulatory 참고.
     const reg = el('a', 'btn btn-secondary btn-sm simulation-concept-reg', '규제 확인');
     reg.href = '/regulatory';
     reg.target = '_blank';
-    reg.rel = 'noopener';
+    reg.addEventListener('click', event => openRegulatory(item.name, event));
     reg.title = `${item.name}의 국가별 인허가·규제는 인허가 탭에서 확인해요 (새 탭)`;
     reg.setAttribute('aria-label', `${item.name} 규제 확인 (인허가 탭, 새 탭에서 열기)`);
     li.append(card, reg);

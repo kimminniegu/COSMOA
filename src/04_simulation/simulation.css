@@ -439,7 +439,8 @@
 .simulation-icon-btn:hover { background: var(--color-background); color: var(--color-text-primary); }
 .simulation-icon-btn:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }
 .simulation-icon-btn.is-copied { color: var(--color-success); }
-.simulation-chamber-tools { position: absolute; z-index: 2; top: 50%; right: 16px; display: flex; flex-direction: column; gap: var(--space-2); transform: translateY(-50%); }
+.simulation-chamber-tools { position: absolute; z-index: 2; top: 12px; right: 12px; display: flex; flex-direction: column; gap: var(--space-2); }
+.simulation-chamber-hud { right: 64px; }
 .simulation-chamber-tools .simulation-icon-btn { width: 36px; height: 36px; background: var(--color-surface); box-shadow: var(--shadow-card); }
 #simulation-motion .icon-play { display: none; }
 #simulation-motion[aria-pressed=true] .icon-pause { display: none; }
