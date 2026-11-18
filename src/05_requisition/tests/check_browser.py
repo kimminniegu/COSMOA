@@ -71,7 +71,10 @@ window.Common = {
     }
     if (method === 'GET' && url.includes('/versions?')) return {ok: true, status: 200, data: {
       items: __rows.slice().reverse().map((v) => ({...v, is_final: finalNow().version?.id === v.id})), next_before: null}};
-    if (method === 'GET' && url.startsWith('/api/versions/')) return {ok: true, status: 200, data: {version: __rows.find((v) => v.id === Number(url.split('/').pop()))}};
+    if (method === 'GET' && url.startsWith('/api/versions/')) {
+      if (window.__gate) await window.__gate;
+      return {ok: true, status: 200, data: {version: __rows.find((v) => v.id === Number(url.split('/').pop()))}};
+    }
     if (url.endsWith('/final') && method === 'GET') return {ok: true, status: 200, data: {final: finalNow()}};
     if (url.endsWith('/final')) {
       if (window.__gate) await window.__gate;
@@ -262,6 +265,31 @@ try {
   submit();
   release(); window.__gate = null; await wait();
   assert(__finals.at(-1).version_id === 106 && by('version-feedback').hidden && by('save-status').textContent === '저장 전' && !by('version-save').disabled, 'late final response ignored');
+
+  // 불러오기 확인 뒤 응답이 오기 전에 창을 닫으면, 늦게 온 저장본이 작성 중인 내용을 덮어쓰지 않음
+  const loadLate = async () => {
+    by('load').click(); await wait();
+    window.__gate = new Promise((resolve) => { release = resolve; });
+    by('load-confirm').click();
+    Common.closeModal('requisition-load-modal');
+  };
+  const arrive = async () => { release(); window.__gate = null; await wait(); };
+  await loadLate();
+  by('secondary').click(); enter('product_name', '닫고 수정');
+  await arrive();
+  assert(by('input-product_name') && by('input-product_name').value === '닫고 수정' && by('save-status').textContent === '저장 전', 'late load keeps edit in progress');
+  submit();
+  assert(by('fields').textContent.includes('닫고 수정'), 'edit after cancelled load saved');
+  await loadLate();
+  by('new').click(); by('manual').click(); fillRequired(); enter('product_name', '닫고 새 문서');
+  await arrive();
+  assert(by('input-product_name') && by('input-product_name').value === '닫고 새 문서' && by('save-status').textContent === '저장 전', 'late load keeps new document');
+  pending('export_countries', '미국'); pending('quality.tests', '안정도 시험'); submit();
+  assert(by('title').textContent === '개발요청서' && by('fields').textContent.includes('닫고 새 문서'), 'new document after cancelled load');
+  await loadLate();
+  window.__projectChange({id: 13, name: '크림', customer: {id: 7, name: 'A사'}});
+  await arrive();
+  assert(by('title').textContent !== '개발요청서' && by('save-box').hidden && by('save-status').textContent === '저장 전', 'late load ignored after project change');
   document.body.dataset.testResult = 'PASS';
 } catch (error) { document.body.dataset.testResult = 'FAIL: ' + error.message; }
 })();

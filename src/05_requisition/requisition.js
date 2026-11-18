@@ -1038,6 +1038,9 @@
     renderVersion();
   }
   let loadTarget = null, loadBefore = null, loadRows = [], loadFinalId = null;
+  // loadRequest = 불러오기 창을 열거나 확인을 누를 때마다 바뀌는 번호. loadSnapshot 이 요청 때와 다르면 늦게 온 저장본을 적용하지 않습니다.
+  let loadRequest = 0;
+  const loadSnapshot = () => [loadRequest, versionEpoch, editCount, state, saved, draft, idOf(selectedProject())];
   function renderLoadList() {
     const checked = document.querySelector('input[name="requisition-load-version"]:checked');
     const selected = checked ? Number(checked.value) : loadFinalId || (loadRows[0] && loadRows[0].id);
@@ -1063,6 +1066,7 @@
     const target = selectedProject();
     if (!target) return notice("저장본을 불러오려면 먼저 프로젝트를 선택해 주세요.");
     loadTarget = target; loadBefore = null; loadRows = []; loadFinalId = null;
+    loadRequest += 1;
     $("load-list").innerHTML = "";
     $("load-more").hidden = true;
     $("load-confirm").disabled = true;
@@ -1077,8 +1081,14 @@
     const safe = !hasDocument() || (state === "result" && currentVersion && !versionDirty && !originalFile && !hasLocalFiles());
     if (!safe && !confirm("지금 작성 중인 내용이 불러온 저장본으로 바뀌어요. 계속할까요?")) return;
     $("load-confirm").disabled = true;
+    loadRequest += 1;
+    const before = loadSnapshot();
     const result = await Common.api("GET", "/api/versions/" + Number(checked.value));
-    if (target !== loadTarget) return;
+    // 그사이 창을 닫았거나(취소 의사) 화면 내용이 바뀌었으면 작성 중인 내용을 덮어쓰지 않습니다.
+    if (!$("load-modal").classList.contains("is-open") || loadSnapshot().some((value, index) => value !== before[index])) {
+      if (before[0] === loadRequest) $("load-confirm").disabled = false;
+      return;
+    }
     if (!result.ok || result.data.version.schema_version !== REQUISITION_SCHEMA || result.data.version.tab !== "requisition" || result.data.version.project_id !== target.id) {
       $("load-confirm").disabled = false;
       $("load-status").textContent = result.ok ? "이 저장본은 현재 화면에서 불러올 수 없어요." : result.error.message;
