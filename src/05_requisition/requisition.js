@@ -971,11 +971,14 @@
     $("version-final").textContent = isFinal ? "최종본 해제" : "최종본으로 지정";
   }
   // 응답이 늦게 도착해도 지금 문서의 프로젝트가 아니면 버립니다.
+  // finalSeq = 최종본 상태 요청(조회·변경) 순번. 더 나중에 보낸 요청이 있으면 늦게 온 조회 응답은 옛 상태일 수 있어 버립니다.
+  let finalSeq = 0;
   async function refreshFinal() {
     const target = documentProject;
     if (!target) return false;
+    const seq = ++finalSeq;
     const result = await Common.api("GET", finalUrl(target.id));
-    if (target !== documentProject) return false;
+    if (target !== documentProject || seq !== finalSeq) return false;
     if (!result.ok) { versionFeedback(result.error.message); return false; }
     finalState = result.data.final;
     renderVersion();
@@ -1014,9 +1017,10 @@
     renderVersion();
     const target = documentProject, epoch = versionEpoch;
     const ready = finalState || await refreshFinal();
-    let result = null;
+    let result = null, seq = 0;
     if (ready && target === documentProject && epoch === versionEpoch) {
       const expected = finalState.final_history_id ?? null;
+      seq = ++finalSeq;
       result = await Common.api("POST", finalUrl(target.id), isCurrentFinal()
         ? { action: "unset", expected_final_history_id: expected }
         : { action: "set", version_id: currentVersion.id, expected_final_history_id: expected });
@@ -1024,7 +1028,8 @@
     versionBusy = false;
     if (target !== documentProject) return renderVersion();
     if (epoch !== versionEpoch) {                           // 그사이 다른 문서로 바뀌었으면 안내 없이 프로젝트의 최종본 상태만 반영합니다.
-      if (result && result.ok) finalState = result.data.final;
+      if (result && seq !== finalSeq) refreshFinal();       // 그사이 나간 조회는 변경 전 상태일 수 있어, 확정된 상태를 다시 받습니다.
+      else if (result && result.ok) finalState = result.data.final;
       else if (result && result.status === 409) finalState = result.error.current;
       return renderVersion();
     }
@@ -1050,9 +1055,9 @@
     $("load-confirm").disabled = !loadRows.length;
   }
   async function fetchLoadPage() {
-    const target = loadTarget;
+    const target = loadTarget, rows = loadRows;
     const result = await Common.api("GET", versionsUrl(target.id) + "?limit=50" + (loadBefore ? "&before=" + loadBefore : ""));
-    if (target !== loadTarget) return;
+    if (rows !== loadRows) return;                          // 창을 다시 열었거나 같은 쪽을 이미 붙였으면(더 보기 연타) 버립니다.
     if (!result.ok) { $("load-status").textContent = result.error.message; return; }
     loadRows = loadRows.concat(result.data.items);
     loadBefore = result.data.next_before;

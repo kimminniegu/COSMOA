@@ -69,13 +69,20 @@ window.Common = {
       __rows.push(version);
       return {ok: true, status: 201, data: {version, base: {is_stale: false}}};
     }
-    if (method === 'GET' && url.includes('/versions?')) return {ok: true, status: 200, data: {
-      items: __rows.slice().reverse().map((v) => ({...v, is_final: finalNow().version?.id === v.id})), next_before: null}};
+    if (method === 'GET' && url.includes('/versions?')) {
+      if (window.__gate) await window.__gate;
+      return {ok: true, status: 200, data: {
+        items: __rows.slice().reverse().map((v) => ({...v, is_final: finalNow().version?.id === v.id})), next_before: null}};
+    }
     if (method === 'GET' && url.startsWith('/api/versions/')) {
       if (window.__gate) await window.__gate;
       return {ok: true, status: 200, data: {version: __rows.find((v) => v.id === Number(url.split('/').pop()))}};
     }
-    if (url.endsWith('/final') && method === 'GET') return {ok: true, status: 200, data: {final: finalNow()}};
+    if (url.endsWith('/final') && method === 'GET') {
+      const final = finalNow();                              // 서버가 처리한 시점의 상태 — 응답만 늦출 수 있음
+      if (window.__finalGet) await window.__finalGet;
+      return {ok: true, status: 200, data: {final}};
+    }
     if (url.endsWith('/final')) {
       if (window.__gate) await window.__gate;
       if (__conflict) { __conflict = false; __finals.push({id: 99, action: 'set', version_id: 100}); return {ok: false, status: 409, error: {code: 'final_conflict', message: 'x', current: finalNow()}}; }
@@ -290,6 +297,37 @@ try {
   window.__projectChange({id: 13, name: '크림', customer: {id: 7, name: 'A사'}});
   await arrive();
   assert(by('title').textContent !== '개발요청서' && by('save-box').hidden && by('save-status').textContent === '저장 전', 'late load ignored after project change');
+
+  // 불러오기 창을 닫았다가 다시 열면 이전 목록 응답이 새 목록에 붙지 않고, 더 보기를 연달아 눌러도 한 번만 붙음
+  const listed = () => document.querySelectorAll('input[name=requisition-load-version]').length;
+  window.__projectChange(P);
+  window.__gate = new Promise((resolve) => { release = resolve; });
+  by('load').click();
+  Common.closeModal('requisition-load-modal');
+  window.__gate = null;
+  by('load').click(); await wait();
+  await arrive();
+  assert(listed() === __rows.length, 'stale list response ignored');
+  window.__gate = new Promise((resolve) => { release = resolve; });
+  by('load-more').click(); by('load-more').click();
+  await arrive();
+  assert(listed() === __rows.length * 2, 'repeated load-more appends once');
+
+  // 최종본 변경 응답보다 늦게 도착한 옛 조회 응답이 최종본 상태를 덮어쓰지 않음
+  by('load').click(); await wait();
+  by('load-confirm').click(); await wait();
+  assert(by('save-status').textContent === 'v7 ★ 최종본', 'final version loaded');
+  window.__gate = new Promise((resolve) => { release = resolve; });
+  by('version-final').click();                               // 해제 요청 — 응답 보류
+  window.__gate = null;
+  by('load').click(); await wait();
+  let releaseGet;
+  window.__finalGet = new Promise((resolve) => { releaseGet = resolve; });
+  by('load-confirm').click(); await wait();                  // 다시 불러오기 — 해제 전 상태를 담은 조회 응답 보류
+  window.__finalGet = null;
+  release(); await wait();
+  releaseGet(); await wait();
+  assert(__finals.at(-1).action === 'unset' && by('save-status').textContent === 'v7' && !by('version-final').disabled, 'stale final response ignored');
   document.body.dataset.testResult = 'PASS';
 } catch (error) { document.body.dataset.testResult = 'FAIL: ' + error.message; }
 })();
