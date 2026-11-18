@@ -1,19 +1,29 @@
 /* 이 페이지에 한정한 밀도/배치. 공통 파일은 수정하지 않습니다. */
 /* 여백은 원가·마진 탭 기준에 맞춥니다: 좌우는 공통값(56px), 위 24px, 카드 간격 16px, 카드 안쪽 20px. */
 .simulation-shell { --layout-page-padding-y: var(--space-6); --layout-footer-height: var(--space-6); }
+/* 본문을 가운데에 두어 좌우 여백이 같게 합니다 (공통 컨테이너는 왼쪽에 붙고 최대 너비까지만 늘어나 넓은 화면에서 오른쪽만 비었음). */
+.simulation-shell .app-main .container, .simulation-shell .app-main .app-footer { max-width: min(100%, 1760px); margin-inline: auto; }
 .simulation-page { --simulation-columns: minmax(0, 1fr) clamp(236px, 20%, 272px); --layout-card-padding: var(--space-5); --layout-section-gap: var(--layout-card-gap); min-width: 0; }
 /* 머리글도 본문과 같은 두 칸: 개발요청서 버튼은 샘플 제형 카드 오른쪽 위, 초기화·시연 버튼은 배합 조절 카드 오른쪽 위에 맞춥니다. */
-.simulation-page .page-header { display: grid; grid-template-columns: var(--simulation-columns); align-items: center; gap: var(--layout-card-gap); }
-.simulation-header-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.simulation-page .page-header { display: flex; align-items: center; gap: var(--layout-card-gap); }
+.simulation-header-main { flex: 1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); min-width: 0; }
+/* 제목 옆 저장 상태 칩: 저장 전 / vN / vN · ★ 최종본 */
+.simulation-title-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.simulation-version-chip { flex: none; padding: 2px 10px; border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text-secondary); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.simulation-version-chip[data-state=saved] { color: var(--color-text-body); }
+.simulation-version-chip[data-state=final] { background: var(--color-primary-soft); color: var(--color-primary); }
+.simulation-work-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.simulation-work-actions .btn-secondary { background: var(--color-surface); }
+.simulation-work-actions .btn-secondary:hover:not(:disabled) { background: var(--color-surface-muted); }
 .simulation-page .page-actions { justify-content: flex-end; }
 .simulation-page .page-title { font-size: var(--font-size-section-title); }
 .simulation-page .card-header { align-items: center; gap: var(--space-2); }
 .simulation-page .card-header + .card-body { padding-top: var(--space-3); }
 .simulation-top-grid, .simulation-bottom-grid { display: grid; gap: var(--layout-card-gap); }
 .simulation-top-grid { grid-template-columns: var(--simulation-columns); }
-.simulation-bottom-grid { margin-top: var(--layout-card-gap); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; }
+.simulation-bottom-grid { margin-top: var(--layout-card-gap); grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, .85fr); gap: 0; }
 .simulation-bottom-grid > section { display: flex; flex-direction: column; }
-.simulation-pitch { border-left: 1px solid var(--color-border-strong); }
+.simulation-pitch, .simulation-concept { border-left: 1px solid var(--color-border-strong); }
 .simulation-top-grid > *, .simulation-bottom-grid > * { min-width: 0; }
 /* 흰 카드 크기는 그대로 두고, 카드 안쪽 여백을 12px로 줄여 스포이드·샬레가 있는 회색 챔버를 최대한 넓힙니다. */
 .simulation-preview > .card-header { padding: var(--space-3) var(--space-3) 0 var(--space-4); }
@@ -92,7 +102,7 @@
 .simulation-slider input[type=range]:hover::-moz-range-thumb, .simulation-slider input[type=range]:active::-moz-range-thumb { transform: scale(1.15); box-shadow: 0 0 0 1px rgba(49,130,246,.35), 0 0 0 4px rgba(49,130,246,.12), 0 1px 4px rgba(0,23,51,.18); }
 .simulation-slider input[type=range]:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; border-radius: var(--radius-xs); }
 .simulation-packaging select { width: auto; max-width: 48%; }
-.simulation-status-card { --diagnosis-tone: #2563eb; --diagnosis-soft: #eff6ff; --diagnosis-border: #bfdbfe; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 14px; height: 100%; }
+.simulation-status-card { --diagnosis-tone: #2563eb; --diagnosis-soft: #eff6ff; --diagnosis-border: #bfdbfe; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 14px; }
 .simulation-status-card[data-state=caution] { --diagnosis-tone: #b45309; --diagnosis-soft: #fffbeb; --diagnosis-border: #fde68a; }
 .simulation-status-card[data-state=incompatible] { --diagnosis-tone: #be123c; --diagnosis-soft: #fff1f2; --diagnosis-border: #fecdd3; }
 .simulation-score-ring { width: 64px; aspect-ratio: 1; padding: 5px; border-radius: 50%; background: conic-gradient(var(--diagnosis-tone) var(--simulation-score, 0%), #e8edf3 0); }
@@ -135,15 +145,16 @@
 /* Desktop: available viewport height is assigned to the preview, never clipped. */
 @media (min-width: 1200px) and (min-height: 700px) {
   /* 상단 시뮬레이션 8 : 하단 용기·제안 2. 하단 행은 용기 적합성 카드가 필요로 하는 높이 아래로 줄지 않습니다. */
-  .simulation-page { height: calc(100dvh - var(--layout-page-padding-y) - var(--layout-footer-height)); display: grid; grid-template-rows: auto auto minmax(0, 8fr) minmax(max-content, 2fr); gap: var(--layout-card-gap); overflow: clip; overflow-clip-margin: var(--layout-card-gap); }
+  /* 미리보기 행은 최소 505px. 큰 화면에서는 남는 높이만큼 더 커지고, 낮은 화면에서는 페이지가 조금 길어져 세로 스크롤이 생깁니다.
+     하단 세 칸은 최소 255px(제안 가이드 기본 문구가 딱 들어가는 높이) — 제안 가이드·컨셉원료 코멘트는 넘치면 칸 안에서 스크롤합니다.
+     (475px ≈ 제목·프로젝트 바·하단 행·간격의 합) */
+  .simulation-page { --simulation-preview-h: max(505px, calc(100dvh - 475px)); --simulation-bottom-h: 255px; display: grid; grid-template-rows: auto auto var(--simulation-preview-h) minmax(var(--simulation-bottom-h), auto); gap: var(--layout-card-gap); }
   .simulation-bottom-grid .card-header { padding-top: var(--space-4); }
   .simulation-bottom-grid .card-header + .card-body { padding-top: var(--space-3); padding-bottom: var(--space-4); }
   .simulation-bottom-grid .form-control-sm, .simulation-bottom-grid .btn-sm { height: 32px; }
-  /* 제안 가이드는 행 높이 계산에서 빠지고(contain: size) 남는 높이 안에서 스크롤합니다. */
-  .simulation-pitch { contain: size; }
-  .simulation-pitch .card-body { min-height: 0; overflow-y: auto; }
-  .simulation-report-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-  .simulation-report + .simulation-report { padding-top: 0; padding-left: var(--space-4); border-top: 0; border-left: var(--border-default); }
+  /* 제안 가이드·컨셉원료 코멘트는 행 높이 계산에서 빠지고(contain: size) 남는 높이 안에서 스크롤합니다. */
+  .simulation-pitch, .simulation-concept { contain: size; }
+  .simulation-pitch .card-body, .simulation-concept .card-body { min-height: 0; overflow-y: auto; }
   .simulation-report h3 { font-size: 14px; }
   .simulation-report p { font-size: 13px; line-height: 1.45; }
   .simulation-pitch .card-body { padding-bottom: var(--space-3); }
@@ -202,7 +213,8 @@
 @container page (max-width: 900px) {
   .simulation-top-grid, .simulation-bottom-grid, .simulation-page .page-header { grid-template-columns: minmax(0, 1fr); }
   .simulation-stage { width: min(100%, 480px); height: auto; }
-  .simulation-pitch { border-left: 0; border-top: 1px solid var(--color-border-strong); }
+  .simulation-pitch, .simulation-concept { border-left: 0; border-top: 1px solid var(--color-border-strong); }
+  .simulation-work-actions { justify-content: flex-start; }
 }
 @container page (max-width: 560px) { .simulation-hud { grid-template-columns: repeat(2, minmax(0, 1fr)); } .simulation-page .card-header { flex-wrap: wrap; } }
 @container page (max-width: 900px) {
@@ -291,9 +303,154 @@
 .simulation-toast[hidden] { display: none; }
 .simulation-toast-icon { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); }
 .simulation-toast-icon svg { width: 14px; height: 14px; }
+.simulation-toast-notice, .simulation-toast[data-tone=notice] .simulation-toast-check { display: none; }
+.simulation-toast[data-tone=notice] .simulation-toast-notice { display: block; }
+.simulation-toast[data-tone=notice] .simulation-toast-icon { background: var(--color-warning-soft); color: var(--color-warning); }
+.simulation-toast small { max-width: 520px; word-break: keep-all; }
 .simulation-toast strong, .simulation-toast small { display: block; }
 .simulation-toast strong { font-size: 13px; font-weight: 600; color: #1e293b; }
 .simulation-toast small { font-size: 11px; color: #64748b; }
 @media (max-width: 760px) {
   .simulation-brief-drop { min-height: 220px; }
 }
+
+/* 컨셉원료 코멘트 — 하단 카드 요약 (simulation.md 8장) */
+.simulation-concept-summary { display: grid; align-content: start; gap: var(--space-2); }
+.simulation-requisition-note { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--color-primary-soft); color: var(--color-primary); font-size: 12px; line-height: 1.45; word-break: keep-all; }
+.simulation-requisition-note[hidden], .simulation-concept-overall[hidden], .simulation-concept-empty[hidden] { display: none; }
+/* 원료 카드: 왼쪽 색 띠로 출처를 구분 (자주 쓰는 원료·직접 입력 = 회색, AI = 주황, 개발요청서 = 파랑) */
+.simulation-concept-chips { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.simulation-concept-chips:empty { display: none; }
+.simulation-concept-chips > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: stretch; }
+.simulation-concept-reg { align-self: stretch; display: inline-flex; align-items: center; padding-inline: 10px; font-size: 12px; white-space: nowrap; }
+.simulation-concept-card { --card-accent: var(--color-border-strong); display: grid; gap: 6px; width: 100%; padding: 10px 12px 10px 14px; border: 0; border-left: 3px solid var(--card-accent); border-radius: var(--radius-sm); background: var(--color-surface-muted); text-align: left; font: inherit; color: inherit; cursor: pointer; transition: background var(--transition-base); }
+.simulation-concept-card:hover { background: var(--color-background); }
+.simulation-concept-card:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }
+.simulation-concept-card[data-source=ai_search], .simulation-concept-card[data-source=ai_recommend] { --card-accent: var(--color-warning); }
+.simulation-concept-card[data-source=requisition] { --card-accent: var(--color-primary-bright); }
+.simulation-concept-card { padding-block: 8px; }
+.simulation-concept-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.simulation-concept-card-head strong { flex: 0 1 auto; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
+.simulation-concept-card-head .simulation-concept-tags { order: 3; flex: 1 0 100%; flex-wrap: wrap; min-width: 0; }
+.simulation-concept-card-source { flex: none; margin-left: auto; padding-left: var(--space-1); font-size: 11px; color: var(--color-text-secondary); }
+.simulation-concept-card .simulation-concept-tags .badge { flex: none; height: 20px; padding: 0 7px; font-size: 11px; }
+.simulation-concept-card-comment { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.5; word-break: keep-all; padding-top: 6px; border-top: 1px dashed var(--color-border-strong); color: var(--color-text-strong); white-space: pre-line; }
+.simulation-concept-card-comment::before { content: '코멘트 · '; font-weight: var(--font-weight-bold); color: var(--color-primary); }
+.simulation-concept-overall { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--color-primary-soft); font-size: 13px; line-height: 1.5; color: var(--color-text-body); white-space: pre-line; word-break: keep-all; }
+.simulation-concept-overall::before { content: '전체 코멘트\A'; font-size: 11px; font-weight: var(--font-weight-bold); color: var(--color-primary); }
+/* 공통 .alert 가 display 를 지정해 [hidden] 이 무시되므로 이 페이지에서 다시 숨깁니다. */
+.simulation-concept-modal .alert[hidden] { display: none; }
+
+/* 용기 적합성: 하단 행 높이 안에서 호환도 링과 진단을 가운데 정렬 */
+.simulation-packaging .card-body { flex: 1; display: flex; align-items: center; }
+.simulation-packaging .simulation-status-card { width: 100%; grid-template-columns: 88px minmax(0, 1fr); gap: var(--space-5); }
+.simulation-packaging .simulation-score-ring { width: 88px; padding: 7px; }
+.simulation-packaging #simulation-status-score { font-size: 26px; }
+.simulation-packaging .simulation-diagnosis { display: grid; gap: var(--space-2); padding-left: var(--space-5); }
+.simulation-packaging .simulation-diagnosis-heading { margin-bottom: 0; }
+.simulation-packaging .simulation-recommendation { margin-top: var(--space-1); padding-top: var(--space-3); border-top: var(--border-default); }
+
+/* 컨셉원료 코멘트 모달 */
+.simulation-concept-modal .modal-body { display: grid; gap: var(--space-6); max-height: min(68vh, 640px); overflow-y: auto; }
+.simulation-concept-block { display: grid; gap: var(--space-2); }
+.simulation-concept-block h3 { font-size: var(--font-size-label); font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
+.simulation-concept-block h3 small { margin-left: 4px; font-weight: var(--font-weight-regular); color: var(--color-text-secondary); }
+.simulation-concept-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.simulation-concept-presets .btn { height: 30px; padding: 0 12px; border-radius: var(--radius-pill); font-size: 13px; }
+/* 전체 코멘트는 2~3줄 정도면 충분 — 공통 textarea 최소 높이(120px)보다 작게 */
+.simulation-concept-modal #simulation-concept-comment { min-height: 72px; }
+.simulation-concept-modes { justify-self: start; }
+.simulation-concept-search { display: flex; gap: var(--space-2); }
+.simulation-concept-search .form-control { flex: 1; min-width: 0; }
+.simulation-concept-search .btn { flex: none; }
+.simulation-concept-results { display: grid; gap: var(--space-2); }
+.simulation-concept-results:empty { display: none; }
+.simulation-concept-result, .simulation-concept-item { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); background: var(--color-surface-muted); }
+.simulation-concept-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.simulation-concept-item-head strong { font-size: 15px; color: var(--color-text-primary); }
+.simulation-concept-item-head > .btn { margin-left: auto; }
+.simulation-concept-info { display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--color-text-body); word-break: keep-all; }
+.simulation-concept-info > .badge { justify-self: start; }
+.simulation-concept-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.simulation-concept-caution { color: var(--color-text-secondary); }
+.simulation-concept-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.simulation-concept-item textarea.form-control { min-height: 64px; background: var(--color-surface); }
+
+/* 저장 · 불러오기 모달 */
+.simulation-save-project { margin-bottom: var(--space-4); font-size: var(--font-size-label); color: var(--color-text-body); word-break: keep-all; }
+.simulation-save-project:empty { display: none; }
+.simulation-load-modal .modal-body { display: grid; gap: var(--space-3); }
+.simulation-load-modal .tabs { justify-self: start; }
+.simulation-load-help { margin-bottom: var(--space-2); }
+.simulation-version-list { display: grid; gap: 6px; max-height: min(46vh, 420px); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.simulation-version-item label { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-muted); cursor: pointer; transition: background var(--transition-base); }
+.simulation-version-item label:hover { background: var(--color-background); }
+.simulation-version-item label:has(input:checked) { background: var(--color-primary-soft); }
+.simulation-version-item input { flex: none; accent-color: var(--color-primary-bright); }
+.simulation-version-main { display: grid; gap: 2px; min-width: 0; }
+.simulation-version-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.simulation-version-head strong { flex: none; font-variant-numeric: tabular-nums; color: var(--color-primary); }
+.simulation-version-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-primary); }
+.simulation-version-head .badge { flex: none; }
+/* 모달은 body 직속이라 본문 폭(container) 대신 화면 폭 기준입니다. */
+@media (max-width: 640px) {
+  .simulation-concept-search { flex-wrap: wrap; }
+  .simulation-concept-search .btn { flex: 1 1 100%; }
+}
+
+/* 질감·목표 점도로 맞추기 */
+.simulation-target { flex: 0 0 auto; display: grid; gap: var(--space-2); }
+.simulation-target-row { display: flex; align-items: center; gap: var(--space-2); }
+.simulation-target-row > * { flex: none; white-space: nowrap; }
+.simulation-target-row .form-control { flex: 1 1 0; min-width: 0; height: 32px; padding: 0 12px; font-size: 14px; }
+.simulation-target-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.simulation-controls .card-body { overflow-x: hidden; }
+
+/* 용기 용량 · 내용물 호환 참고 */
+.simulation-packaging .card-header { flex-wrap: wrap; gap: var(--space-2); }
+.simulation-pack-controls { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 0; }
+.simulation-pack-controls select { flex: 1 1 140px; min-width: 0; max-width: 200px; }
+.simulation-volume { display: flex; flex: none; align-items: center; gap: 4px; }
+.simulation-volume .form-control { width: 72px; height: 32px; padding: 0 10px; font-size: 14px; }
+.simulation-packaging .simulation-compat { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-warning-soft); color: var(--color-warning); font-size: 12px; line-height: 1.5; white-space: pre-line; word-break: keep-all; }
+
+/* 바이어 제안 가이드 언어 전환 */
+.simulation-pitch .card-header { flex-wrap: wrap; gap: var(--space-2); }
+.simulation-lang { margin-left: auto; }
+.simulation-lang .tab { height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* 안 비교 모달 */
+.simulation-compare-modal .modal-body { display: grid; gap: var(--space-3); }
+.simulation-compare-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.simulation-compare-pick .form-group { margin: 0; }
+.simulation-compare-pick[hidden] { display: none; }
+.simulation-compare-empty { margin: var(--space-3) 0 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text-body); }
+.simulation-compare-empty[hidden] { display: none; }
+.simulation-work-actions .btn[aria-disabled=true] { opacity: .55; cursor: not-allowed; }
+.simulation-compare-table { width: 100%; }
+.simulation-compare-table th, .simulation-compare-table td { font-size: 13px; vertical-align: top; word-break: keep-all; }
+.simulation-compare-table tbody th { font-weight: var(--font-weight-regular); color: var(--color-text-secondary); white-space: nowrap; }
+.simulation-compare-table tr.is-diff td { background: var(--color-primary-soft); color: var(--color-text-primary); font-weight: var(--font-weight-bold); }
+@media (max-width: 640px) { .simulation-compare-pick { grid-template-columns: minmax(0, 1fr); } }
+
+/* 아이콘 정사각 버튼 (시뮬레이션 도구 · 섹션 복사) */
+.simulation-icon-btn { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm); background: var(--color-surface-muted); color: var(--color-text-secondary); cursor: pointer; transition: background var(--transition-base), color var(--transition-base); }
+.simulation-icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.simulation-icon-btn:hover { background: var(--color-background); color: var(--color-text-primary); }
+.simulation-icon-btn:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }
+.simulation-icon-btn.is-copied { color: var(--color-success); }
+.simulation-chamber-tools { position: absolute; z-index: 2; top: 12px; right: 12px; display: flex; flex-direction: column; gap: var(--space-2); }
+.simulation-chamber-hud { right: 58px; }
+/* 앵글(시뮬레이션 화면)을 가리지 않도록 배경·그림자 없이 아이콘만 두고, 올렸을 때만 옅게 표시 */
+.simulation-chamber-tools { top: 20px; right: 22px; gap: 4px; }
+.simulation-chamber-tools .simulation-icon-btn { width: 26px; height: 26px; background: transparent; box-shadow: none; color: #64748b; }
+.simulation-chamber-tools .simulation-icon-btn:hover, .simulation-chamber-tools .simulation-icon-btn:focus-visible { background: rgba(255, 255, 255, .7); color: var(--color-text-primary); }
+#simulation-motion .icon-play { display: none; }
+#simulation-motion[aria-pressed=true] .icon-pause { display: none; }
+#simulation-motion[aria-pressed=true] .icon-play { display: block; }
+.simulation-report-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.simulation-report-head h3 { margin: 0; }
+.simulation-report-head .simulation-icon-btn { width: 24px; height: 24px; background: transparent; }
+.simulation-report-head .simulation-icon-btn svg { width: 14px; height: 14px; }
+
+.simulation-reg-link { color: var(--color-primary); font-weight: var(--font-weight-bold); text-decoration: underline; }

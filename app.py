@@ -506,6 +506,16 @@ def simulation_brief():
         return jsonify(error=str(e)), e.status
 
 
+# 컨셉원료 AI 검색(원료명)·추천(기능 키워드). 처리 로직은 src/04_simulation/service.py lookup_ingredient
+@app.route("/api/ai-formulation/ingredient", methods=["POST"])
+@login_required
+def simulation_ingredient():
+    try:
+        return jsonify(simulation_service.lookup_ingredient(request.get_json(silent=True)))
+    except simulation_service.BriefError as e:
+        return jsonify(error=str(e)), e.status
+
+
 # [E] 개발요청서 — 접두사: /api/dev-request/...
 
 # 숫자로 시작하는 폴더명은 일반 import 문으로 불러올 수 없으므로
