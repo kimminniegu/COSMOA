@@ -322,16 +322,16 @@
 .simulation-concept-chips { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .simulation-concept-chips:empty { display: none; }
 .simulation-concept-chips > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: stretch; }
-.simulation-concept-reg { align-self: stretch; display: inline-flex; align-items: center; white-space: nowrap; }
+.simulation-concept-reg { align-self: stretch; display: inline-flex; align-items: center; padding-inline: 10px; font-size: 12px; white-space: nowrap; }
 .simulation-concept-card { --card-accent: var(--color-border-strong); display: grid; gap: 6px; width: 100%; padding: 10px 12px 10px 14px; border: 0; border-left: 3px solid var(--card-accent); border-radius: var(--radius-sm); background: var(--color-surface-muted); text-align: left; font: inherit; color: inherit; cursor: pointer; transition: background var(--transition-base); }
 .simulation-concept-card:hover { background: var(--color-background); }
 .simulation-concept-card:focus-visible { outline: 2px solid var(--color-primary-light); outline-offset: 2px; }
 .simulation-concept-card[data-source=ai_search], .simulation-concept-card[data-source=ai_recommend] { --card-accent: var(--color-warning); }
 .simulation-concept-card[data-source=requisition] { --card-accent: var(--color-primary-bright); }
 .simulation-concept-card { padding-block: 8px; }
-.simulation-concept-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.simulation-concept-card-head strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
-.simulation-concept-card-head .simulation-concept-tags { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+.simulation-concept-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.simulation-concept-card-head strong { flex: 0 1 auto; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: var(--font-weight-bold); color: var(--color-text-primary); }
+.simulation-concept-card-head .simulation-concept-tags { order: 3; flex: 1 0 100%; flex-wrap: wrap; min-width: 0; }
 .simulation-concept-card-source { flex: none; margin-left: auto; padding-left: var(--space-1); font-size: 11px; color: var(--color-text-secondary); }
 .simulation-concept-card .simulation-concept-tags .badge { flex: none; height: 20px; padding: 0 7px; font-size: 11px; }
 .simulation-concept-card-comment { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.5; word-break: keep-all; padding-top: 6px; border-top: 1px dashed var(--color-border-strong); color: var(--color-text-strong); white-space: pre-line; }
