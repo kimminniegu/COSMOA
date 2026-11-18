@@ -448,3 +448,5 @@
 .simulation-report-head h3 { margin: 0; }
 .simulation-report-head .simulation-icon-btn { width: 24px; height: 24px; background: transparent; }
 .simulation-report-head .simulation-icon-btn svg { width: 14px; height: 14px; }
+
+.simulation-reg-link { color: var(--color-primary); font-weight: var(--font-weight-bold); text-decoration: underline; }

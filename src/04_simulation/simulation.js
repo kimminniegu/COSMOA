@@ -1414,7 +1414,12 @@ function renderConcepts() {
     remove.type = 'button';
     remove.setAttribute('aria-label', `${item.name} 삭제`);
     remove.addEventListener('click', () => { concepts.splice(index, 1); markDirty(); renderConcepts(); });
-    head.append(name, el('span', 'badge', SOURCE_LABELS[item.source]), remove);
+    const regLink = el('a', 'btn btn-secondary btn-sm', '규제 확인');
+    regLink.href = '/regulatory';
+    regLink.target = '_blank';
+    regLink.rel = 'noopener';
+    regLink.title = '인허가 탭에서 국가별 규제 확인 (새 탭)';
+    head.append(name, el('span', 'badge', SOURCE_LABELS[item.source]), regLink, remove);
     li.append(head);
     if (item.info) li.append(infoBlock(item.info, item.source));
     const note = el('textarea', 'form-control form-control-sm');
