@@ -210,8 +210,7 @@ class RequisitionTest(unittest.TestCase):
                          [("Ascorbic Acid", "necessary"), ("Niacinamide", "ideal")])   # 대소문자만 다른 중복은 한 번
         self.assertTrue(all(c["must_contain"] is None and c["efficacy_tags"] == [] for c in document["ingredients"]["concept"]))
         # AI 가 채우지 않는 칸은 비어 있음
-        self.assertEqual((document["product_development"]["viscosity_level"], document["product_development"]["container_reference"],
-                          document["rnd_check_requests"]), ("", "", ""))
+        self.assertEqual((document["product_development"]["container_reference"], document["rnd_check_requests"]), ("", ""))
         self.assertNotIn("document_id", document)
         self.assertNotIn("version", document)
         keys = {p["field_key"] for p in document["field_provenance"]}
@@ -236,9 +235,31 @@ class RequisitionTest(unittest.TestCase):
         self.assertIn("spf", props["product_development"]["properties"])
         for absent in ("target_prices", "rnd_check_requests"):
             self.assertNotIn(absent, props)                     # 목표 가격대 금액·R&D 확인 요청사항은 추출하지 않음
-        for absent in ("viscosity_level", "container_reference"):
-            self.assertNotIn(absent, props["product_development"]["properties"])
+        development = props["product_development"]["properties"]
+        self.assertNotIn("container_reference", development)
+        self.assertEqual(development["viscosity_level"]["enum"], ["", "very_thin", "thin", "medium", "thick", "very_thick"])
+        self.assertIn("리치함", development["texture_tags"]["items"]["enum"])
         self.assertEqual(set(props["ingredients"]["properties"]), {"necessary", "ideal", "other_notes"})
+
+    def test_ai_estimated_band_and_tags_need_review(self):
+        result = extracted()
+        development = result.setdefault("product_development", {})
+        development.update(viscosity="thick cream", viscosity_level="very_thick", texture="rich", texture_tags=["리치함", "없는태그"])
+        for key, source in (("viscosity", "thick cream"), ("viscosity_level", "thick cream"), ("texture", "rich"), ("texture_tags", "rich")):
+            result["evidence"].append({"field_key": "product_development." + key, "source_value": source, "source_page": "1", "needs_review": False})
+        document = service.normalize_result(result, "brief.pdf", "", "auto", "ko", [])
+        self.assertEqual(document["product_development"]["viscosity"], "thick cream")
+        self.assertEqual(document["product_development"]["viscosity_level"], "very_thick")
+        self.assertEqual(document["product_development"]["texture_tags"], ["리치함"])
+        status = {p["field_key"]: p["review_status"] for p in document["field_provenance"]}
+        self.assertEqual(status["product_development.viscosity_level"], "needs_review")
+        self.assertEqual(status["product_development.texture_tags"], "needs_review")
+
+    def test_ai_band_without_evidence_is_dropped(self):
+        result = extracted()
+        result.setdefault("product_development", {}).update(viscosity_level="thick", texture_tags=["매트함"])
+        document = service.normalize_result(result, "brief.pdf", "", "auto", "ko", [])
+        self.assertEqual((document["product_development"]["viscosity_level"], document["product_development"]["texture_tags"]), ("", []))
 
     def test_provider_errors_and_payload(self):
         result = {"status": "completed", "output": [{"type": "message", "content": [

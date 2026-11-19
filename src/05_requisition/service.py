@@ -17,8 +17,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
-from .schema import (CONCEPT_KINDS, EXTRACTED_FIELDS, LEGACY_PRICE_TIERS, PRODUCT_TYPES, SKINCARE_TYPES, blank_inputs,
-                     empty_value, get_value, set_value)
+from .schema import (CONCEPT_KINDS, EXTRACTED_FIELDS, LEGACY_PRICE_TIERS, PRODUCT_TYPES, SKINCARE_TYPES, TEXTURE_TAGS,
+                     VISCOSITY_LEVELS, blank_inputs, empty_value, get_value, set_value)
 
 blueprint = Blueprint("requisition", __name__, url_prefix="/api/dev-request")
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -32,8 +32,9 @@ MIME_TYPES = {
 STRING_FIELDS = ["customer", "request_source", "product_name", "sample_request_type", "product_type", "product_type_custom",
                  "product_type_detail", "target_price_tier", "benchmark_product_name"]
 ARRAY_FIELDS = ["export_countries", "buyer_prohibited_ingredients", "regulatory_restricted_ingredients"]
-# AI 가 추출하는 칸 (schema.EXTRACTED_FIELDS). 목표 가격대 금액·점도 선택값·용기·R&D 확인 요청사항은 추출하지 않습니다.
+# AI 가 추출하는 칸 (schema.EXTRACTED_FIELDS). 목표 가격대 금액·용기·R&D 확인 요청사항은 추출하지 않습니다.
 DATA_FIELDS = list(EXTRACTED_FIELDS)
+BAND_FIELD, TAGS_FIELD = "product_development.viscosity_level", "product_development.texture_tags"   # AI 추정값 — 항상 확인 필요
 LEGACY_FIELDS = ("target_price_tier", "ingredients.necessary", "ingredients.ideal")   # 화면 문서로 옮길 때 변환
 
 
@@ -85,7 +86,7 @@ def extraction_schema():
         for key in keys[:-1]:
             parent = parent.setdefault(key, {"type": "object", "additionalProperties": False,
                                             "properties": {}})["properties"]
-        parent[keys[-1]] = ({"type": "array", "items": {"type": "string"}} if kind == "list"
+        parent[keys[-1]] = ({"type": "array", "items": {"type": "string"}} if kind in ("list", "texture_tags")
                            else {"type": ["boolean", "null"]} if kind == "required"
                            else {"type": "string"})
     properties["product_type"]["enum"] = [""] + PRODUCT_TYPES
@@ -94,6 +95,8 @@ def extraction_schema():
     properties["request_source"]["enum"] = ["", "고객사 요청", "자사기획"]
     properties["target_price_tier"]["enum"] = ["", "low", "mid", "high"]
     properties["product_development"]["properties"]["application_type"]["enum"] = ["", "Leave-on", "Rinse-off", "기타", "확인 필요"]
+    properties["product_development"]["properties"]["viscosity_level"]["enum"] = [""] + VISCOSITY_LEVELS
+    properties["product_development"]["properties"]["texture_tags"]["items"]["enum"] = TEXTURE_TAGS
     # Excluded information is kept separately, never rendered by the public field allowlist.
     properties["raw_extracted_data"] = {
         "type": "object", "additionalProperties": False, "properties": {
@@ -155,6 +158,10 @@ regulatory_restricted_ingredients: only ingredients explicitly mentioned as rest
 benchmark_product_name: a single explicitly identified Formula Benchmark or Reference Product, else empty.
 Map Formula fields to product_development: Product Description, Formula Guidelines, Base Texture,
 Appearance/Sensory, Viscosity, Base Fragrance/Flavor, Base Finish, Base Coverage, Color/Shade Benchmark(s).
+product_development.viscosity and product_development.texture hold the buyer's own wording only.
+product_development.viscosity_level: estimate one band key ONLY when the source describes viscosity in words or numbers (very_thin: toner/mist, under 100 cP; thin: essence, 100-1,000; medium: serum/ampoule, 1,000-10,000; thick: lotion/emulsion, 10,000-30,000; very_thick: cream, 30,000 or more). Never infer it from the product category alone; else empty.
+product_development.texture_tags: choose only tags supported by the source's texture description; else empty.
+For these two estimated fields, the evidence entry must quote the viscosity or texture excerpt they are based on.
 Map other explicit formulation or product development requests that do not fit those fields to product_development.other_requirements.
 Map Necessary Ingredients and Additional Ideal Ingredients to ingredients.necessary and ingredients.ideal.
 Map Application (leave on/rinse off) to product_development.application_type.
@@ -242,7 +249,7 @@ def normalize_result(raw, filename, customer, source_language, target_language, 
     extracted = {}
     for field, kind in EXTRACTED_FIELDS.items():
         value = get_value(raw, field, empty_value(kind))
-        if kind == "list":
+        if kind in ("list", "texture_tags"):
             if not isinstance(value, list) or len(value) > 50 or any(not isinstance(v, str) or len(v) > 300 for v in value):
                 raise ConversionError("분석 결과의 목록 형식이 올바르지 않아요. 다시 시도해 주세요.", 502)
             value = list(dict.fromkeys(v.strip() for v in value if v.strip()))
@@ -266,6 +273,9 @@ def normalize_result(raw, filename, customer, source_language, target_language, 
         extracted["product_type_detail"] = ""
     if extracted["target_price_tier"] not in LEGACY_PRICE_TIERS:
         extracted["target_price_tier"] = ""
+    if extracted[BAND_FIELD] not in VISCOSITY_LEVELS:
+        extracted[BAND_FIELD] = ""
+    extracted[TAGS_FIELD] = [tag for tag in extracted[TAGS_FIELD] if tag in TEXTURE_TAGS]
     evidence = raw.get("evidence", [])
     if not isinstance(evidence, list) or len(evidence) > 100:
         raise ConversionError("분석 근거를 확인하지 못했어요. 다시 시도해 주세요.", 502)
@@ -290,6 +300,10 @@ def normalize_result(raw, filename, customer, source_language, target_language, 
             else "confirmed" if extracted[field] not in (None, "", [])
             else "missing"),
     } for field in DATA_FIELDS}
+
+    for field in (BAND_FIELD, TAGS_FIELD):
+        if extracted[field]:                 # 원문을 AI 가 분류한 값이므로 사용자가 확인하기 전까지 확정으로 보지 않습니다.
+            provenance[field]["review_status"] = "needs_review"
 
     # 화면 문서 = 저장 계약 inputs 구조 + 고객사 표시값 + 화면 전용 정보
     document = blank_inputs()
